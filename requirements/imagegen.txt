@@ -1,0 +1,13 @@
+# venv\imagegen ortami: ComfyUI ve video kare araclari.
+# scripts\install-mamidlabs.ps1 icindeki $script:ImagegenPackages bu dosyadan okunur.
+#
+# torch/torchvision/torchaudio bu dosyada YOK: CUDA 13.0 tekerlekleri ayri bir
+# index'ten (https://download.pytorch.org/whl/cu130) gelir ve PyPI'daki varsayilan
+# CPU tekerlekleriyle karismamasi icin ayri kurulur:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+#   pip install -r requirements\imagegen.txt
+#
+# ComfyUI'nin kendi requirements.txt'i ayrica ComfyUI klasorunden kurulur.
+#
+# Surum Windows 11 uzerinde dogrulanmis venv\imagegen ortamindan kilitlenmistir.
+av==18.1.0

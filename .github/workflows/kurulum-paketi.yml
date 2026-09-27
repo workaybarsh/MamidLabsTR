@@ -1,0 +1,94 @@
+name: Kurulum paketi
+
+# Tek tikla kurulum sihirbazini (dist\MamidLabs_Setup.exe) Inno Setup 6 ile derler.
+# Surumun tek kaynagi packaging\windows\mamidlabs.iss icindeki MyAppVersion'dir.
+# Dal, PR ve elle calistirmalar yalnizca derleyip artifact yukler. Bir v* etiketi
+# itildiginde etiketin .iss surumuyle ayni oldugu dogrulanir ve paket, CHANGELOG.md'deki
+# ilgili bolum surum notu olarak kullanilip GitHub Release'e yayimlanir.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths:
+      - 'packaging/**'
+      - 'assets/**'
+      - 'scripts/**'
+      - 'agent/**'
+      - 'qwen-desktop.ps1'
+      - 'launch-qwen-desktop.vbs'
+      - 'requirements/**'
+      - 'docs/kurulum.md'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/kurulum-paketi.yml'
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'assets/**'
+      - 'scripts/**'
+      - 'agent/**'
+      - 'qwen-desktop.ps1'
+      - 'launch-qwen-desktop.vbs'
+      - 'requirements/**'
+      - 'docs/kurulum.md'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/kurulum-paketi.yml'
+
+jobs:
+  paket:
+    name: Windows · Inno Setup
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Surumu oku
+        id: surum
+        shell: pwsh
+        run: |
+          $iss = Get-Content -LiteralPath packaging\windows\mamidlabs.iss -Raw
+          $version = [regex]::Match($iss, '#define MyAppVersion "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+          if (!$version) { throw 'mamidlabs.iss icinde MyAppVersion bulunamadi' }
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Etiket ($env:GITHUB_REF_NAME) .iss surumuyle (v$version) ayni degil"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Inno Setup kur
+        run: choco install innosetup --no-progress -y
+
+      - name: Sihirbazi derle
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\mamidlabs.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC cikis kodu $LASTEXITCODE" }
+          if (!(Test-Path dist\MamidLabs_Setup.exe)) { throw 'dist\MamidLabs_Setup.exe olusmadi' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MamidLabs_Setup
+          path: dist/MamidLabs_Setup.exe
+          retention-days: 14
+
+      - name: Surum yayimla (GitHub Release)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = '${{ steps.surum.outputs.version }}'
+          $tag = "v$version"
+          $changelog = Get-Content -LiteralPath CHANGELOG.md -Raw
+          $section = [regex]::Match($changelog, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|\z)").Groups[1].Value.Trim()
+          if (!$section) { throw "CHANGELOG.md icinde [$version] bolumu yok" }
+          Set-Content -LiteralPath release-notes.md -Value $section -Encoding utf8
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist\MamidLabs_Setup.exe --clobber
+          } else {
+            gh release create $tag dist\MamidLabs_Setup.exe --title "MamidLabs $version" --notes-file release-notes.md --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release cikis kodu $LASTEXITCODE" }

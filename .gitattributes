@@ -1,0 +1,11 @@
+# Metin dosyalari depoda LF ile saklanir; Windows'ta calisma kopyasi git ayarina gore acilir.
+* text=auto
+
+# Ikili dosyalar
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.mp4  binary
+*.pdf  binary
+*.pptx binary
+*.bmp  binary

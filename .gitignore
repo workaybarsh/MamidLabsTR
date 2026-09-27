@@ -1,0 +1,25 @@
+# Buyuk / uretilen / ucuncu taraf klasorler - kaynak kod deposunda tutulmaz
+/ComfyUI/
+/venv/
+/runtime/
+/models/
+/llama.cpp/
+/tools/
+
+# Calisma zamani verisi ve kisisel icerik
+/outputs/
+/logs/
+/chats/
+/settings/
+/backup-*/
+
+# Python
+__pycache__/
+*.pyc
+
+# Windows / editor
+Thumbs.db
+.vs/
+
+# Kurulum paketi ciktisi
+dist/
