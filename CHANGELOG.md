@@ -11,6 +11,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   `tests/test_offline_mode.py`).
 - Smoke testine **`cevrimdisi`** adımı eklendi: kurulum sonrası doğrulamada ağ erişimi geçici
   olarak kesilip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır.
+- Smoke testine **`ag_gecisi`** adımı eklendi: ardışık turlarda ağ açık/kapalı değişirken
+  (internet gidip gelirken) yerel işçinin hiçbir turda hata üretmediği doğrulanır.
 
 ### Düzeltmeler
 - Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar
@@ -18,7 +20,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   (web araması, OCR, belge okuma) boş bekleyen keep-alive bağlantısını kapatabiliyordu; istemci
   aynı bayat bağlantıyı yeniden kullanınca akış ortasında kopuyordu. Artık yerel istekler her
   turda taze bağlantı kurar (`Connection: close`; loopback'te maliyeti yoktur, sunucudaki KV
-  önbelleği ve ön işleme tasarrufu korunur). Ayrıca yanıt metni zaten alınmışsa kapanma hata
+  önbelleği ve ön işleme tasarrufu korunur). Ayrıca **kullanılabilir bir sonuç** varsa
+  (finish_reason alınmış, yanıt metni gelmiş ya da bir araç çağrısı oluşmuş) kapanma hata
   sayılmaz; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
   (`agent/qwen-inference.ps1`)
 

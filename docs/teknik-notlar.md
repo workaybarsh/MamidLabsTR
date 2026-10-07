@@ -271,8 +271,10 @@ Yerel isteklerde bağlantı her turda yeniden kurulur (`Connection: close`). Sun
 istemci bu bayat bağlantıyı yeniden kullanınca akış ortasında "Varolan bir bağlantı uzaktaki bir
 ana bilgisayar tarafından zorla kapatıldı." (WSAECONNRESET) hatası oluşuyordu. Loopback'te taze
 bağlantı kurmanın maliyeti yok denecek kadar azdır ve sunucudaki KV önbelleği (dolayısıyla ön
-işleme tasarrufu) bundan etkilenmez. Yanıt metni zaten alınmışken bağlantı kapanırsa, bu durum
-hata olarak gösterilmez; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
+işleme tasarrufu) bundan etkilenmez. Kullanılabilir bir sonuç varsa (finish_reason alınmış,
+yanıt metni gelmiş ya da bir araç çağrısı oluşmuş) bağlantı kapanırsa bu durum hata olarak
+gösterilmez; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez. Yalnızca içeriksiz,
+araçsız ve tamamlanmamış kopmalar hata sayılır.
 
 İnternet çipi açıkken ağ koparsa (hotspot, DNS zaman aşımı) web araması, sayfa okuma ve referans
 görsel araçları istisna atmaz; modele geçerli bir hata JSON'u döndürür, böylece ajan döngüsü

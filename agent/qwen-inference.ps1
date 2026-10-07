@@ -900,15 +900,17 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
         $cause = $_.Exception.GetBaseException()
         $isReset = $cause -is [IO.IOException] -or $cause -is [Net.Sockets.SocketException] -or
             $cause -is [Net.Http.HttpRequestException]
-        # Yerel sunucu yaniti uretip slotu serbest biraktiktan sonra baglanti kopabilir
-        # ([DONE]/finish parcasi gelmeden). Arac cagrisi yokken elimizde yanit metni varsa
-        # bu bir HATA degildir; arayuzde cevabin altina yanlislikla "[Hata] ... zorla
-        # kapatildi" eklenmemeli (gercek Windows'ta tam da boyle goruldu: cevap geliyor,
-        # altinda hata mesaji cikiyordu). Yanit metni zaten kullaniciya ulastigi icin
-        # bunu tamamlanmis say; gercek (iceriksiz) kopmalar yine hata olarak bildirilir.
-        if ($provider -eq 'local' -and $isReset -and !$shared.Cancel -and
-            $result.toolParts.Count -eq 0 -and ![string]::IsNullOrWhiteSpace($result.content) -and !$result.finishReason) {
-            $result.finishReason = 'connection-closed'
+        # Yerel sunucu yaniti uretip baglantiyi kapatabilir ([DONE] gelmeden). Elimizde
+        # KULLANILABILIR bir sonuc varsa (finish_reason alindi, yanit metni var ya da arac
+        # cagrisi var) bu bir HATA degildir; arayuzde cevabin altina yanlislikla
+        # "[Hata] ... zorla kapatildi" eklenmemeli (gercek Windows'ta tam da boyle
+        # goruldu: cevap geliyor, altinda hata mesaji cikiyordu). Onemli: finish_reason
+        # zaten geldiyse yanit TAMAMLANMISTIR; baglantinin hemen ardindan kapanmasi
+        # normaldir ve hata sayilmaz. Gercek (iceriksiz/aracsiz/tamamlanmamis) kopmalar
+        # yine hata olarak bildirilir.
+        $usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0
+        if ($provider -eq 'local' -and $isReset -and !$shared.Cancel -and $usable) {
+            if (!$result.finishReason) { $result.finishReason = 'connection-closed' }
         } else {
             throw
         }

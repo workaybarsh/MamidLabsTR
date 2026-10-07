@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, OCR, gorsel, video.
+    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, OCR, gorsel, video.
 
 .DESCRIPTION
     install-mamidlabs.ps1 yalnizca altyapiyi hazirlar (binary'ler, ortamlar);
@@ -42,6 +42,8 @@ param(
     [switch]$SkipEdit,
     # Cevrimdisi araclar adimini atlar (ag engeli uygulanmasi istenmiyorsa).
     [switch]$SkipOffline,
+    # Ag gecisi (online<->offline) adimini atlar.
+    [switch]$SkipNetworkSwitch,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
     [double]$MinSpeedRatio = 0.7,
     [string]$ReportPath
@@ -194,6 +196,58 @@ if ($SkipOffline) {
         Report 'cevrimdisi' $true 'Ag yokken web araci cokmeden gecerli hata JSON dondurdu'
     } catch {
         Report 'cevrimdisi' $false $_.Exception.Message
+    }
+}
+
+# ----------------------------------------------- ag gecisleri (online <-> offline)
+# Kullanici sikayeti: internet acikken kopmasi ya da konusma ortasinda internetin
+# gidip gelmesi; yanit verilse bile cevabin altina "[Hata] ... zorla kapatildi"
+# ekleniyordu. Ardisik turlarda ag durumu degistirilir; yerel isci hicbir turda
+# 'error' olayi uretmemelidir. Ag erisimi kara delik proxy ile kesilir ve ayar
+# bozulmasin diye sonunda geri yuklenir.
+Write-Section 'Ag gecisleri (online <-> offline)'
+if ($SkipNetworkSwitch) {
+    Write-Host '   [atla] -SkipNetworkSwitch verildi'
+} elseif (!(Wait-ForHealth 5)) {
+    Skip 'ag_gecisi' 'dil modeli hazir degil (sohbet adimi calismamis olabilir)'
+} else {
+    $savedHttp = $env:HTTP_PROXY; $savedHttps = $env:HTTPS_PROXY
+    try {
+        $plan = @(
+            @{ label = 'acik';   online = $true;  prompt = 'Bir cumleyle kendini tanit.' }
+            @{ label = 'kapali'; online = $false; prompt = 'Turkiye nin baskenti neresi? Kisa yanitla.' }
+            @{ label = 'acik';   online = $true;  prompt = 'Einstein bilmecesi nedir? Kisa anlat.' }
+        )
+        $turnErrors = 0; $seen = @()
+        foreach ($step in $plan) {
+            if ($step.online) { Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY -ErrorAction SilentlyContinue }
+            else { $env:HTTP_PROXY = 'http://127.0.0.1:9'; $env:HTTPS_PROXY = 'http://127.0.0.1:9' }
+            $jobData = @{
+                root = $Root
+                messages = @(@{ role = 'user'; content = $step.prompt })
+                provider = 'local'; model = "smoke-$Profile"; profile = $Profile
+                maxTokens = 500; contextLimit = 32768; boundFolder = $null
+                consultProviders = @{}; attachedDocuments = @(); currentImagePaths = @()
+                hasCurrentImage = $false; multiImageOcr = $false; multiImageOcrMode = $false
+                internet = $true; agent = $false; office = $false; documentCreate = $false; effort = 'low'
+            }
+            $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
+                AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
+            $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+            $items = @(Receive-Job -Job $job -Wait)
+            Remove-Job -Job $job -Force
+            $err = @($items | Where-Object { $_.kind -eq 'error' })
+            if ($err.Count) { $turnErrors += $err.Count; $seen += ($step.label + ':' + [string]$err[0].text) }
+        }
+        if ($turnErrors -gt 0) {
+            Report 'ag_gecisi' $false ("$turnErrors hata -> " + ($seen -join ' | '))
+        } else {
+            Report 'ag_gecisi' $true 'Ag acik/kapali degisirken hicbir tur hata vermedi'
+        }
+    } catch {
+        Report 'ag_gecisi' $false $_.Exception.Message
+    } finally {
+        $env:HTTP_PROXY = $savedHttp; $env:HTTPS_PROXY = $savedHttps
     }
 }
 

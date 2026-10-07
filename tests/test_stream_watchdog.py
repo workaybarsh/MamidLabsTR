@@ -74,14 +74,19 @@ Invoke-ChatCompletion @{{ messages = @() }} $shared $false $turn | Out-Null
 
 
 class DropConnectionMidStreamHandler(BaseHTTPRequestHandler):
-    """Bir icerik parcasi gonderip baglantiyi [DONE]/finish_reason olmadan RST ile
-    kapatir. Yerel sunucu, arac calisirken (web aramasi, OCR, belge) bos kalan
-    keep-alive baglantisini boyle kapatabiliyor; istemci ayni baglantiyi tekrar
-    kullaninca akis ortasinda "Varolan bir baglanti ... zorla kapatildi"
-    (WSAECONNRESET) hatasi olusuyordu. Elinde yanit metni varken bu artik hata
-    sayilmamali; kullaniciya cevabin altinda '[Hata]' gosterilmemeli."""
+    """Bir icerik parcasi gonderip baglantiyi [DONE] olmadan RST ile kapatir.
+    Yerel sunucu, arac calisirken (web aramasi, OCR, belge) bos kalan keep-alive
+    baglantisini boyle kapatabiliyor; istemci ayni baglantiyi tekrar kullaninca
+    akis ortasinda "Varolan bir baglanti ... zorla kapatildi" (WSAECONNRESET)
+    hatasi olusuyordu. Elinde yanit metni varken bu artik hata sayilmamali;
+    kullaniciya cevabin altinda '[Hata]' gosterilmemeli.
+
+    `send_finish=True` ise once finish_reason parcasi gonderir (cevap TAMAMLANMIS
+    demektir), sonra RST ile kapatir. Kullanicinin bildirdigi tam senaryo budur:
+    cevap gelir, ardindan baglanti kopar ve hata cevabin ALTINDA belirir."""
 
     protocol_version = "HTTP/1.1"
+    send_finish = False
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -93,10 +98,16 @@ class DropConnectionMidStreamHandler(BaseHTTPRequestHandler):
             + json.dumps({"choices": [{"index": 0, "delta": {"content": "Merhaba"}}]}).encode()
             + b"\n\n"
         )
+        if self.send_finish:
+            self.wfile.write(
+                b"data: "
+                + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}).encode()
+                + b"\n\n"
+            )
         self.wfile.flush()
         # Icerik parcasi istemciye ulasip islensin diye kisa bir bekleme; ardindan
-        # [DONE]/finish_reason olmadan RST ile baglanti kopar (gercek senaryoda oldugu
-        # gibi: once tokenlar okunur, sonra baglanti duser).
+        # [DONE] olmadan RST ile baglanti kopar (gercek senaryoda oldugu gibi:
+        # once tokenlar okunur, sonra baglanti duser).
         time.sleep(1.0)
         # SO_LINGER(1,0) ile RST gonder: WSAECONNRESET'in gercekci taklidi.
         self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
@@ -110,15 +121,15 @@ class DropConnectionMidStreamHandler(BaseHTTPRequestHandler):
         pass
 
 
-def test_dropped_stream_with_received_text_is_not_reported_as_error(tmp_path):
+def _run_drop_scenario(tmp_path, handler_cls, name):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    server = ThreadingHTTPServer(("127.0.0.1", 0), DropConnectionMidStreamHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        script = tmp_path / "drop.ps1"
+        script = tmp_path / name
         script.write_text(
             f"""
 $job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }}
@@ -144,10 +155,32 @@ try {{
     finally:
         server.shutdown()
     assert result.returncode == 0, result.stderr or result.stdout
-    got = json.loads(result.stdout.strip().splitlines()[-1])
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def test_dropped_stream_with_received_text_is_not_reported_as_error(tmp_path):
+    got = _run_drop_scenario(tmp_path, DropConnectionMidStreamHandler, "drop.ps1")
     # Alinan metin korunur, akis tamamlanmis sayilir ve disari istisna sizmaz;
     # boylece arayuz cevabin altina '[Hata] ... zorla kapatildi' eklemez.
     assert got["content"] == "Merhaba"
     assert got["finish"] == "connection-closed"
     assert got["threw"] is False
+
+
+class FinishThenDropHandler(DropConnectionMidStreamHandler):
+    """Cevap finish_reason ile tamamlandiktan SONRA baglantiyi RST ile kapatir.
+    Kullanicinin bildirdigi tam durum: yanit gelir, hemen ardindan hata cevabin
+    altina eklenir. finish_reason zaten geldigi icin bu bir hata DEGILDIR."""
+
+    send_finish = True
+
+
+def test_dropped_stream_after_finish_reason_is_not_an_error(tmp_path):
+    got = _run_drop_scenario(tmp_path, FinishThenDropHandler, "finish-drop.ps1")
+    # finish_reason geldigi icin yanit TAMAMLANMIS sayilir; kopma hata gibi
+    # gosterilmemeli (aksi halde cevabin altinda '[Hata] ... zorla kapatildi' cikar).
+    assert got["content"] == "Merhaba"
+    assert got["finish"] == "stop"
+    assert got["threw"] is False
+
 
