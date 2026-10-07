@@ -13,7 +13,7 @@
       4. Modeller: secilen profilin dosyalari indirilir (-DownloadModels)
       5. Kendi modelleri / API tercihi settings\api.json dosyasina yazilir
       6. OCR (istege bagli)
-      7. Smoke testi: sohbet, belge, gorsel, fotograf duzenleme, medya sonrasi gecis
+      7. Smoke testi: sohbet, belge, cevrimdisi araclar, gorsel, fotograf duzenleme, medya sonrasi gecis
       8. Ozet: logs\kurulum-ozeti.txt (sihirbazin son sayfasinda gosterilir)
 
     Her adim bagimsiz raporlanir; bir adim basarisiz olursa sonrakiler anlamliysa
@@ -277,8 +277,8 @@ if (!$SmokeTest) {
     Add-Step 'Smoke testi' 'atlandı' 'profil dosyaları hazır değil' ([TimeSpan]::Zero)
 } else {
     [void](Invoke-Step 'Smoke testi' {
-        # Video birkac dakika surer; kurulum sonunda sohbet, belge, gorsel, duzenleme ve
-        # medya sonrasi model gecisi dogrulanir. Video: smoke-test.ps1 elle calistirilir.
+        # Video birkac dakika surer; kurulum sonunda sohbet, belge, cevrimdisi araclar, gorsel,
+        # duzenleme ve medya sonrasi model gecisi dogrulanir. Video: smoke-test.ps1 elle calistirilir.
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'scripts\smoke-test.ps1'),
                        '-Profile', $Profile, '-Root', $Root, '-SkipVideo', '-ReportPath', $smokeReport)
         if (!$Ocr) { $arguments += '-SkipOcr' }

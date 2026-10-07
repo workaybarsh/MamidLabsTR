@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Kurulum sonrasi uctan uca duman testi: sohbet, belge, gorsel, video.
+    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, OCR, gorsel, video.
 
 .DESCRIPTION
     install-mamidlabs.ps1 yalnizca altyapiyi hazirlar (binary'ler, ortamlar);
@@ -40,6 +40,8 @@ param(
     [switch]$SkipVideo,
     [switch]$SkipOcr,
     [switch]$SkipEdit,
+    # Cevrimdisi araclar adimini atlar (ag engeli uygulanmasi istenmiyorsa).
+    [switch]$SkipOffline,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
     [double]$MinSpeedRatio = 0.7,
     [string]$ReportPath
@@ -161,6 +163,37 @@ if ($SkipDocument) {
         Report 'belge' $false $_.Exception.Message
     } finally {
         Remove-Item -LiteralPath $docPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ------------------------------------------------------------- cevrimdisi
+# Internet cipi acikken ag kopmasi (hotspot, DNS zaman asimi): web araci istisna
+# atmadan gecerli bir hata JSON'u dondurmelidir. Bu senaryo, gercek makinede
+# tekrar tekrar gorulen "Varolan bir baglanti ... zorla kapatildi" hatasini
+# besliyordu; arac katmani artik cokmuyor. Ag erisimi kara delik proxy ile
+# kesilir (kullanici ayarini bozmamak icin gecici).
+Write-Section 'Cevrimdisi araclar'
+if ($SkipOffline) {
+    Write-Host '   [atla] -SkipOffline verildi'
+} else {
+    $python = Join-Path $Root 'venv\app\Scripts\python.exe'
+    try {
+        if (!(Test-Path -LiteralPath $python -PathType Leaf)) { throw "uygulama ortami yok: $python" }
+        $savedHttp = $env:HTTP_PROXY; $savedHttps = $env:HTTPS_PROXY
+        $env:HTTP_PROXY = 'http://127.0.0.1:9'; $env:HTTPS_PROXY = 'http://127.0.0.1:9'
+        try {
+            $payload = @{ action = 'search_web'; query = 'offline smoke test'; count = 2 } | ConvertTo-Json -Compress
+            $out = $payload | & $python (Join-Path $Root 'agent\qwen-agent-tools.py') 2>&1 | Out-String
+            $code = $LASTEXITCODE
+        } finally {
+            $env:HTTP_PROXY = $savedHttp; $env:HTTPS_PROXY = $savedHttps
+        }
+        if ($code -ne 0) { throw "Arac coktu (cikis kodu $code): $($out.Substring(0, [Math]::Min(200, $out.Length)))" }
+        $parsed = $out | ConvertFrom-Json
+        if (!$parsed.error) { throw "Ag yokken hata JSON'u dondurmedi: $($out.Substring(0, [Math]::Min(200, $out.Length)))" }
+        Report 'cevrimdisi' $true 'Ag yokken web araci cokmeden gecerli hata JSON dondurdu'
+    } catch {
+        Report 'cevrimdisi' $false $_.Exception.Message
     }
 }
 

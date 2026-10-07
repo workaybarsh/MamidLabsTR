@@ -298,7 +298,8 @@ python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/confte
   Birçok test PowerShell fonksiyonlarını AST ile çıkarıp gerçek pwsh'ta çalıştırır. PowerShell 7
   yoksa bu testler atlanır; atlanan test başarı sayılmaz.
 - `test_uninstall.py` sahte bir kökte gerçekten siler; Windows PowerShell 5.1 kullanır.
-- **Smoke testi adımları:** `sohbet`, `belge`, `ocr`, `gorsel`, `duzenleme`,
+- **Smoke testi adımları:** `sohbet`, `belge`, `cevrimdisi` (ağ yokken web aracı çökmeden hata
+  JSON'u döndürür), `ocr`, `gorsel`, `duzenleme`,
   `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
@@ -414,6 +415,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-07 | Smoke testine `cevrimdisi` adımı eklendi: kurulum sonrası doğrulamada ağ engellenip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır (`-SkipOffline` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, tests/test_offline_mode.py |
 | 2026-10-07 | Çevrimdışı davranış testleri eklendi: web araması, sayfa okuma ve referans görsel araçları ağ yokken istisna atmadan temiz hata JSON'u döndürür; gerçek alt süreç kara delik proxy ile çökmeden hata döndürür. | tests/test_offline_mode.py, docs/teknik-notlar.md |
 | 2026-10-07 | Yerel akışta bayat keep-alive bağlantısı kaynaklı aralıklı "zorla kapatıldı" (WSAECONNRESET) hatası düzeltildi; yerel istekler her tur taze bağlantı kurar, yanıt metni varken kapanma hata sayılmaz. | agent/qwen-inference.ps1, tests/test_stream_watchdog.py, tests/test_qwen_contracts.py, docs/teknik-notlar.md |
 | 2026-09-27 | 1.0.0 ilk sürüm. | tümü |

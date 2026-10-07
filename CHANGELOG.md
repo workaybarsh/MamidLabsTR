@@ -3,6 +3,15 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [Unreleased]
+
+### Eklenen
+- Çevrimdışı çalışma testleri: internet çipi açıkken ağ koparsa web araması, sayfa okuma ve
+  referans görsel araçları istisna atmaz; modele geçerli bir hata JSON'u döndürür (bkz.
+  `tests/test_offline_mode.py`).
+- Smoke testine **`cevrimdisi`** adımı eklendi: kurulum sonrası doğrulamada ağ erişimi geçici
+  olarak kesilip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır.
+
 ## [1.0.1] - 2026-10-07
 
 ### Düzeltmeler
