@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, OCR, gorsel, video.
+    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, gecmis devam, OCR, gorsel, video.
 
 .DESCRIPTION
     install-mamidlabs.ps1 yalnizca altyapiyi hazirlar (binary'ler, ortamlar);
@@ -44,6 +44,8 @@ param(
     [switch]$SkipOffline,
     # Ag gecisi (online<->offline) adimini atlar.
     [switch]$SkipNetworkSwitch,
+    # Gecmis sohbetten devam (kapat -> ac -> yukle -> devam) adimini atlar.
+    [switch]$SkipHistoryResume,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
     [double]$MinSpeedRatio = 0.7,
     [string]$ReportPath
@@ -248,6 +250,71 @@ if ($SkipNetworkSwitch) {
         Report 'ag_gecisi' $false $_.Exception.Message
     } finally {
         $env:HTTP_PROXY = $savedHttp; $env:HTTPS_PROXY = $savedHttps
+    }
+}
+
+# ------------------------------------------- gecmis sohbetten devam (kapat -> ac)
+# Kullanici senaryosu: konusma ortasinda programi kapat, yeniden ac, gecmis
+# sohbetlerden yukle ve devam et. Sohbet, modele donuk mesaj dizisi olarak DPAPI
+# ile sifreli saklanir (Save-Chat); yeniden acilinca ayni sekilde yuklenir
+# (Load-Chat) ve devam turu bu gecmisle gonderilir. Bu adim, tam serilestirme
+# gidis-donusunu + devam turunu calistirir; hicbir turda hata olmamali.
+Write-Section 'Gecmis sohbetten devam (kapat -> ac)'
+if ($SkipHistoryResume) {
+    Write-Host '   [atla] -SkipHistoryResume verildi'
+} elseif (!(Wait-ForHealth 5)) {
+    Skip 'gecmis_devam' 'dil modeli hazir degil (sohbet adimi calismamis olabilir)'
+} else {
+    try {
+        Add-Type -AssemblyName System.Security.Cryptography.ProtectedData -ErrorAction SilentlyContinue
+        $prefix = 'MAMIDLABS-CHAT-DPAPI-V2'
+        $chatFile = Join-Path $env:TEMP 'mamidlabs-smoke-reload.json'
+        $turns = @(
+            @{ role = 'user'; content = 'Einstein bilmecesi nedir? Kisa anlat.' }
+        )
+        # 1) Ilk tur: arac cagrisini da tetikleyebilecek gercek bir istek.
+        $jobData = @{
+            root = $Root; messages = @($turns)
+            provider = 'local'; model = "smoke-$Profile"; profile = $Profile
+            maxTokens = 400; contextLimit = 32768; boundFolder = $null
+            consultProviders = @{}; attachedDocuments = @(); currentImagePaths = @()
+            hasCurrentImage = $false; multiImageOcr = $false; multiImageOcrMode = $false
+            internet = $true; agent = $false; office = $false; documentCreate = $false; effort = 'low'
+        }
+        $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
+            AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
+        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+        $items = @(Receive-Job -Job $job -Wait); Remove-Job -Job $job -Force
+        $err1 = @($items | Where-Object { $_.kind -eq 'error' })
+        if ($err1.Count) { throw "Ilk tur hata verdi: $($err1[0].text)" }
+        $done = @($items | Where-Object { $_.kind -eq 'done' }) | Select-Object -Last 1
+        if (!$done) { throw 'Ilk tur done olayi uretmedi.' }
+        # Kalici mesaj dizisi: kullanici mesaji + done'in tasidigi arac degisimi.
+        $chatMessages = @($turns) + @($done.data)
+        # 2) Save-Chat gibi kaydet (DPAPI).
+        $payload = @{ id = 'smoketest000000000000000000000000'; title = 'smoke-reload'; messages = @($chatMessages); transcript = @() }
+        $json = $payload | ConvertTo-Json -Depth 30
+        $cipher = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($json), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        [IO.File]::WriteAllText($chatFile, ($prefix + "`n" + [Convert]::ToBase64String($cipher)), [Text.UTF8Encoding]::new($false))
+        # 3) Load-Chat gibi yukle.
+        $raw = Get-Content -LiteralPath $chatFile -Raw -Encoding UTF8
+        $plain = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect(
+            [Convert]::FromBase64String($raw.Substring($prefix.Length + 1).Trim()), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))
+        $reloaded = @(($plain | ConvertFrom-Json).messages)
+        if ($reloaded.Count -lt 2) { throw "Yuklenen gecmis eksik ($($reloaded.Count) mesaj)." }
+        # 4) Devam turu: yuklenen gecmise yeni kullanici mesaji ekle.
+        $jobData2 = $jobData.Clone(); $jobData2.messages = @($reloaded) + @(@{ role = 'user'; content = 'Peki bunu bir cumlede ozetle.' })
+        $shared2 = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
+            AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
+        $job2 = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData2, $shared2
+        $items2 = @(Receive-Job -Job $job2 -Wait); Remove-Job -Job $job2 -Force
+        $err2 = @($items2 | Where-Object { $_.kind -eq 'error' })
+        if ($err2.Count) { throw "Devam turu hata verdi: $($err2[0].text)" }
+        Report 'gecmis_devam' $true ("Kaydedildi, yuklendi ($($reloaded.Count) mesaj) ve devam edildi; hata yok")
+    } catch {
+        Report 'gecmis_devam' $false $_.Exception.Message
+    } finally {
+        Remove-Item -LiteralPath (Join-Path $env:TEMP 'mamidlabs-smoke-reload.json') -Force -ErrorAction SilentlyContinue
     }
 }
 

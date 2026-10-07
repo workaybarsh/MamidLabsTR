@@ -13,6 +13,8 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   olarak kesilip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır.
 - Smoke testine **`ag_gecisi`** adımı eklendi: ardışık turlarda ağ açık/kapalı değişirken
   (internet gidip gelirken) yerel işçinin hiçbir turda hata üretmediği doğrulanır.
+- Smoke testine **`gecmis_devam`** adımı eklendi: konuşma ortasında program kapatılıp yeniden
+  açıldığında sohbetin kaydedilip yüklenebildiği ve devam ettirilebildiği doğrulanır.
 
 ### Düzeltmeler
 - Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar

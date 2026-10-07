@@ -299,7 +299,8 @@ python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/confte
   yoksa bu testler atlanır; atlanan test başarı sayılmaz.
 - `test_uninstall.py` sahte bir kökte gerçekten siler; Windows PowerShell 5.1 kullanır.
 - **Smoke testi adımları:** `sohbet`, `belge`, `cevrimdisi` (ağ yokken web aracı çökmeden hata
-  JSON'u döndürür), `ag_gecisi` (ağ açık/kapalı değişirken hiçbir tur hata vermez), `ocr`, `gorsel`,
+  JSON'u döndürür), `ag_gecisi` (ağ açık/kapalı değişirken hiçbir tur hata vermez), `gecmis_devam`
+  (sohbeti kaydet → yeniden yükle → devam et; hata yok), `ocr`, `gorsel`,
   `duzenleme`,
   `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
@@ -414,6 +415,9 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 
 Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
+| Tarih | Değişiklik | Dosyalar |
+|---|---|---|
+| 2026-10-07 | Smoke testine `gecmis_devam` adımı eklendi: sohbeti DPAPI ile kaydet → yeniden yükle → devam et; hiçbir tur hata vermez (`-SkipHistoryResume` ile atlanır). `test_chat_storage.py` kaydet/yükle serileştirmesini doğrular. | scripts/smoke-test.ps1, tests/test_chat_storage.py |
 | 2026-10-07 | Smoke testine `ag_gecisi` adımı eklendi: ardisik turlarda ag açık/kapalı değişirken yerel işçi hiçbir turda hata üretmez (`-SkipNetworkSwitch` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, agent/qwen-inference.ps1 |
 | 2026-10-07 | Yerel akışta finish_reason sonrası/kopma toleransı genişletildi: kullanılabilir sonuç (finish_reason veya yanıt metni veya araç çağrısı) varken bağlantı kopması hata sayılmaz; cevabın altına "[Hata]" eklenmez. | agent/qwen-inference.ps1, tests/test_stream_watchdog.py |
 | 2026-10-07 | Smoke testine `cevrimdisi` adımı eklendi: kurulum sonrası doğrulamada ağ engellenip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır (`-SkipOffline` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, tests/test_offline_mode.py |
