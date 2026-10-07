@@ -3,7 +3,7 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
-## [Unreleased]
+## [1.0.1] - 2026-10-07
 
 ### Düzeltmeler
 - Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar
@@ -51,4 +51,5 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Windows DPAPI ile şifrelenir.
 - Web araçları yalnızca genel HTTP(S) adreslerine erişir; DNS rebinding koruması vardır.
 
+[1.0.1]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.1
 [1.0.0]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.0
