@@ -3,6 +3,18 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [Unreleased]
+
+### Düzeltmeler
+- Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar
+  tarafından zorla kapatıldı."** (WSAECONNRESET) hatası giderildi. Sunucu, ajan aracı çalışırken
+  (web araması, OCR, belge okuma) boş bekleyen keep-alive bağlantısını kapatabiliyordu; istemci
+  aynı bayat bağlantıyı yeniden kullanınca akış ortasında kopuyordu. Artık yerel istekler her
+  turda taze bağlantı kurar (`Connection: close`; loopback'te maliyeti yoktur, sunucudaki KV
+  önbelleği ve ön işleme tasarrufu korunur). Ayrıca yanıt metni zaten alınmışsa kapanma hata
+  sayılmaz; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
+  (`agent/qwen-inference.ps1`)
+
 ## [1.0.0] - 2026-09-27
 
 İlk kararlı sürüm.

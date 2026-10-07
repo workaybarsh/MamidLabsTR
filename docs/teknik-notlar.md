@@ -266,6 +266,14 @@ bağlantı hatası bir kez yeniden denenir; kısmi yanıt başladıktan sonra is
 tekrarlanmaz. Akış kesilirse alınan metin korunur ve gerçek hata nedeni gösterilir.
 İptal düğmesi bekleyen ağ okumasını da keser.
 
+Yerel isteklerde bağlantı her turda yeniden kurulur (`Connection: close`). Sunucu, ajan aracı
+çalışırken (web araması, OCR, belge okuma) boş bekleyen keep-alive bağlantısını kapatabiliyor;
+istemci bu bayat bağlantıyı yeniden kullanınca akış ortasında "Varolan bir bağlantı uzaktaki bir
+ana bilgisayar tarafından zorla kapatıldı." (WSAECONNRESET) hatası oluşuyordu. Loopback'te taze
+bağlantı kurmanın maliyeti yok denecek kadar azdır ve sunucudaki KV önbelleği (dolayısıyla ön
+işleme tasarrufu) bundan etkilenmez. Yanıt metni zaten alınmışken bağlantı kapanırsa, bu durum
+hata olarak gösterilmez; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
+
 ## Görsel okuma ve OCR
 
 Görsel eklendiğinde kullanıcı metni deterministik olarak kontrol edilir. "Görselde ne var?"

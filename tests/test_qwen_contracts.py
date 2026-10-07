@@ -93,6 +93,17 @@ def test_api_video_tools_do_not_advertise_unsupported_video_continuation():
     assert "mode=video kullanma." in inference
 
 
+def test_stream_watchdog_uses_fresh_connection_and_survives_dropped_stream():
+    """Yerel sunucu, arac calisirken bos kalan keep-alive baglantisini kapatabiliyor;
+    bayat baglanti tekrar kullanilinca akis ortasinda 'Varolan bir baglanti ... zorla
+    kapatildi' (WSAECONNRESET) olusuyordu. Duzeltme: yerel istekler baglantiyi kapatir
+    (her tur taze baglanti) ve yanit metni varken kopma hata sayilmaz."""
+    inference = read_text("agent/qwen-inference.ps1")
+
+    assert "if ($provider -eq 'local') { $request.Headers.ConnectionClose = $true }" in inference
+    assert "$result.finishReason = 'connection-closed'" in inference
+
+
 def test_ocr_model_swap_keeps_json_response_separate_from_status_events():
     inference = read_text("agent/qwen-inference.ps1")
     start = inference.index("function Invoke-ImageOcrWithModelSwap")

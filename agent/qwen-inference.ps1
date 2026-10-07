@@ -781,6 +781,13 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
                     $request.Headers.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', [string]$JobData.apiKey)
                 }
             }
+            # Yerel sunucu, arac calisirken (web aramasi, OCR, belge) bos kalan keep-alive
+            # baglantisini kapatabiliyor; ayni HttpClient o olu baglantiyi tekrar kullaninca
+            # akis SRASINDA "Varolan bir baglanti ... zorla kapatildi" (WSAECONNRESET) hatasi
+            # cikiyordu (gercek Windows'ta tekrar tekrar goruldu). Yerel isteklerde baglantiyi
+            # kapatip her turda taze baglanti kuruyoruz; loopback'te maliyeti yok denecek kadar
+            # azdir ve sunucudaki KV onbellegi (dolayisiyla on isleme tasarrufu) etkilenmez.
+            if ($provider -eq 'local') { $request.Headers.ConnectionClose = $true }
             try {
                 $response = $script:http.SendAsync($request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cts.Token).GetAwaiter().GetResult()
             } catch {
@@ -890,7 +897,21 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
         }
     } catch {
         if ($cts.IsCancellationRequested) { throw [OperationCanceledException]::new('Yerel model istegi iptal edildi veya zaman asimina ugradi.') }
-        throw
+        $cause = $_.Exception.GetBaseException()
+        $isReset = $cause -is [IO.IOException] -or $cause -is [Net.Sockets.SocketException] -or
+            $cause -is [Net.Http.HttpRequestException]
+        # Yerel sunucu yaniti uretip slotu serbest biraktiktan sonra baglanti kopabilir
+        # ([DONE]/finish parcasi gelmeden). Arac cagrisi yokken elimizde yanit metni varsa
+        # bu bir HATA degildir; arayuzde cevabin altina yanlislikla "[Hata] ... zorla
+        # kapatildi" eklenmemeli (gercek Windows'ta tam da boyle goruldu: cevap geliyor,
+        # altinda hata mesaji cikiyordu). Yanit metni zaten kullaniciya ulastigi icin
+        # bunu tamamlanmis say; gercek (iceriksiz) kopmalar yine hata olarak bildirilir.
+        if ($provider -eq 'local' -and $isReset -and !$shared.Cancel -and
+            $result.toolParts.Count -eq 0 -and ![string]::IsNullOrWhiteSpace($result.content) -and !$result.finishReason) {
+            $result.finishReason = 'connection-closed'
+        } else {
+            throw
+        }
     } finally {
         Send-StreamMetrics $result $false
         $shared.Cts = $null
