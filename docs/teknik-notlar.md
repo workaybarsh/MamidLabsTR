@@ -274,6 +274,10 @@ bağlantı kurmanın maliyeti yok denecek kadar azdır ve sunucudaki KV önbelle
 işleme tasarrufu) bundan etkilenmez. Yanıt metni zaten alınmışken bağlantı kapanırsa, bu durum
 hata olarak gösterilmez; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
 
+İnternet çipi açıkken ağ koparsa (hotspot, DNS zaman aşımı) web araması, sayfa okuma ve referans
+görsel araçları istisna atmaz; modele geçerli bir hata JSON'u döndürür, böylece ajan döngüsü
+kırılmadan yanıtını tamamlar. Bu davranış `tests/test_offline_mode.py` ile doğrulanır.
+
 ## Görsel okuma ve OCR
 
 Görsel eklendiğinde kullanıcı metni deterministik olarak kontrol edilir. "Görselde ne var?"

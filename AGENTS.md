@@ -414,5 +414,6 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-07 | Çevrimdışı davranış testleri eklendi: web araması, sayfa okuma ve referans görsel araçları ağ yokken istisna atmadan temiz hata JSON'u döndürür; gerçek alt süreç kara delik proxy ile çökmeden hata döndürür. | tests/test_offline_mode.py, docs/teknik-notlar.md |
 | 2026-10-07 | Yerel akışta bayat keep-alive bağlantısı kaynaklı aralıklı "zorla kapatıldı" (WSAECONNRESET) hatası düzeltildi; yerel istekler her tur taze bağlantı kurar, yanıt metni varken kapanma hata sayılmaz. | agent/qwen-inference.ps1, tests/test_stream_watchdog.py, tests/test_qwen_contracts.py, docs/teknik-notlar.md |
 | 2026-09-27 | 1.0.0 ilk sürüm. | tümü |
