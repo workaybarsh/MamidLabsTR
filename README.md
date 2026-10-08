@@ -14,13 +14,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/workaybarsh/MamidLabsTR/releases/latest"><img src="https://img.shields.io/github/v/release/workaybarsh/MamidLabsTR?label=s%C3%BCr%C3%BCm" alt="Son sürüm"></a>
-  <a href="https://github.com/workaybarsh/MamidLabsTR/actions/workflows/testler.yml"><img src="https://github.com/workaybarsh/MamidLabsTR/actions/workflows/testler.yml/badge.svg" alt="Testler"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6" alt="Platform: Windows 10 ve 11">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-Proprietary-red" alt="Lisans: Tescilli"></a>
-</p>
-
-<p align="center">
   <img src="docs/media/ekran-arayuz.png" alt="MamidLabs arayüzünde üretilmiş suluboya İstanbul görseli" width="760">
 </p>
 
