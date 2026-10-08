@@ -278,7 +278,8 @@ if (!$SmokeTest) {
 } else {
     [void](Invoke-Step 'Smoke testi' {
         # Video birkac dakika surer; kurulum sonunda sohbet, belge, cevrimdisi araclar, ag gecisleri,
-        # gorsel, duzenleme ve medya sonrasi model gecisi dogrulanir. Video: smoke-test.ps1 elle calistirilir.
+        # gecmis devam, MTP (speculative decoding), gorsel, duzenleme ve medya sonrasi model gecisi
+        # dogrulanir. Video: smoke-test.ps1 elle calistirilir.
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'scripts\smoke-test.ps1'),
                        '-Profile', $Profile, '-Root', $Root, '-SkipVideo', '-ReportPath', $smokeReport)
         if (!$Ocr) { $arguments += '-SkipOcr' }

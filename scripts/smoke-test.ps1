@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, gecmis devam, OCR, gorsel, video.
+    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, gecmis devam, MTP, OCR, gorsel, video.
 
 .DESCRIPTION
     install-mamidlabs.ps1 yalnizca altyapiyi hazirlar (binary'ler, ortamlar);
@@ -46,6 +46,8 @@ param(
     [switch]$SkipNetworkSwitch,
     # Gecmis sohbetten devam (kapat -> ac -> yukle -> devam) adimini atlar.
     [switch]$SkipHistoryResume,
+    # MTP (speculative decoding) dogrulama adimini atlar.
+    [switch]$SkipMtp,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
     [double]$MinSpeedRatio = 0.7,
     [string]$ReportPath
@@ -94,6 +96,21 @@ function Get-FreeVramMiB {
     try { return [int](((& $smi --query-gpu=memory.free --format=csv,noheader,nounits) | Select-Object -First 1) -replace '\D', '') } catch { return $null }
 }
 
+# GGUF basliginda MTP/nextn blogu var mi? (bkz. scripts\manage-qwen.ps1 Test-GgufHasMtp
+# ve agent\mtp_inject.py). MTP dogrulama adimi bunu kullanir.
+function Test-MtpInGguf([string]$Path) {
+    try {
+        $fs = [IO.File]::OpenRead($Path)
+        try {
+            $buffer = [byte[]]::new(16777216)
+            $read = $fs.Read($buffer, 0, $buffer.Length)
+        }
+        finally { $fs.Dispose() }
+        return ([Text.Encoding]::ASCII.GetString($buffer, 0, $read)).Contains('nextn')
+    }
+    catch { return $false }
+}
+
 function Test-ComfyRunning {
     return [bool](Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' } | Select-Object -First 1)
@@ -140,6 +157,58 @@ if ($SkipChat) {
         Report 'sohbet' $true ("$($probe.tokens) token, $($probe.seconds) sn, $($probe.tps) tok/s, yanit: " + $probe.content.Substring(0, [Math]::Min(60, $probe.content.Length)))
     } catch {
         Report 'sohbet' $false $_.Exception.Message
+    }
+}
+
+# ----------------------------------------------------------------------- MTP
+# MTP (speculative decoding) gercekten etkin ve islevsel mi? Sunucu --spec-type
+# draft-mtp ile baslatildiysa /completion yanitinin timings'i draft_n ve
+# draft_n_accepted tasir; bunlar draft tokenlarin uretildigini ve kabul edildigini
+# kanitlar. Kabul 0 ise baslik islevsizdir (bkz. agent/mtp_inject.py norm +1 notu).
+Write-Section 'MTP (speculative decoding)'
+if ($SkipMtp) {
+    Write-Host '   [atla] -SkipMtp verildi'
+} elseif (!(Wait-ForHealth 5)) {
+    Skip 'mtp' 'dil modeli hazir degil (sohbet adimi calismamis olabilir)'
+} else {
+    try {
+        $settingsPath = Join-Path $Root 'settings\api.json'
+        $mtpOn = $true
+        if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
+            $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $settings.mtp) { $mtpOn = [bool]$settings.mtp }
+        }
+        if (!$mtpOn) {
+            Skip 'mtp' 'settings/api.json -> mtp=false (kullanici kapatti)'
+        } else {
+            $props = Invoke-RestMethod 'http://127.0.0.1:8080/props' -TimeoutSec 10
+            $modelPath = [string]$props.model_path
+            if (!$modelPath -or !(Test-Path -LiteralPath $modelPath -PathType Leaf)) {
+                throw "Model yolu okunamadi: $modelPath"
+            }
+            if (!(Test-MtpInGguf $modelPath)) {
+                Skip 'mtp' 'model GGUF unda MTP/nextn katmani yok (bu profilde desteklenmiyor)'
+            } else {
+                $body = @{
+                    prompt = "Write a numbered list from 1 to 30, one item per line.`n1."
+                    n_predict = 128; temperature = 0; seed = 1234; cache_prompt = $false; stream = $false
+                } | ConvertTo-Json
+                $resp = Invoke-RestMethod 'http://127.0.0.1:8080/completion' -Method Post `
+                    -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 180
+                $draftN = [int]$resp.timings.draft_n
+                $acc = [int]$resp.timings.draft_n_accepted
+                if ($draftN -le 0) {
+                    Report 'mtp' $false 'MTP etkin degil: hic draft token uretilmedi (--spec-type draft-mtp verilmemis olabilir)'
+                } elseif ($acc -le 0) {
+                    Report 'mtp' $false "MTP etkin ama kabul 0/$draftN (draft basligi islevsiz olabilir)"
+                } else {
+                    $rate = [math]::Round($acc / $draftN, 3)
+                    Report 'mtp' $true "draft-mtp etkin: kabul $acc/$draftN (oran $rate)"
+                }
+            }
+        }
+    } catch {
+        Report 'mtp' $false $_.Exception.Message
     }
 }
 

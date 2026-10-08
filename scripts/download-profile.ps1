@@ -35,6 +35,21 @@ foreach ($required in @($catalogPath, $python, $hub)) {
     if (!(Test-Path -LiteralPath $required -PathType Leaf)) { throw "Bulunamadi: $required. Once install-mamidlabs.ps1 calistir." }
 }
 
+# GGUF basliginda MTP/nextn blogu var mi? Var olan (MTP'siz) modele yeniden indirmeden
+# MTP eklenmesi gerektigini anlamak icin kullanilir (bkz. agent/mtp_inject.py).
+function Test-GgufHasNextn([string]$Path) {
+    try {
+        $fs = [IO.File]::OpenRead($Path)
+        try {
+            $buffer = [byte[]]::new(16777216)
+            $read = $fs.Read($buffer, 0, $buffer.Length)
+        }
+        finally { $fs.Dispose() }
+        return ([Text.Encoding]::ASCII.GetString($buffer, 0, $read)).Contains('nextn')
+    }
+    catch { return $false }
+}
+
 $entry = @((Get-Content -LiteralPath $catalogPath -Raw -Encoding UTF8 | ConvertFrom-Json).profiles | Where-Object { $_.id -eq $Profile })[0]
 if (!$entry) { throw "Katalogda profil yok: $Profile" }
 
@@ -42,7 +57,10 @@ $files = [Collections.Generic.List[object]]::new()
 $manual = [Collections.Generic.List[string]]::new()
 foreach ($file in @($entry.files)) {
     $target = Join-Path $Root ([string]$file.target)
-    if (Test-Path -LiteralPath $target -PathType Leaf) { continue }
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        # MTP yapilandirmasi olan ama basligi eksik bir dosya yine islenir (yeniden indirmeden eklenir).
+        if (!($file.mtp -and !(Test-GgufHasNextn $target))) { continue }
+    }
     if (![string]$file.repo) {
         $hint = if ([string]$file.source) { " (kaynak: $($file.source))" } else { '' }
         $manual.Add("$($file.label) -> $($file.target)$hint")

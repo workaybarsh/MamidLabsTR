@@ -47,6 +47,11 @@ def fetch(item, token, index, total):
                 f'{label}: diskteki dosya boyutu beklenenle uyuşmuyor '
                 f'({target.stat().st_size} != {expected_bytes} bayt). Yarım/bozuk indirme olabilir; '
                 'dosyayı silip tekrar indir.')
+        if mtp_cfg:
+            # Var olan (MTP'siz) modeli yeniden indirmeden basliga MTP ekle.
+            ensure_mtp(str(target), mtp_cfg, token, lambda text: emit('status', f'{label}: {text}'))
+            emit('artifact', str(target))
+            return
         emit('status', f'[{index}/{total}] {label} zaten var, atlandı.')
         emit('artifact', str(target))
         return

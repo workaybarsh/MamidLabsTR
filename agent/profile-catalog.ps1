@@ -36,6 +36,21 @@ function Format-ByteSize([long]$bytes) {
     return ('{0:N0} MB' -f ($bytes / 1048576))
 }
 
+# GGUF basliginda MTP/nextn blogu var mi? Var olan (MTP'siz) modele yeniden indirmeden
+# MTP eklenmesi gerektigini anlamak icin kullanilir (bkz. agent/mtp_inject.py).
+function Test-GgufHasNextn([string]$Path) {
+    try {
+        $fs = [IO.File]::OpenRead($Path)
+        try {
+            $buffer = [byte[]]::new(16777216)
+            $read = $fs.Read($buffer, 0, $buffer.Length)
+        }
+        finally { $fs.Dispose() }
+        return ([Text.Encoding]::ASCII.GetString($buffer, 0, $read)).Contains('nextn')
+    }
+    catch { return $false }
+}
+
 # Bir profilin dosyalarını diskte arar; eksikleri indirilebilir ve elle kurulacak
 # diye ayırır. Boyut karşılaştırması yapılmaz: yarım kalmış bir indirme varsa
 # Hugging Face istemcisi kaldığı yerden devam eder.
@@ -45,7 +60,11 @@ function Get-ProfileState([string]$id) {
     if (!$entry) { return $state }
     foreach ($file in @($entry.files)) {
         $full = Join-Path $root ([string]$file.target)
-        if (Test-Path -LiteralPath $full -PathType Leaf) { $state.present += $file }
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+            # Var olan ama MTP basligi eksik bir model yeniden islenmeli (yeniden indirmeden eklenir).
+            if ($file.mtp -and !(Test-GgufHasNextn $full)) { $state.missingDownloadable += $file }
+            else { $state.present += $file }
+        }
         elseif ([string]$file.repo) { $state.missingDownloadable += $file }
         else { $state.missingManual += $file }
     }

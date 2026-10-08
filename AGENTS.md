@@ -311,8 +311,9 @@ python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/confte
 - `test_uninstall.py` sahte bir kökte gerçekten siler; Windows PowerShell 5.1 kullanır.
 - **Smoke testi adımları:** `sohbet`, `belge`, `cevrimdisi` (ağ yokken web aracı çökmeden hata
   JSON'u döndürür), `ag_gecisi` (ağ açık/kapalı değişirken hiçbir tur hata vermez), `gecmis_devam`
-  (sohbeti kaydet → yeniden yükle → devam et; hata yok), `ocr`, `gorsel`,
-  `duzenleme`,
+  (sohbeti kaydet → yeniden yükle → devam et; hata yok), `mtp` (sunucu `draft-mtp` ile başlatıldıysa
+  `/completion` yanıtının `timings.draft_n_accepted` değeri >0 olmalı; 0 ise başlık işlevsizdir;
+  `-SkipMtp` ile atlanır), `ocr`, `gorsel`, `duzenleme`,
   `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
