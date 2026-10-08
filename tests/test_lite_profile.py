@@ -193,6 +193,21 @@ def test_thinking_is_never_switched_off_in_requests():
     assert "$body.reasoning_effort = 'low'" in inference
 
 
+def test_lite_system_prompt_encourages_deep_reasoning():
+    """LITE icin sistem istemine derin/adim adim akil yurutme talimati eklenir; bu
+    satir yalnizca lite profilinde bulunur (onek profile gore sabit oldugu icin KV
+    onbellegi bozulmaz) ve dusunme butcesi icinde daha dogru sonuca yonlendirir."""
+    desktop = read_text("qwen-desktop.ps1")
+
+    assert "Derin ve dikkatli dusun" in desktop
+    # Yalnizca LITE profilinde eklenir.
+    idx = desktop.index("Derin ve dikkatli dusun")
+    block = desktop[max(0, idx - 700):idx]
+    assert "$script:apiSettings.localProfile -eq 'lite'" in block
+    # Dusunme ozelligini kapatmaz; yalnizca yonlendirir.
+    assert "enable_thinking" not in desktop
+
+
 # ------------------------------------------------------------------ medya yolu
 
 def test_lite_image_uses_krea2_gguf_via_shared_workflow():

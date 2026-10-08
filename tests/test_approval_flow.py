@@ -143,9 +143,11 @@ def test_denied_note_is_shown_but_not_sent_back_to_the_model():
 
 def test_denial_note_is_added_to_the_request_copy_only():
     """Red sonrasi model cagrisina acik bir not eklenir; kalici gecmise ($messages) yazilmaz,
-    boylece KV onbellek oneki bozulmaz."""
+    boylece KV onbellek oneki bozulmaz. Not, web-hatasi notuyla birlesebildigi icin
+    $systemNotes'a eklenir ve istek-kopyasina ([Sistem notu]) yazilir."""
     inference = read_text("agent/qwen-inference.ps1")
-    block = inference.split("if ($script:deniedTools -and $script:deniedTools.Count -gt 0) {", 1)[1].split("\n        }\n", 1)[0]
-    assert "$body.messages = @($sendMessages) +" in block
-    assert "REDDETTI" in block and "nedenini tahmin etme" in block
-    assert "$messages.Add" not in block
+    # Denial notu istek-kopyasina yazilan $systemNotes listesine eklenir.
+    assert "$systemNotes += (" in inference
+    assert "REDDETTI" in inference and "nedenini tahmin etme" in inference
+    assert "$body.messages = @($sendMessages) + @(@{ role = 'user'; content = ('[Sistem notu] '" in inference
+    assert "foreach ($m in @($systemNotes)) { [void]$messages.Add($m) }" not in inference

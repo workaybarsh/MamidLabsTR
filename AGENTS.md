@@ -397,6 +397,13 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
     güncelle" kurulum sihirbazını başlattıktan sonra ana pencereyi kapatır (`$mainForm.Close()` →
     `Shutdown-All`). Profiller penceresindeki kapanışlar `GetNewClosure()` kullandığı için ana form
     fonksiyon içinde yerel bir değişkene (`$mainForm = $form`) alınarak yakalanır.
+22. **`Start-ThreadJob` sınırından boş dizi `$null` olarak döner.** İşçi, araç çağrısı yokken
+    `done` olayının `data` alanına boş dizi (`@()`) koyar; `Receive-Job` bunu `$null` yapar.
+    `@($done.data)` bunu tek elemanlı `@($null)`'a çevirir ve günlük mesaj dizisine boş bir girdi
+    ekler; sunucu da `400 All non-assistant messages must contain 'content'` ile reddeder. Bu
+    yüzden işçi çıktısını tüketen her yerde önce `if ($done.data)` / `if ($jobEvent.data)`
+    koruması kullanılır (arayüzdeki `Render-JobEvent` ve smoke testindeki `gecmis_devam` böyle
+    yapar). Boş diziyi koşulsuz `+` ile birleştirme.
 
 ## 15. Değişiklik yaparken kontrol listesi
 
@@ -417,7 +424,8 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-07 | Smoke testine `gecmis_devam` adımı eklendi: sohbeti DPAPI ile kaydet → yeniden yükle → devam et; hiçbir tur hata vermez (`-SkipHistoryResume` ile atlanır). `test_chat_storage.py` kaydet/yükle serileştirmesini doğrular. | scripts/smoke-test.ps1, tests/test_chat_storage.py |
+| 2026-10-07 | `run_command` artık yalnızca kullanıcı açıkça komut/terminal istediğinde modele sunulur (`Test-CommandIntent`); web hatasında model komutla "etrafından dolanmaya" kalkışamaz. LITE için derin akıl yürütme talimatı eklendi; web hatasından sonra web araçları sunulmaz + ağ-probe komutları reddedilir. | agent/qwen-inference.ps1, qwen-desktop.ps1, tests/test_qwen_contracts.py, tests/test_lite_profile.py, tests/test_approval_flow.py |
+| 2026-10-07 | Smoke testine `gecmis_devam` adımı eklendi: sohbeti DPAPI ile kaydet → yeniden yükle → devam et; hiçbir tur hata vermez (`-SkipHistoryResume` ile atlanır). Adım, araçsız turda `$done.data`'nın `$null` dönmesine karşı `if ($done.data)` ile korunur. `test_chat_storage.py` kaydet/yükle serileştirmesini doğrular. | scripts/smoke-test.ps1, tests/test_chat_storage.py, tests/test_smoke_test_script.py |
 | 2026-10-07 | Smoke testine `ag_gecisi` adımı eklendi: ardisik turlarda ag açık/kapalı değişirken yerel işçi hiçbir turda hata üretmez (`-SkipNetworkSwitch` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, agent/qwen-inference.ps1 |
 | 2026-10-07 | Yerel akışta finish_reason sonrası/kopma toleransı genişletildi: kullanılabilir sonuç (finish_reason veya yanıt metni veya araç çağrısı) varken bağlantı kopması hata sayılmaz; cevabın altına "[Hata]" eklenmez. | agent/qwen-inference.ps1, tests/test_stream_watchdog.py |
 | 2026-10-07 | Smoke testine `cevrimdisi` adımı eklendi: kurulum sonrası doğrulamada ağ engellenip web aracının çökmeden hata JSON'u döndürdüğü kanıtlanır (`-SkipOffline` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, tests/test_offline_mode.py |

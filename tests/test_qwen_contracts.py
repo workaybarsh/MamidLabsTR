@@ -93,6 +93,124 @@ def test_api_video_tools_do_not_advertise_unsupported_video_continuation():
     assert "mode=video kullanma." in inference
 
 
+def test_web_tool_failure_is_detected_and_discourages_workarounds():
+    """Web aramasi/sayfa indirme ag hatasiyla basarisiz olunca modelin run_command
+    (ping/curl...) gibi araclarla etrafindan dolasmasini onleyen bir sistem notu
+    eklenir; arac basarisizligi guvenilir sekilde tespit edilir."""
+    inference = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("qwen-desktop.ps1")
+
+    assert "function Test-WebToolFailure" in inference
+    assert "$script:webToolFailCount" in inference
+    assert "Test-WebToolFailure $name $result" in inference
+    # Istek-kopyasina eklenen not (kalici gecmise yazilmaz); iki kademeli.
+    assert "etrafindan dolasmaya" in inference
+    assert "run_command ile ping/curl" in inference
+    assert "ACIKCA KURULAMIYOR" in inference
+    # Ag-probe komutlarina karsi sert koruma (kucuk model nota uymayabiliyor).
+    assert "$script:webToolFailCount -gt 0 -and" in inference
+    assert "ag komutu calistirilmadi" in inference
+    # 2. web hatasindan sonra web araclari modele artik sunulmaz (arama dongusunu engeller).
+    assert "$offeredTools = if ($script:webToolFailCount -ge 2)" in inference
+    # Kullanici dosya sormadiysa dosya araclari da sunulmaz (cevabi dosyalarda aramasin).
+    assert "function Test-FileIntent" in inference
+    assert "$blocked += @('list_bound_files', 'read_bound_file')" in inference
+    assert "Test-FileIntent $userText" in inference
+    # Sistem isteminde de onleyici kural.
+    assert "etrafindan dolasmaya calisma" in desktop
+
+
+def test_run_command_is_only_offered_on_explicit_command_intent():
+    """Kullanici acikca komut/terminal istemedikce run_command modele SUNULMAZ; boylece
+    kucuk model web/arama hatasinda absurt komut denemelerine giremez."""
+    inference = read_text("agent/qwen-inference.ps1")
+
+    assert "function Test-CommandIntent" in inference
+    # run_command tanimi niyet kosuluna bagli.
+    assert "if (Test-CommandIntent $userText) {" in inference
+    idx = inference.index("name = 'run_command'")
+    block = inference[idx - 400:idx]
+    assert "Test-CommandIntent $userText" in block
+
+
+def test_command_intent_detection_matrix():
+    """Test-CommandIntent: yalnizca acik komut/terminal niyetinde true doner."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("PowerShell 7 is unavailable")
+    script = r"""
+$job = @{ messages = @(@{ role = 'user'; content = 'x' }); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }
+$shared = @{ Cancel = $false }
+. '__ROOT__\agent\qwen-inference.ps1' $job $shared | Out-Null
+$cases = @(
+  @{ t = 'su komutu calistir: ipconfig'; e = $true }
+  @{ t = 'terminali ac ve dir yaz'; e = $true }
+  @{ t = 'powershell scripti calistir'; e = $true }
+  @{ t = 'ping google.com'; e = $true }
+  @{ t = 'einstein bilmecesi nedir'; e = $false }
+  @{ t = 'istanbulda hava nasil'; e = $false }
+  @{ t = 'bunu bir cumlede ozetle'; e = $false }
+  @{ t = 'fotografi duzenle'; e = $false }
+)
+$fail = 0
+foreach ($c in $cases) {
+  $got = [bool](Test-CommandIntent $c.t)
+  if ($got -ne [bool]$c.e) { $fail++; Write-Output ("FAIL: '{0}' got={1} beklenen={2}" -f $c.t, $got, $c.e) }
+}
+Write-Output ("FAILCOUNT=" + $fail)
+""".replace("__ROOT__", str(ROOT))
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", encoding="utf-8-sig", delete=False) as handle:
+        handle.write(script)
+        script_path = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [str(pwsh), "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+            capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+    finally:
+        script_path.unlink(missing_ok=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "FAILCOUNT=0" in result.stdout, result.stdout
+
+
+def test_web_tool_failure_detection_matrix():
+    """Test-WebToolFailure: yalnizca web araclari ve hata durumunda true doner."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("PowerShell 7 is unavailable")
+    script = r"""
+$job = @{ messages = @(@{ role = 'user'; content = 'x' }); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }
+$shared = @{ Cancel = $false }
+. '__ROOT__\agent\qwen-inference.ps1' $job $shared | Out-Null
+$cases = @(
+  @{ n = 'search_web'; r = '{"error":"Web aramasi basarisiz"}'; e = $true }
+  @{ n = 'search_web'; r = '[{"title":"x","href":"u"}]'; e = $false }
+  @{ n = 'fetch_page'; r = '{"error":"URL hostu cozumlenemedi."}'; e = $true }
+  @{ n = 'find_reference_image'; r = '{"error":"gorsel aramasi basarisiz"}'; e = $true }
+  @{ n = 'list_bound_files'; r = '{"error":"ilgisiz"}'; e = $false }
+  @{ n = 'search_web'; r = ''; e = $true }
+)
+$fail = 0
+foreach ($c in $cases) {
+  $got = [bool](Test-WebToolFailure $c.n $c.r)
+  if ($got -ne [bool]$c.e) { $fail++; Write-Output ("HATA: $($c.n) got=$got beklenen=$($c.e)") }
+}
+Write-Output ("FAILCOUNT=" + $fail)
+""".replace("__ROOT__", str(ROOT))
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", encoding="utf-8-sig", delete=False) as handle:
+        handle.write(script)
+        script_path = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [str(pwsh), "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+            capture_output=True, encoding="utf-8", errors="replace", check=False,
+        )
+    finally:
+        script_path.unlink(missing_ok=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "FAILCOUNT=0" in result.stdout, result.stdout
+
+
 def test_stream_watchdog_uses_fresh_connection_and_survives_dropped_stream():
     """Yerel sunucu, arac calisirken bos kalan keep-alive baglantisini kapatabiliyor;
     bayat baglanti tekrar kullanilinca akis ortasinda 'Varolan bir baglanti ... zorla

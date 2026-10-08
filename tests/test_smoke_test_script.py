@@ -139,3 +139,14 @@ def test_smoke_test_writes_a_machine_readable_report():
     assert "ConvertTo-Json -Depth 6" in script
     # Atlanan adim basarisiz sayilmaz ama ozette gorunur.
     assert "skipped = $true" in script
+
+
+def test_history_resume_step_guards_empty_tool_exchange():
+    """Arac cagrilmadiysa $done.data BOS dizi olur ve Start-ThreadJob sinirindan $null doner;
+    @($done.data) bunu @($null) yapip listeye bos mesaj ekler ve sunucu 400 verir
+    ("All non-assistant messages must contain 'content'"). Adim gercek arayuz gibi
+    `if ($done.data)` ile korumali ve yuklenen gecmis icin >=1 mesaj yeterli olmali."""
+    script = read_text("scripts/smoke-test.ps1")
+    assert "if ($done.data) { $chatMessages += @($done.data) }" in script
+    # Model arac cagirmadan yanitlarsa yalnizca kullanici mesaji kaydedilir; >=1 yeterli.
+    assert "$reloaded.Count -lt 1" in script

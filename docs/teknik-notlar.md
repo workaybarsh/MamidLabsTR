@@ -280,6 +280,24 @@ araçsız ve tamamlanmamış kopmalar hata sayılır.
 görsel araçları istisna atmaz; modele geçerli bir hata JSON'u döndürür, böylece ajan döngüsü
 kırılmadan yanıtını tamamlar. Bu davranış `tests/test_offline_mode.py` ile doğrulanır.
 
+Bir web aracı bu şekilde başarısız olduğunda, modelin "etrafından dolaşması" (aynı sonucu
+`run_command` ile ping/curl/wget/Invoke-WebRequest kullanarak ya da başka sayfa/arama deneyerek
+almaya çalışması veya sonucu uydurması) engellenir: başarısızlık `Test-WebToolFailure` ile algılanır
+ve isteğin kopyasına — kalıcı geçmişe **yazılmadan** — "[Sistem notu]" eklenir; model ya elindeki
+bilgiyle net yanıt verir ya da güncel veriyi uydurmadan web erişiminin kurulamadığını söyler. Sistem
+isteminde de önleyici bir kural vardır. Küçük model (LITE) prompt notuna her zaman uymadığı için iki
+**sert koruma** vardır: (1) bir web aracı aynı istekte başarısızsa, sonraki turlarda **web araçları
+modele artık sunulmaz** (arama döngüsü engellenir); (2) `run_command` ile `ping`, `curl`, `wget`,
+`nslookup`, `ipconfig` gibi **ağ-probe komutları çalıştırılmadan reddedilir**. Bu korumalar yalnızca
+bir web hatasından **sonra** devreye girer; kullanıcının açık ve ilgisiz komut isteğini etkilemez.
+Sözleşme testleri: `tests/test_qwen_contracts.py`.
+
+Üstelik **`run_command` aracı modele yalnızca kullanıcı açıkça komut/terminal istediğinde sunulur**
+(`Test-CommandIntent`): komut, terminal, konsol, cmd, powershell, bash, script/betik, .bat/.cmd/.ps1/.exe,
+çalıştır, run, execute, ipconfig, ping, curl, wget, nslookup, netstat gibi kalıplar niyet sayılır.
+Genel sorularda araç hiç sunulmadığı için model komutla "etrafından dolanmaya" kalkışamaz. Kullanıcı
+açıkça istediğinde ise her zamanki gibi izin (onay) gerektirir.
+
 ## Görsel okuma ve OCR
 
 Görsel eklendiğinde kullanıcı metni deterministik olarak kontrol edilir. "Görselde ne var?"

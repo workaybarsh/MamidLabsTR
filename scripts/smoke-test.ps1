@@ -270,7 +270,7 @@ if ($SkipHistoryResume) {
         $prefix = 'MAMIDLABS-CHAT-DPAPI-V2'
         $chatFile = Join-Path $env:TEMP 'mamidlabs-smoke-reload.json'
         $turns = @(
-            @{ role = 'user'; content = 'Einstein bilmecesi nedir? Kisa anlat.' }
+            @{ role = 'user'; content = 'Bugunun dolar kuru kac TL? Guncel bilgi lazim.' }
         )
         # 1) Ilk tur: arac cagrisini da tetikleyebilecek gercek bir istek.
         $jobData = @{
@@ -290,7 +290,13 @@ if ($SkipHistoryResume) {
         $done = @($items | Where-Object { $_.kind -eq 'done' }) | Select-Object -Last 1
         if (!$done) { throw 'Ilk tur done olayi uretmedi.' }
         # Kalici mesaj dizisi: kullanici mesaji + done'in tasidigi arac degisimi.
-        $chatMessages = @($turns) + @($done.data)
+        # DIKKAT: arac cagrilmadiysa $done.data BOS dizi olur ve Start-ThreadJob sinirindan
+        # $null olarak doner; @($done.data) bunu @($null) yapip listeye bos bir mesaj ekler ve
+        # sunucu "All non-assistant messages must contain 'content'" ile 400 doner (testte
+        # yakalandi). Gercek arayuz zaten `if ($jobEvent.data)` ile koruyor (bkz. Render-JobEvent);
+        # burada da ayni koruma sart.
+        $chatMessages = @($turns)
+        if ($done.data) { $chatMessages += @($done.data) }
         # 2) Save-Chat gibi kaydet (DPAPI).
         $payload = @{ id = 'smoketest000000000000000000000000'; title = 'smoke-reload'; messages = @($chatMessages); transcript = @() }
         $json = $payload | ConvertTo-Json -Depth 30
@@ -301,7 +307,9 @@ if ($SkipHistoryResume) {
         $plain = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect(
             [Convert]::FromBase64String($raw.Substring($prefix.Length + 1).Trim()), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))
         $reloaded = @(($plain | ConvertFrom-Json).messages)
-        if ($reloaded.Count -lt 2) { throw "Yuklenen gecmis eksik ($($reloaded.Count) mesaj)." }
+        # Model araç çağırmadan yanıtlamış olabilir; o durumda yalnızca kullanıcı mesajı kaydedilir.
+        # En az kullanıcı mesajı yüklenmiş olması yeterlidir (aksi halde boş sohbet).
+        if ($reloaded.Count -lt 1) { throw "Yuklenen gecmis bos ($($reloaded.Count) mesaj)." }
         # 4) Devam turu: yuklenen gecmise yeni kullanici mesaji ekle.
         $jobData2 = $jobData.Clone(); $jobData2.messages = @($reloaded) + @(@{ role = 'user'; content = 'Peki bunu bir cumlede ozetle.' })
         $shared2 = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'

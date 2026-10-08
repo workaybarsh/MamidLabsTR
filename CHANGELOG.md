@@ -15,6 +15,9 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   (internet gidip gelirken) yerel işçinin hiçbir turda hata üretmediği doğrulanır.
 - Smoke testine **`gecmis_devam`** adımı eklendi: konuşma ortasında program kapatılıp yeniden
   açıldığında sohbetin kaydedilip yüklenebildiği ve devam ettirilebildiği doğrulanır.
+  Adım, arac çağrısı olmayan turlarda `$done.data`'nın thread sınırından `$null` dönmesine karşı
+  `if ($done.data)` ile korunur (aksi halde mesaj listesine boş bir girdi eklenip sunucudan
+  `400 All non-assistant messages must contain 'content'` alınıyordu).
 
 ### Düzeltmeler
 - Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar
@@ -26,6 +29,21 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   (finish_reason alınmış, yanıt metni gelmiş ya da bir araç çağrısı oluşmuş) kapanma hata
   sayılmaz; tamamlanan cevabın altına yanlışlıkla "[Hata]" satırı eklenmez.
   (`agent/qwen-inference.ps1`)
+- **Web aracı başarısız olunca modelin "etrafından dolaşması" engellendi.** Ağ yokken web
+  araması/sayfa indirme başarısız olduğunda model bazen `run_command` (ping/curl/wget) gibi
+  araçlarla sonucu başka yoldan almaya ya da uydurmaya çalışıyordu. Artık böyle bir başarısızlık
+  algılanıp isteğin kopyasına (kalıcı geçmişe yazılmadan) bir sistem notu eklenir: etrafından
+  dolaşmayı denemesini engeller, elinde bilgi varsa net yanıt vermesini, yoksa güncel veriyi
+  uydurmayıp web erişiminin kurulamadığını söylemesini ister. Sistem istemine de önleyici kural
+  eklendi. İki sert savunma: web hatasından sonra (1) web araçları modele artık sunulmaz, (2)
+  `run_command` ağ-probe komutlarını (ping/curl/wget/nslookup/ipconfig…) **çalıştırmadan reddeder**
+  (küçük model notu atlayabildiği için).
+- **`run_command` artık yalnızca kullanıcı açıkça komut/terminal istediğinde modele sunulur**
+  (`Test-CommandIntent`). Böylece model, web hatası gibi durumlarda komutla "etrafından dolanmaya"
+  hiç kalkışamaz; genel sorularda komut aracı sunulmadığı için çağrılamaz. Açık niyet kalıpları:
+  komut, terminal, konsol, cmd, powershell, bash, script/betik, .bat/.cmd/.ps1/.exe, çalıştır, run,
+  execute, ipconfig, ping, curl, wget, nslookup, netstat.
+  (`agent/qwen-inference.ps1`, `qwen-desktop.ps1`)
 
 ## [1.0.0] - 2026-09-27
 

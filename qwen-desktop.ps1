@@ -1680,6 +1680,13 @@ function Get-SystemPrompt {
     $lines = @()
     $lines += 'Sen MamidLabs asistanisin. Turkce, dogrudan ve net konus. Sohbet modeli yerel veya API olabilir; araclar kullanicinin bilgisayarinda calisir.'
     $lines += "Bugunun tarihi: $(Get-Date -Format 'yyyy-MM-dd')."
+    # LITE (kucuk 9B model): dusunme acik ama butceli. Modeli hizli/kisa cevap yerine
+    # derin ve adim adim akil yurutmeye tesvik ederek ayni butce icinde daha dogru sonuca
+    # ulasmasi hedeflenir. Bu satir profile gore sabittir; onek degismedigi icin KV
+    # onbellegi bozulmaz (yalnizca LITE profilinde eklenir).
+    if ([string]$script:apiSettings.localProfile -eq 'lite') {
+        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle; gerekirse birden fazla yaklasim deneyip sonucu kontrol et. Dusunme adimlarini kisaca ortaya koy, sonra net ve eksiksiz yaniti ver.'
+    }
     if ($netChip.Checked) { $lines += 'Internet erisimin var: guncel bilgi gerektiginde search_web ve fetch_page araclarini kullan.' }
     else { $lines += 'Internet erisimin KAPALI; web aramasi yapamazsin.' }
     $consultIds = @($script:apiSettings.providers.Keys | Where-Object { $_ -in (Get-ChatProviderIds) -and $script:apiSettings.providers[$_].model -and (Get-ProviderKey $_) })
@@ -1690,6 +1697,7 @@ function Get-SystemPrompt {
     } else { $lines += 'Ajan modu kapali; dosya araclarin yok.' }
     $lines += 'Gorsel, video ve belge araclari mesaj niyetine gore otomatik kullanilir; bunlar icin ayri bir uretim dugmesi veya cip gerekmez.'
     $lines += 'Kullanici acikca bir komut calistirmani isterse ve Ajan aciksa run_command aracini kullan; komutu kendi basina uydurma veya kullanici istemeden calistirma.'
+    $lines += 'Bir arac (ozellikle web aramasi veya sayfa indirme) hata verirse etrafindan dolasmaya calisma: ayni islemi baska araclarla ya da run_command ile (ping, curl, wget, Invoke-WebRequest, nslookup vb.) denemeye kalkma. Hatayi kullaniciya kisa ve dogru bir cumleyle bildir; elinde yeterli bilgi varsa onunla net bir yanit ver, yoksa sonucu uydurma.'
     $lines += 'Kullanici acikca gorsel uret, bir resim olustur veya benzeri bir istek verirse generate_image cagir. Sadece gorseli aciklama, analiz etme veya soru-cevap isteklerinde generate_image cagirmani.'
     if ([string]$script:apiSettings.localProfile -eq 'lite') {
         $lines += 'Kullanici eklenen bir fotografi duzenlemek isterse (kiyafet/sac/arka plan degistir, nesne ekle/kaldir, kisiyi baska sahneye koy) generate_image aracini mode=yeniden_uret ile cagir; kimlik_duzenle modu bu profilde YOK (8 GB VRAM kartta asiri yavas, dakikalar surer).'

@@ -91,6 +91,11 @@ $script:lastPdfText = $null
 $script:ApprovalTimeout = [TimeSpan]::FromMinutes(10)
 # Reddedilen islemin arayuzde gosterilecek notu (Invoke-Tool Emit kullanamaz).
 $script:deniedNote = $null
+# Ayni istekte bir web aracinin kac kez ag hatasiyla basarisiz oldugu. 1. hatadan
+# sonra model bir kez daha deneyebilir (not ile uyarilir); 2. hatadan sonra artik
+# bariz sekilde internetsiz oldugu kabul edilir: web araclari sunulmaz, ag-probe
+# komutlari reddedilir ve model elindeki bilgiyle yanit verir. Kalici gecmise yazilmaz.
+$script:webToolFailCount = 0
 
 function Emit([string]$kind, [string]$text, $usage = $null, $data = $null) {
     [pscustomobject]@{ kind = $kind; text = $text; usage = $usage; data = $data }
@@ -368,6 +373,43 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
     return $ocrResponse
 }
 
+# Bir web aracinin sonucu basarisiz mi? Arac katmani hatayi {"error": "..."} JSON'u
+# olarak dondurur (ag yok, DNS cozulemedi, indirilemedi vb.). Bu durumda modeli
+# etrafindan dolasmaya (run_command ile curl/ping, baska sayfa deneme, sonuc uydurma)
+# tesvik etmemek icin istek-kopyasina bir sistem notu eklenir.
+function Test-WebToolFailure([string]$name, $result) {
+    if ($name -notin @('search_web', 'fetch_page', 'find_reference_image')) { return $false }
+    if ($null -eq $result) { return $true }
+    $text = [string]$result
+    if ([string]::IsNullOrWhiteSpace($text)) { return $true }
+    try {
+        $parsed = $text | ConvertFrom-Json -ErrorAction Stop
+        if ($parsed -and $parsed.PSObject.Properties.Name -contains 'error' -and $parsed.error) { return $true }
+    } catch { }
+    # Arac istisna/iz biraktiysa da basarisiz say.
+    if ($text -match '(?i)DNSError|no connections available|cozumlenemedi|ConnectError|basarisiz|indirilemedi|timed out|zaman asimi') { return $true }
+    return $false
+}
+
+# Komut calistirma niyeti. run_command araci YALNIZCA kullanici acikca komut/terminal
+# istediginde sunulur. Aksi halde model (ozellikle kucuk LITE) web/arama hatasinda absurt
+# komut denemelerine giriyordu; tool hic sunulmazsa cagiramaz. Sistem/terminal komutlari
+# ve "calistir/run/execute" fiilleri niyet sayilir; genel sohbet sayilmaz.
+function Test-CommandIntent([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    return $normalized -match '(\bkomut\b|komut ?sat|terminal|konsol|command ?line|\bcmd\b|powershell|power ?shell|\bbash\b|\bkabuk\b|\bshell\b|\bbetik\b|\bscript\b|\.bat\b|\.cmd\b|\.ps1\b|\.exe\b|calistir|\brun\b|execute|\bipconfig\b|\bping\b|\bcurl\b|\bwget\b|nslookup|netstat|\bcls\b|\bdir\b)'
+}
+
+# Dosya/klasor/belge niyeti. Web aramasi basarisiz oldugunda, kullanici dosya sormadiysa
+# modelin bagli klasorde/yerel dosyalarda cevap aramaya kalkmasini (bir baska etrafindan
+# dolanma bicimi) onlemek icin kullanilir.
+function Test-FileIntent([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    return $normalized -match '(dosya|klasor|belge|dokuman|evrak|defter|\bpdf\b|word|excel|powerpoint|\.docx|\.xlsx|\.pptx|\bzip\b|\brar\b|\bcsv\b|notlar|metin dosya|bagli klas|kayitli dosya|\bfile\b|\bfolder\b|\bdocument\b)'
+}
+
 function Invoke-Tool([string]$name, $arguments, [string]$folder) {
     if ($name -eq 'read_images_ocr') {
         if (!$JobData.multiImageOcr) { return 'Bu arac yalnizca coklu gorsel OCR modunda kullanilabilir.' }
@@ -437,6 +479,17 @@ function Invoke-Tool([string]$name, $arguments, [string]$folder) {
     if ($name -eq 'run_command') {
         $command = [string]$arguments.command
         if (!$command) { return 'command gerekli.' }
+        # Sert koruma: bu istekte bir web araci ag hatasiyla basarisiz olduysa, model
+        # genellikle "etrafindan dolanma" amaciyla ping/curl/wget/nslookup gibi ag
+        # komutlari denemeye kalkiyor (gercek makinede gozlemlendi: search_web DNS hatasi
+        # verince run_command ile 3 kez sapti). Kucuk model prompt notuna guvenilir sekilde
+        # uymadigi icin ag-probe komutlari calistirilmadan reddedilir; model kullaniciya
+        # web erisiminin kurulamadigini soyler. Kullanicinin acik komut istegini etkilemez
+        # cunku yalnizca web hatasindan SONRA ve yalnizca ag-probe komutlarinda devreye girer.
+        if ($script:webToolFailCount -gt 0 -and
+            $command -match '(?i)(^|[^a-z])(ping|tracert|traceroute|pathping|nslookup|resolve-dnsname|test-netconnection|test-connection|curl|wget|invoke-webrequest|invoke-restmethod|\biwr\b|\birm\b|telnet|ftp|ssh|ipconfig|netstat|\barp\b|\broute\b)([^a-z]|$)') {
+            return 'Web araci basarisiz oldugu icin ag komutu calistirilmadi. Etrafindan dolasmiyoruz; kullaniciya web erisiminin su an kurulamadigini soyle ve sonucu uydurma.'
+        }
         $workingDirectory = [string]$arguments.working_directory
         if (!$workingDirectory) { $workingDirectory = if ($folder) { $folder } else { Get-InstallRoot } }
         try { $workingDirectory = [IO.Path]::GetFullPath($workingDirectory) } catch { return 'Gecersiz calisma klasoru.' }
@@ -657,11 +710,16 @@ function Get-ToolDefinitions([hashtable]$job) {
         $defs += @{ type = 'function'; function = @{ name = 'list_bound_files'; description = 'Kullanicinin bagladigi klasordeki dosya ve alt klasorleri listeler.'; parameters = @{ type = 'object'; properties = @{ relative_path = @{ type = 'string' } } } } }
         $defs += @{ type = 'function'; function = @{ name = 'read_bound_file'; description = 'Bagli klasor icindeki metin dosyasini okur.'; parameters = @{ type = 'object'; required = @('relative_path'); properties = @{ relative_path = @{ type = 'string' } } } } }
         $defs += @{ type = 'function'; function = @{ name = 'write_bound_file'; description = 'Bagli klasor icine metin dosyasi yazar veya var olani degistirir. Yalnizca kullanici acikca isterse kullan.'; parameters = @{ type = 'object'; required = @('relative_path', 'content'); properties = @{ relative_path = @{ type = 'string' }; content = @{ type = 'string' } } } } }
+        # run_command YALNIZCA kullanici acikca komut/terminal istediginde sunulur (bkz.
+        # Test-CommandIntent). Aksi halde kucuk model web/arama hatasinda absurt komut
+        # denemelerine giriyordu; tool hic sunulmazsa cagiramaz.
+        if (Test-CommandIntent $userText) {
         $defs += @{ type = 'function'; function = @{ name = 'run_command'; description = 'Kullanicinin acikca istedigi bir komutu Windows komut isteminde calistirir. Komut, calisma klasoru ve cikis kodunu dondurur. Degisiklik yapan veya riskli komutlardan once kullanici izni gerekir; Tam erisim aciksa sormadan calisir.'; parameters = @{ type = 'object'; required = @('command'); properties = @{
             command = @{ type = 'string'; description = 'Calistirilacak Windows komutu. Yalnizca kullanicinin acikca istedigi komutu yaz.' }
             working_directory = @{ type = 'string'; description = "Istege bagli calisma klasoru; varsayilan bagli klasor veya $(Get-InstallRoot)." }
             timeout_seconds = @{ type = 'integer'; description = 'Istege bagli zaman asimi (1-600 saniye, varsayilan 120).' }
         } } } }
+        }
     }
     if ($job.office) {
         $defs += @{ type = 'function'; function = @{ name = 'read_document'; description = 'PDF, Word (docx), Excel (xlsx), PowerPoint (pptx), ZIP veya RAR dosyasini okur. ZIP/RAR icin entry verilmezse arsivdeki dosya listesini dondurur; entry verilirse o dosyanin icerigini okur.'; parameters = @{ type = 'object'; required = @('path'); properties = @{
@@ -1242,16 +1300,48 @@ try {
             top_p = 0.95
             top_k = 20
         }
-        if ($toolDefinitions.Count -gt 0) { $body.tools = $toolDefinitions }
+        # Ust uste 2 web hatasindan sonra bariz sekilde internetsiz sayilir. Modelin ayni web
+        # araclarini tekrar tekrar cagirmasini (arama dongusu) ve cevabi baska yerde aramaya
+        # (bagli klasordeki dosyalari karistirmaya) kalkmasini engellemek icin: web araclari her
+        # zaman; kullanici dosya sormadiysa dosya araclari da artik SUNULMAZ. Ilk hatadan sonra
+        # hepsi sunulur: model BIR kez daha web deneyebilir.
+        $offeredTools = if ($script:webToolFailCount -ge 2) {
+            $blocked = @('search_web', 'fetch_page', 'find_reference_image')
+            if (!(Test-FileIntent $userText)) { $blocked += @('list_bound_files', 'read_bound_file') }
+            @($toolDefinitions | Where-Object { $_.function.name -notin $blocked })
+        } else { $toolDefinitions }
+        if (@($offeredTools).Count -gt 0) { $body.tools = @($offeredTools) }
         # Arayuz testinde FLASH modeli arac sonucundaki "reddedildi" talimatini atlayip reddi
         # "Python kurulu degil olabilir" diye yorumladi. Red varsa istegin sonuna (kalici gecmise
         # yazmadan) acik bir not eklenir; onek degismedigi icin KV onbellegi korunur.
+        # Ayni sekilde web araci ag hatasiyla basarisiz olursa, modelin komut/sayfa gibi
+        # araclarla etrafindan dolasmasini onleyen bir not eklenir (ikisi tek mesajda birlesir).
+        $systemNotes = @()
         if ($script:deniedTools -and $script:deniedTools.Count -gt 0) {
-            $body.messages = @($sendMessages) + @(@{ role = 'user'; content = (
-                '[Sistem notu] Kullanici bu istekte su islemleri onay penceresinde REDDETTI: ' + (@($script:deniedTools) -join ', ') +
+            $systemNotes += (
+                'Kullanici bu istekte su islemleri onay penceresinde REDDETTI: ' + (@($script:deniedTools) -join ', ') +
                 '. Bu islemler calistirilmadi. Bu bir hata, eksik kurulum ya da bekleyen izin degil; nedenini tahmin etme, ' +
                 'teshis ya da alternatif komut onerme ve sonucu tahmin edip sunma. Yanitinda yalnizca islemin, kullanici izin ' +
-                'vermedigi icin yapilmadigini kisaca soyle; istersen tekrar isteyebilecegini belirt.') })
+                'vermedigi icin yapilmadigini kisaca soyle; istersen tekrar isteyebilecegini belirt.')
+        }
+        if ($script:webToolFailCount -gt 0) {
+            if ($script:webToolFailCount -ge 2) {
+                $systemNotes += (
+                    'Web erisimi artik ACIKCA KURULAMIYOR (ust uste basarisiz oldu). Web aramayi/sayfa indirmeyi ' +
+                    'BIRAK, bir daha denemeye kalkma. run_command ile ping/curl/wget/Invoke-WebRequest/ipconfig gibi ' +
+                    'komutlar calistirma; cevabi bagli klasordeki/yerel dosyalarda ARAMAYA KALKMA (kullanici acikca ' +
+                    'dosya sormadiysa). Elindeki bilgiyle net ve dogru bir yanit ver; guncel veri sart ise tek cumleyle ' +
+                    'internet baglantisinin kurulamadigini soyle ve sonucu uydurma.')
+            } else {
+                $systemNotes += (
+                    'Web aramasi/sayfa indirme basarisiz oldu (internet olmayabilir). Bir kez daha deneyebilirsin; ' +
+                    'ama etrafindan dolasmaya calisma: run_command ile ping/curl/wget/Invoke-WebRequest gibi komutlar ' +
+                    'calistirma, arac sonucu uydurma. Ikinci deneme de basarisiz olursa web ile ugrasmayi tamamen birak ' +
+                    've elindeki bilgiyle yanit ver.')
+            }
+        }
+        if ($systemNotes.Count -gt 0) {
+            $body.messages = @($sendMessages) + @(@{ role = 'user'; content = ('[Sistem notu] ' + ($systemNotes -join ' ')) })
         }
         if ($JobData.multiImageOcr -and $round -eq 0) {
             $body.tool_choice = @{ type = 'function'; function = @{ name = 'read_images_ocr' } }
@@ -1383,6 +1473,7 @@ try {
                     # Kabul edilen gorsel cagrilari yukarida arayuze devredilir; buraya gelen reddedilmistir.
                     'Gorsel uretilmedi: kullanici bu istekte gorsel istemedi. Istegi metinle yanitla, gorsel uretme.'
                 } else { Invoke-Tool $name $arguments ([string]$JobData.boundFolder) }
+                if (Test-WebToolFailure $name $result) { $script:webToolFailCount++ }
                 $approval = if ($script:lastApprovalOutcome) { $script:lastApprovalOutcome } else { 'not_required' }
                 $auditResult = if ($approval -in @('asked_no', 'cancelled', 'timeout')) { 'denied' } else { 'ok' }
                 Write-AuditLog $name $approval $auditResult $auditDetail ([string]$script:createdArtifact)
