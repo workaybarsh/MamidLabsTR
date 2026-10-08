@@ -116,16 +116,18 @@ kurulum-kaynak\                  sihirbazın açtığı kaynak paket
 |---|---|---|---|
 | MAX | `qwen3.8-27b-max` | Qwen3.8 27B IQ4_XS + mmproj F16 | `--no-mmproj-offload` (projektör CPU'da), ctx 32768, predict 8192, `--reasoning-effort xhigh`, q4_0 KV, batch 512/256, `--spec-type draft-mtp` |
 | FLASH | `qwen3.8-27b-flash` | aynı dosyalar | predict 4096, `--reasoning-effort low`, `--spec-type draft-mtp` |
-| LITE | `qwen3.5-9b-lite` | Huihui-Qwen3.5 9B Q5_K_M + mmproj Q8_0 | ctx 32768, predict 3072, `--reasoning-budget 300`, batch 256/128, projektör GPU'da (MTP yok) |
+| LITE | `qwen3.5-9b-lite` | Huihui-Qwen3.5 9B Q5_K_M + mmproj Q8_0 | ctx 32768, predict 3072, `--reasoning-budget 300`, batch 256/128, projektör GPU'da, `--spec-type draft-mtp` (indirmede eklenir) |
 
 **MTP (Multi-Token Prediction).** Qwen3.8 27B GGUF'u gömülü bir MTP/nextn draft başlığı taşır
-(`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`); bu yüzden `--spec-type draft-mtp` **ayrı bir
-draft model gerektirmez** ve çıktı kayıpsızdır (kabul edilen tokenlar hedef modelle doğrulanır).
-Model kartında Q4_K_M için ölçülen kabul 0,35–0,53, ortalama kabul uzunluğu 2,05–2,58; mmproj ile
-uyumlu doğrulanmıştır. MAX/FLASH'e otomatik eklenir; LITE modelinde MTP katmanı **yoktur** (llama.cpp
-"model doesn't contain MTP layers" verir), o yüzden LITE'a eklenmez. `settings/api.json` → `"mtp":
-false` ile kapatılabilir. MTP olmadan çalışırken sunucu `unused tensor blk.64.*` uyarısı verir
-(beklenen).
+(`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`); LITE'ın 9B GGUF'u ise bu başlığı dönüşümde
+kaybeder, indirme sırasında `agent/mtp_inject.py` ile geri eklenir (kaynak: `huihui-ai/
+Huihui-Qwen3.5-9B-abliterated` MTP tensorleri; yalnızca `blk.<N>.nextn.*` + ana model normlarına
+`w+1`). Böylece `--spec-type draft-mtp` **ayrı bir draft model gerektirmez** ve çıktı kayıpsızdır
+(kabul edilen tokenlar hedef modelle doğrulanır). Ölçülen: LITE'ta kabul ~0,93, ~2x hız (36 → ~75
+tok/s); model kartında 27B için Q4_K_M kabul 0,35–0,53. Bayrak yalnızca GGUF gerçekten MTP katmanı
+taşıyorsa eklenir (`Test-GgufHasMtp`); taşımayan modele verilirse llama.cpp "model doesn't contain MTP
+layers" ile açılmaz. `settings/api.json` → `"mtp": false` ile kapatılabilir. MTP olmadan çalışırken
+sunucu `unused tensor blk.64.*` uyarısı verir (beklenen).
 
 MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profiller penceresinde tek
 "Qwen3.8 27B" girdisi olarak görünür (`Get-ProfileCatalogForDisplay`); geçiş alt çubuktan yapılır.
@@ -433,7 +435,9 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-08 | MAX/FLASH için MTP (Multi-Token Prediction) speculative decoding etkinleştirildi (`--spec-type draft-mtp`); Qwen3.8 27B GGUF'unda gömülü MTP başlığı olduğu için ayrı draft model gerekmez, LITE'ta MTP katmanı yok. `settings.mtp=false` ile kapatılır. | scripts/manage-qwen.ps1, tests/test_lite_profile.py |
+| 2026-10-08 | Lisans MIT'den tescilli (tüm hakları saklı, telif: Aybars Haydar Altuntaş) lisansa geçirildi. | LICENSE, README.md, docs/kurulum.md, tests/test_setup_wizard.py, CHANGELOG.md |
+| 2026-10-08 | LITE'ta MTP (speculative decoding) etkinleştirildi: 9B GGUF'una dönüşümde düşen MTP/nextn başlığı indirme sırasında `mtp_inject.py` ile eklenir (kaynak HF safetensors'tan yalnızca MTP tensorleri, HTTP range; normlara `w+1`). `manage-qwen.ps1` MTP'yi artık GGUF'ta `nextn` katmanı varsa (max/flash/lite) açar (`Test-GgufHasMtp`), yoksa eklemez. Ölçülen kabul ~0,93, ~2x hız; çıktı kayıpsız. | agent/mtp_inject.py, agent/hf-hub.py, agent/profiles.json, agent/profile-catalog.ps1, scripts/download-profile.ps1, scripts/manage-qwen.ps1, tests/test_lite_profile.py, tests/test_mtp_inject.py |
+| 2026-10-08 | MAX/FLASH + LITE için MTP (Multi-Token Prediction) speculative decoding (`--spec-type draft-mtp`); ayrı draft model gerekmez ve çıktı kayıpsız. `settings.mtp=false` ile kapatılır. | scripts/manage-qwen.ps1, tests/test_lite_profile.py |
 | 2026-10-07 | `run_command` artık yalnızca kullanıcı açıkça komut/terminal istediğinde modele sunulur (`Test-CommandIntent`); web hatasında model komutla "etrafından dolanmaya" kalkışamaz. LITE için derin akıl yürütme talimatı eklendi; web hatasından sonra web araçları sunulmaz + ağ-probe komutları reddedilir. | agent/qwen-inference.ps1, qwen-desktop.ps1, tests/test_qwen_contracts.py, tests/test_lite_profile.py, tests/test_approval_flow.py |
 | 2026-10-07 | Smoke testine `gecmis_devam` adımı eklendi: sohbeti DPAPI ile kaydet → yeniden yükle → devam et; hiçbir tur hata vermez (`-SkipHistoryResume` ile atlanır). Adım, araçsız turda `$done.data`'nın `$null` dönmesine karşı `if ($done.data)` ile korunur. `test_chat_storage.py` kaydet/yükle serileştirmesini doğrular. | scripts/smoke-test.ps1, tests/test_chat_storage.py, tests/test_smoke_test_script.py |
 | 2026-10-07 | Smoke testine `ag_gecisi` adımı eklendi: ardisik turlarda ag açık/kapalı değişirken yerel işçi hiçbir turda hata üretmez (`-SkipNetworkSwitch` ile atlanır). | scripts/smoke-test.ps1, scripts/setup-run.ps1, agent/qwen-inference.ps1 |

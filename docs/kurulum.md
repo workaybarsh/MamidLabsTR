@@ -23,7 +23,7 @@ Python ve Git önceden kurulu olmalıdır.
 
 | Sayfa | İş |
 |---|---|
-| Karşılama ve lisans | MIT lisansı |
+| Karşılama ve lisans | Tescilli lisans (tüm hakları saklı) |
 | Kurulum klasörü | Varsayılan kullanıcı başına program klasörü (`%LOCALAPPDATA%\Programs\MamidLabs`); istenirse değiştirilebilir. Modeller dahil 40-80 GB, SSD önerilir |
 | Profil raporu | GPU, VRAM, RAM ve boş disk ölçülür; her profil için uygun / sınırda / uygun değil kararı ve öneri (`scripts\profile-report.ps1`) |
 | Model profili | LITE, Qwen3.8 27B (MAX ve FLASH aynı dosyaları kullanır), **şimdi indirme (sonra kuracağım)** ya da **kendi modelim / API hesabım** |

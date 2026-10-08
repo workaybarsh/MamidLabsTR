@@ -230,18 +230,33 @@ try {
         $serverArgs=@('--model',$model,'--alias',$desiredAlias,'--host','127.0.0.1','--port','8080','--ctx-size','8192','--predict','4096','--parallel','1','--gpu-layers','99','--flash-attn','on','--cache-reuse','256','--jinja','--metrics')
         if($projector){$serverArgs+=@('--mmproj',$projector)}
     }
-    # MTP (Multi-Token Prediction) speculative decoding. Qwen3.8 27B GGUF'u GOMULU bir
-    # MTP/nextn draft basligi tasir (blk.64.nextn.*, qwen35.nextn_predict_layers=1); bu
-    # yuzden AYRI bir draft model GEREKMEZ - ayni dosyadaki baslik kullanilir. Cikti
-    # kayipsizdir (kabul edilen tokenlar hedef modelle dogrulanir) ve ~1,2-1,5x hiz
-    # kazanci saglar (model kartinda Q4_K_M icin olculen kabul 0,35-0,53, ortalama kabul
-    # uzunlugu 2,05-2,58; mmproj ile uyumlu oldugu da dogrulanmis). LITE (Qwen3.5 9B)
-    # modelinde MTP katmani YOKTUR (llama.cpp: "model doesn't contain MTP layers"), ona
-    # eklenmez. Ozel modellerde de varsayilan kapalidir. settings/api.json -> "mtp": false
-    # ile kapatilabilir (bir uyumluluk sorunu cikarsa).
+    # GGUF basliginda MTP/nextn blogu var mi? llama.cpp `--spec-type draft-mtp` yalnizca
+    # MTP katmani tasiyan modellerde calisir; tasimayan modele bayrak verilirse sunucu
+    # acilmaz ("model doesn't contain MTP layers"). Ust veri ve tensor adlari baslikta duz
+    # metin durur; MTP blogu "nextn" adini tasir (or. blk.32.nextn.eh_proj.weight).
+    function Test-GgufHasMtp([string]$Path) {
+        try {
+            $fs = [IO.File]::OpenRead($Path)
+            try {
+                $buf = [byte[]]::new(16777216)
+                $n = $fs.Read($buf, 0, $buf.Length)
+            }
+            finally { $fs.Dispose() }
+            return ([Text.Encoding]::ASCII.GetString($buf, 0, $n)).Contains('nextn')
+        }
+        catch { return $false }
+    }
+    # MTP (Multi-Token Prediction) speculative decoding. MAX/FLASH'in 27B GGUF'u ve
+    # LITE'in 9B GGUF'u (indirmede otomatik eklenir; bkz. agent/mtp_inject.py) GOMULU bir
+    # MTP/nextn draft basligi tasir (blk.<N>.nextn.*, nextn_predict_layers=1); bu yuzden
+    # AYRI bir draft model GEREKMEZ - ayni dosyadaki baslik kullanilir. Cikti kayipsizdir
+    # (kabul edilen tokenlar hedef modelle dogrulanir) ve ~2x hiz kazanci saglar (LITE'ta
+    # olculen kabul ~0,93; 27B model kartinda Q4_K_M icin kabul 0,35-0,53). Bayrak yalnizca
+    # model gercekten MTP katmani tasiyorsa eklenir. Ozel modellerde de ayni kontrol gecerli.
+    # settings/api.json -> "mtp": false ile kapatilabilir (bir uyumluluk sorunu cikarsa).
     $mtpEnabled = $true
     if ($settings -and $null -ne $settings.mtp) { $mtpEnabled = [bool]$settings.mtp }
-    if (!$custom -and $Profile -ne 'lite' -and $mtpEnabled) {
+    if (!$custom -and $mtpEnabled -and (Test-GgufHasMtp $model)) {
         $serverArgs += @('--spec-type', 'draft-mtp')
     }
     # Start-Process joins ArgumentList on Windows; quote paths explicitly.

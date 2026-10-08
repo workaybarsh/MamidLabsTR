@@ -3,6 +3,18 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.3] - 2026-10-08
+
+### Eklenen
+- **LITE için MTP (Multi-Token Prediction) speculative decoding.** Huihui-Qwen3.5 9B GGUF'una
+  dönüşümde düşen MTP/nextn başlığı indirme sırasında otomatik eklenir (`agent/mtp_inject.py`);
+  ayrı draft model gerekmez ve çıktı kayıpsızdır. Ölçülen kabul ~0,93, ~2x hız (36 → ~75 tok/s).
+  `settings/api.json` → `"mtp": false` ile kapatılır.
+
+### Değişen
+- Lisans MIT'den tescilli (tüm hakları saklı) lisansa geçirildi; telif hakkı Aybars Haydar
+  Altuntaş'a aittir.
+
 ## [1.0.2] - 2026-10-08
 
 ### Eklenen
@@ -98,6 +110,7 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Windows DPAPI ile şifrelenir.
 - Web araçları yalnızca genel HTTP(S) adreslerine erişir; DNS rebinding koruması vardır.
 
+[1.0.3]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.3
 [1.0.2]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.2
 [1.0.1]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.1
 [1.0.0]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.0

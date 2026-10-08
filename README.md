@@ -17,7 +17,7 @@
   <a href="https://github.com/workaybarsh/MamidLabsTR/releases/latest"><img src="https://img.shields.io/github/v/release/workaybarsh/MamidLabsTR?label=s%C3%BCr%C3%BCm" alt="Son sürüm"></a>
   <a href="https://github.com/workaybarsh/MamidLabsTR/actions/workflows/testler.yml"><img src="https://github.com/workaybarsh/MamidLabsTR/actions/workflows/testler.yml/badge.svg" alt="Testler"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6" alt="Platform: Windows 10 ve 11">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-green" alt="Lisans: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-Proprietary-red" alt="Lisans: Tescilli"></a>
 </p>
 
 <p align="center">
@@ -190,6 +190,8 @@ Aşağıdaki görseller ve videolar MamidLabs ile yerelde üretilmiştir.
 
 ## Lisans
 
-MamidLabs kaynak kodu [MIT lisansı](LICENSE) ile dağıtılır. Kullanılan modeller (Qwen, Krea 2,
-Krea 2 Identity Edit LoRA, Wan 2.2 vb.) ve üçüncü taraf bileşenler (llama.cpp, ComfyUI,
-ComfyUI-GGUF, comfyui-krea2edit vb.) kendi lisanslarına tabidir; MIT lisansı bunları kapsamaz.
+MamidLabs kaynak kodu tescillidir; **tüm hakları saklıdır** ve telif hakkı Aybars Haydar Altuntaş'a
+aittir. Yazılı izin olmadan kullanılamaz, kopyalanamaz, değiştirilemez veya dağıtılamaz. Ayrıntılar
+için [LICENSE](LICENSE) dosyasına bakın. Kullanılan modeller (Qwen, Krea 2, Krea 2 Identity Edit
+LoRA, Wan 2.2 vb.) ve üçüncü taraf bileşenler (llama.cpp, ComfyUI, ComfyUI-GGUF, comfyui-krea2edit
+vb.) kendi lisanslarına tabidir; bu lisans onları kapsamaz.

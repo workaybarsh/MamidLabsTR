@@ -9,6 +9,7 @@ import sys
 # yazilir; kaldirmada kokle birlikte silinir. Import'tan once ayarlanmalidir.
 os.environ.setdefault('HF_HOME', str(pathlib.Path(__file__).resolve().parent.parent / 'tools' / 'hf-home'))
 from huggingface_hub import HfApi, hf_hub_download
+from mtp_inject import ensure_mtp, has_mtp
 
 def emit(kind, text):
     print(json.dumps(dict(kind=kind, text=text), ensure_ascii=False), flush=True)
@@ -33,8 +34,14 @@ def fetch(item, token, index, total):
     label = item.get('label') or pathlib.PurePosixPath(name).name
     target = pathlib.Path(item['target']).resolve()
     expected_bytes = int(item.get('bytes') or 0)
+    mtp_cfg = item.get('mtp')
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and not item.get('force'):
+        # MTP enjeksiyonu dosyayi buyuttugu icin, MTP'li dosyada boyut kontrolu atlanir.
+        if mtp_cfg and has_mtp(str(target)):
+            emit('status', f'[{index}/{total}] {label} zaten var (MTP dahil), atlandı.')
+            emit('artifact', str(target))
+            return
         if expected_bytes and target.stat().st_size != expected_bytes:
             raise ValueError(
                 f'{label}: diskteki dosya boyutu beklenenle uyuşmuyor '
@@ -58,6 +65,9 @@ def fetch(item, token, index, total):
         raise ValueError(
             f'{label}: indirilen dosya boyutu beklenenle uyuşmuyor ({actual} != {expected_bytes} bayt). '
             'Dosya bozuk kabul edildi ve silindi; tekrar indir.')
+    if mtp_cfg:
+        # MTP basligi donusturucuden dusen modeller icin indirme sonrasi eklenir.
+        ensure_mtp(str(target), mtp_cfg, token, lambda text: emit('status', f'{label}: {text}'))
     emit('artifact', str(target))
 
 def run(job):

@@ -182,22 +182,23 @@ def test_lite_bounds_thinking_with_a_server_enforced_budget():
     assert "$settings.liteReasoningBudget" in manager
 
 
-def test_mtp_speculative_decoding_is_enabled_for_max_flash_but_not_lite():
-    """Qwen3.8 27B GGUF'u gomulu bir MTP/nextn draft basligi tasir (qwen35.
-    nextn_predict_layers=1, blk.64.nextn.*); --spec-type draft-mtp AYRI draft model
-    gerektirmez ve cikti kayipsizdir. LITE (Qwen3.5 9B) modelinde MTP katmani yoktur
-    (llama.cpp "model doesn't contain MTP layers" verir), ona eklenmemelidir."""
+def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
+    """Qwen3.8 27B GGUF'u gomulu bir MTP/nextn draft basligi tasir (nextn_predict_layers=1,
+    blk.64.nextn.*); LITE'in 9B GGUF'una da indirme sirasinda ayni baslik eklenir
+    (agent/mtp_inject.py). --spec-type draft-mtp AYRI draft model gerektirmez ve cikti
+    kayipsizdir. Bayrak yalnizca model gercekten MTP katmani tasiyorsa eklenir; tasimayan
+    modele verilirse llama.cpp "model doesn't contain MTP layers" ile acilmaz."""
     manager = read_text("scripts/manage-qwen.ps1")
 
     assert "'--spec-type', 'draft-mtp'" in manager
-    # Yalnizca max/flash (lite ve custom haric).
-    assert "if (!$custom -and $Profile -ne 'lite' -and $mtpEnabled)" in manager
+    # MTP katmani olan her profil (max/flash/lite) icin; custom haric, GGUF kontroluyle.
+    assert "if (!$custom -and $mtpEnabled -and (Test-GgufHasMtp $model))" in manager
     # settings.mtp ile kapatilabilmeli.
     assert "$settings.mtp" in manager
     assert "$mtpEnabled = $true" in manager
-    # LITE dalinda MTP yok.
-    lite_block = manager.split("if ($Profile -eq 'lite') {", 1)[1].split("else {", 1)[0]
-    assert "draft-mtp" not in lite_block
+    # GGUF basliginda MTP tensoru arayan guvenlik kontrolu.
+    assert "function Test-GgufHasMtp" in manager
+    assert "nextn" in manager
 
 
 def test_thinking_is_never_switched_off_in_requests():
