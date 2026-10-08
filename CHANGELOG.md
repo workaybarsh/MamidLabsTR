@@ -3,6 +3,19 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.2] - 2026-10-08
+
+### Eklenen
+- **MTP (Multi-Token Prediction) speculative decoding** MAX/FLASH için etkinleştirildi
+  (`--spec-type draft-mtp`). Qwen3.8 27B GGUF'u gömülü bir MTP/nextn draft başlığı taşıdığı için
+  ayrı draft model gerekmez; çıktı **kayıpsızdır** (kabul edilen tokenlar hedef modelle doğrulanır)
+  ve ~1,2–1,5x hız beklenir. LITE (Qwen3.5 9B) modelinde MTP katmanı yoktur, orada kullanılmaz.
+  `settings/api.json` → `"mtp": false` ile kapatılır.
+
+### Notlar
+- MTP'nin çıktıyı değiştirmediği doğrulandı: greedy (temperature 0) + sabit tohumla MTP'li ve
+  MTP'siz çıktı birebir aynı.
+
 ## [1.0.1] - 2026-10-07
 
 ### Eklenen
@@ -85,5 +98,6 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Windows DPAPI ile şifrelenir.
 - Web araçları yalnızca genel HTTP(S) adreslerine erişir; DNS rebinding koruması vardır.
 
+[1.0.2]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.2
 [1.0.1]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.1
 [1.0.0]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.0
