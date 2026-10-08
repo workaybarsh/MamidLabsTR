@@ -18,6 +18,10 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Adım, arac çağrısı olmayan turlarda `$done.data`'nın thread sınırından `$null` dönmesine karşı
   `if ($done.data)` ile korunur (aksi halde mesaj listesine boş bir girdi eklenip sunucudan
   `400 All non-assistant messages must contain 'content'` alınıyordu).
+- **MTP (Multi-Token Prediction) speculative decoding** MAX/FLASH için etkinleştirildi
+  (`--spec-type draft-mtp`). Qwen3.8 27B GGUF'u gömülü bir MTP/nextn draft başlığı taşıdığı için
+  ayrı draft model gerekmez; çıktı kayıpsızdır ve ~1,2–1,5x hız beklenir. LITE (Qwen3.5 9B)
+  modelinde MTP katmanı yoktur, orada kullanılmaz. `settings/api.json` → `"mtp": false` ile kapatılır.
 
 ### Düzeltmeler
 - Yerel model akışında aralıklı görülen **"Varolan bir bağlantı uzaktaki bir ana bilgisayar

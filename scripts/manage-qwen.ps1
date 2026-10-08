@@ -230,6 +230,20 @@ try {
         $serverArgs=@('--model',$model,'--alias',$desiredAlias,'--host','127.0.0.1','--port','8080','--ctx-size','8192','--predict','4096','--parallel','1','--gpu-layers','99','--flash-attn','on','--cache-reuse','256','--jinja','--metrics')
         if($projector){$serverArgs+=@('--mmproj',$projector)}
     }
+    # MTP (Multi-Token Prediction) speculative decoding. Qwen3.8 27B GGUF'u GOMULU bir
+    # MTP/nextn draft basligi tasir (blk.64.nextn.*, qwen35.nextn_predict_layers=1); bu
+    # yuzden AYRI bir draft model GEREKMEZ - ayni dosyadaki baslik kullanilir. Cikti
+    # kayipsizdir (kabul edilen tokenlar hedef modelle dogrulanir) ve ~1,2-1,5x hiz
+    # kazanci saglar (model kartinda Q4_K_M icin olculen kabul 0,35-0,53, ortalama kabul
+    # uzunlugu 2,05-2,58; mmproj ile uyumlu oldugu da dogrulanmis). LITE (Qwen3.5 9B)
+    # modelinde MTP katmani YOKTUR (llama.cpp: "model doesn't contain MTP layers"), ona
+    # eklenmez. Ozel modellerde de varsayilan kapalidir. settings/api.json -> "mtp": false
+    # ile kapatilabilir (bir uyumluluk sorunu cikarsa).
+    $mtpEnabled = $true
+    if ($settings -and $null -ne $settings.mtp) { $mtpEnabled = [bool]$settings.mtp }
+    if (!$custom -and $Profile -ne 'lite' -and $mtpEnabled) {
+        $serverArgs += @('--spec-type', 'draft-mtp')
+    }
     # Start-Process joins ArgumentList on Windows; quote paths explicitly.
     $serverArgs=@($serverArgs | ForEach-Object {if($_ -match '\s'){'"'+$_+'"'}else{$_}})
     # Cagiranin stdout borusunu devretmeden baslat; yoksa "manage-qwen | ..." bitmez.

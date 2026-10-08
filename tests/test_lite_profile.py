@@ -182,6 +182,24 @@ def test_lite_bounds_thinking_with_a_server_enforced_budget():
     assert "$settings.liteReasoningBudget" in manager
 
 
+def test_mtp_speculative_decoding_is_enabled_for_max_flash_but_not_lite():
+    """Qwen3.8 27B GGUF'u gomulu bir MTP/nextn draft basligi tasir (qwen35.
+    nextn_predict_layers=1, blk.64.nextn.*); --spec-type draft-mtp AYRI draft model
+    gerektirmez ve cikti kayipsizdir. LITE (Qwen3.5 9B) modelinde MTP katmani yoktur
+    (llama.cpp "model doesn't contain MTP layers" verir), ona eklenmemelidir."""
+    manager = read_text("scripts/manage-qwen.ps1")
+
+    assert "'--spec-type', 'draft-mtp'" in manager
+    # Yalnizca max/flash (lite ve custom haric).
+    assert "if (!$custom -and $Profile -ne 'lite' -and $mtpEnabled)" in manager
+    # settings.mtp ile kapatilabilmeli.
+    assert "$settings.mtp" in manager
+    assert "$mtpEnabled = $true" in manager
+    # LITE dalinda MTP yok.
+    lite_block = manager.split("if ($Profile -eq 'lite') {", 1)[1].split("else {", 1)[0]
+    assert "draft-mtp" not in lite_block
+
+
 def test_thinking_is_never_switched_off_in_requests():
     """Dusunme urun kararidir: butce uzunlugu sinirlar, ozelligi kapatmaz."""
     inference = read_text("agent/qwen-inference.ps1")

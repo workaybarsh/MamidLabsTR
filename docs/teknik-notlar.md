@@ -57,6 +57,13 @@ MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, f
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta
 sığmayıp paylaşılan belleğe taşıyordu). Sağ alttaki seçiciyi **değiştirmezsen model yeniden yüklenmez**.
 
+**MTP (Multi-Token Prediction).** MAX/FLASH, Qwen3.8 27B GGUF'unun gömülü MTP/nextn draft başlığıyla
+(`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`) `--spec-type draft-mtp` ile başlar. Ayrı bir
+draft model gerekmez; çıktı kayıpsızdır (kabul edilen tokenlar hedef modelle doğrulanır) ve
+~1,2–1,5x hız kazancı beklenir (model kartında Q4_K_M için kabul 0,35–0,53, ortalama kabul uzunluğu
+2,05–2,58). LITE modelinde MTP katmanı yoktur; orada eklenmez. Gerekirse
+`%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine `"mtp": false` yazılıp kapatılabilir.
+
 ### 16 GB bellek bütçesi (MAX/FLASH)
 
 RTX 5060 Ti 16 GB üzerinde llama.cpp'nin bellek dökümüyle ölçüldü (32K bağlam):
