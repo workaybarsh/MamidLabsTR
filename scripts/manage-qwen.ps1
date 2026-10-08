@@ -106,12 +106,23 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # icin MAX hedef donaniminda hic acilamiyordu.
     $overheadMiB = 300
     $neededMiB = $modelMiB + $overheadMiB
-    if ($freeMiB -lt $neededMiB) {
+    # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
+    # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
+    # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti
+    # (yalnizca 32 MiB bos kaldi). Bu yuzden kucuk bir asim engellenmez; yalnizca belirgin
+    # asimda (payin ustune ~1 GB) durdurulur ki katmanlar paylasilan bellege tasip sohbet
+    # kat kat yavaslamasin. MAX (27B, 16 GB) hedef donaniminda pay yine korunur.
+    $toleranceMiB = 1024
+    if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
             "tahmini en az $neededMiB MiB gerekir (model ~$modelMiB MiB, onbellek/hesap " +
             "payi $overheadMiB MiB). GPU kullanan baska uygulamalari (tarayici donanim " +
             "hizlandirma, baska bir MamidLabs sureci vb.) kapatip tekrar dene, ya da " +
             "daha kucuk bir profil sec.")
+    }
+    if ($freeMiB -lt $neededMiB) {
+        Write-Warning ("Bos VRAM tahmini ihtiyacin $($neededMiB - $freeMiB) MiB altinda; " +
+            "llama.cpp buyuk gomme tensorunu CPU'da tutarak yukleyecek (kucuk hiz kaybi olabilir).")
     }
 }
 

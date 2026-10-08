@@ -56,6 +56,19 @@ def test_start_action_accepts_skip_memory_check_switch():
     assert "[switch]$SkipMemoryCheck" in manager
 
 
+def test_memory_budget_tolerates_small_overflow_for_mtp_grown_lite():
+    """MTP basligi eklenince LITE modeli ~464 MiB buyur; 8 GB kartta kontrol artik
+    'sigmaz' deyip modeli hic acmiyordu ("Model islemi basarisiz"). Gercekte llama.cpp
+    buyuk gomme tensorunu CPU'da tutup kucuk asimi kaldirir (olculdu: ~165 MiB asimda
+    model yuklendi, ~41 tok/s). Kucuk asim engellenmemeli; yalnizca payin uzerine ~1 GB
+    asimda durdurulmali."""
+    manager = read_text("scripts/manage-qwen.ps1")
+    assert "$toleranceMiB = 1024" in manager
+    assert "if ($freeMiB -lt ($neededMiB - $toleranceMiB))" in manager
+    # Kucuk asimda kullanici uyarilir ama yukleme surer.
+    assert "Write-Warning" in manager
+
+
 def test_max_budget_fits_a_16_gb_card():
     """RTX 5060 Ti 16 GB'ta olculdu: yuklemeden once ~15008 MiB bos, MAX dil
     modeli dosyasi 14600 MiB, GPU'daki gercek kullanim ~14640 MiB. Eski +2560

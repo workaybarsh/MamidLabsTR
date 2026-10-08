@@ -36,6 +36,7 @@ Varsayılan kurulum kökü `%LOCALAPPDATA%\Programs\MamidLabs`.
 | `agent/api-settings.ps1` | API bağlantıları penceresi, anahtar doğrulama, DPAPI anahtar saklama |
 | `agent/media-settings.ps1` | Görsel ve video modelleri penceresi, "Model dosyası seç (dosya yolu)" |
 | `agent/hf-settings.ps1`, `agent/hf-hub.py` | Hugging Face token ve indirme işçisi (boyut doğrulamalı) |
+| `agent/web-server.ps1`, `agent/web-settings.ps1`, `scripts/web-serve.ps1` | Yerel web yönetimi (tarayıcıdan erişim): HTTP sunucusu, ayar penceresi, başlatıcı. Varsayılan yalnızca localhost, şifre korumalı; OpenCode'un sunucu modeli örnek alındı |
 | `agent/imagegen-run.ps1` | Yerel görsel üretimi / düzenleme işçisi (ComfyUI API) |
 | `agent/videogen-run.ps1` | Yerel video üretimi işçisi (Wan 2.2) |
 | `agent/api-media-run.ps1`, `agent/api-media.py` | API ile görsel/video üretimi, profil indirme işi |
@@ -436,6 +437,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-08 | Yerel web yönetimi eklendi: tarayıcıdan sohbet/model değiştirme/üretilen dosyalar. Sunucu (`agent/web-server.ps1`) varsayılan yalnızca localhost'a bağlanır, sabit şifre + HttpOnly/SameSite=Strict oturum çerezi (30 gün), tek kullanımlık 5 dk'lık bağlantı linki (OpenCode 'pair' tarzı), 5 hatalı girişte kilit, `outputs\` ile sınırlı dosya erişimi. Ayrıca: MTP sonrası VRAM payı küçük aşımı tolere eder (model açılmama hatası düzeldi); private depo güncelleme denetimi GitHub tokenı kullanır; üretilen dosyalar "Aç" ile tek tıkla açılır. | agent/web-server.ps1, agent/web-settings.ps1, scripts/web-serve.ps1, scripts/manage-qwen.ps1, agent/profile-catalog.ps1, qwen-desktop.ps1, tests/test_web_server.py, tests/test_memory_admission.py, tests/test_qwen_contracts.py |
 | 2026-10-08 | Lisans MIT'den tescilli (tüm hakları saklı, telif: Aybars Haydar Altuntaş) lisansa geçirildi. | LICENSE, README.md, docs/kurulum.md, tests/test_setup_wizard.py, CHANGELOG.md |
 | 2026-10-08 | LITE'ta MTP (speculative decoding) etkinleştirildi: 9B GGUF'una dönüşümde düşen MTP/nextn başlığı indirme sırasında `mtp_inject.py` ile eklenir (kaynak HF safetensors'tan yalnızca MTP tensorleri, HTTP range; normlara `w+1`). `manage-qwen.ps1` MTP'yi artık GGUF'ta `nextn` katmanı varsa (max/flash/lite) açar (`Test-GgufHasMtp`), yoksa eklemez. Ölçülen kabul ~0,93, ~2x hız; çıktı kayıpsız. | agent/mtp_inject.py, agent/hf-hub.py, agent/profiles.json, agent/profile-catalog.ps1, scripts/download-profile.ps1, scripts/manage-qwen.ps1, tests/test_lite_profile.py, tests/test_mtp_inject.py |
 | 2026-10-08 | MAX/FLASH + LITE için MTP (Multi-Token Prediction) speculative decoding (`--spec-type draft-mtp`); ayrı draft model gerekmez ve çıktı kayıpsız. `settings.mtp=false` ile kapatılır. | scripts/manage-qwen.ps1, tests/test_lite_profile.py |

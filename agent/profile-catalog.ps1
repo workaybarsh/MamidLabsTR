@@ -95,6 +95,33 @@ function Test-LocalProfileChatFilesPresent([string]$id) {
 $script:MamidLabsAppId = '{56CF14A8-57AF-4EEB-A520-937212F0B365}'
 $script:MamidLabsRepo = 'workaybarsh/MamidLabsTR'
 
+# Ozel (private) depo icin guncelleme denetimi ve indirmesi bir GitHub tokeni gerektirir;
+# aksi halde GitHub 404 doner. Token su sirayla aranir: GITHUB_TOKEN / GH_TOKEN ortam
+# degiskeni, sonra kayitli 'github' saglayici anahtari (Windows DPAPI, API ayarlariyla ayni).
+function Get-UpdateToken {
+    foreach ($envName in @('GITHUB_TOKEN', 'GH_TOKEN')) {
+        $value = [Environment]::GetEnvironmentVariable($envName)
+        if ($value) { return $value }
+    }
+    $profile = $null
+    if ($script:apiSettings -and $script:apiSettings.providers) {
+        $profile = $script:apiSettings.providers['github']
+    }
+    if ($profile -and $profile.key) {
+        try {
+            $secure = ConvertTo-SecureString ([string]$profile.key)
+            return [Net.NetworkCredential]::new('', $secure).Password
+        } catch { }
+    }
+    return ''
+}
+
+function Get-GitHubHeaders([string]$token) {
+    $headers = @{ 'User-Agent' = 'MamidLabs-Updater'; 'Accept' = 'application/vnd.github+json' }
+    if ($token) { $headers['Authorization'] = "Bearer $token" }
+    return $headers
+}
+
 function Get-InstalledMamidLabsVersion {
     foreach ($hive in @('HKCU:', 'HKLM:')) {
         $key = "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($script:MamidLabsAppId)_is1"
@@ -114,11 +141,13 @@ function Get-InstalledMamidLabsVersion {
 # ham hata metni yerine kısa bir durum göstersin diye.
 function Test-MamidLabsUpdateAvailable {
     $local = Get-InstalledMamidLabsVersion
+    $token = Get-UpdateToken
     try {
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$($script:MamidLabsRepo)/releases/latest" `
-            -Headers @{ 'User-Agent' = 'MamidLabs-Updater'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 20 -ErrorAction Stop
+            -Headers (Get-GitHubHeaders $token) -TimeoutSec 20 -ErrorAction Stop
     } catch {
-        return @{ available = $false; error = 'Denetlenemedi (internet yok?)'; localVersion = $local }
+        $reason = if (!$token) { 'özel depo için güncelleme tokenı gerekli' } else { 'internet yok?' }
+        return @{ available = $false; error = "Denetlenemedi ($reason)"; localVersion = $local }
     }
     $remoteTag = [string]$release.tag_name
     $remoteVersion = $remoteTag.TrimStart('v', 'V')
@@ -129,7 +158,8 @@ function Test-MamidLabsUpdateAvailable {
         try { $isNewer = ([version]$remoteVersion) -gt ([version]$local) }
         catch { $isNewer = ($remoteVersion -ne $local) }
     }
-    return @{ available = $isNewer; version = $remoteVersion; downloadUrl = [string]$asset.browser_download_url; size = [long]$asset.size; localVersion = $local }
+    return @{ available = $isNewer; version = $remoteVersion; downloadUrl = [string]$asset.browser_download_url
+              apiUrl = [string]$asset.url; size = [long]$asset.size; localVersion = $local }
 }
 
 function Get-ProfileStatusLabel([string]$id) {
@@ -200,7 +230,7 @@ function Show-ProfileManager([string]$focusId) {
 
     $dlg = [Windows.Forms.Form]::new()
     $dlg.Text = 'MamidLabs · Profiller'
-    $dlg.Size = [Drawing.Size]::new(790, 500)
+    $dlg.Size = [Drawing.Size]::new(790, 540)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false
@@ -240,6 +270,23 @@ function Show-ProfileManager([string]$focusId) {
     $closeBtn = [Windows.Forms.Button]::new()
     $closeBtn.Text = 'Kapat'
     $closeBtn.SetBounds(642, 376, 120, 34)
+
+    # Ozel (private) depo icin guncelleme denetimi/indirmesi token ister (bkz. Get-UpdateToken).
+    $tokenLabel = [Windows.Forms.Label]::new()
+    $tokenLabel.Text = 'Güncelleme tokenı (özel depo için GitHub tokenı):'
+    $tokenLabel.SetBounds(16, 418, 420, 20)
+    $tokenBox = [Windows.Forms.TextBox]::new()
+    $tokenBox.SetBounds(16, 440, 430, 26)
+    $tokenBox.UseSystemPasswordChar = $true
+    $tokenSave = [Windows.Forms.Button]::new()
+    $tokenSave.Text = 'Tokenı kaydet'
+    $tokenSave.SetBounds(456, 439, 130, 28)
+    $tokenClear = [Windows.Forms.Button]::new()
+    $tokenClear.Text = 'Sil'
+    $tokenClear.SetBounds(592, 439, 60, 28)
+    if ($script:apiSettings.providers -and $script:apiSettings.providers['github']) {
+        $tokenLabel.Text = 'Güncelleme tokenı kayıtlı (boş bırakırsan korunur; değiştirmek için yaz):'
+    }
 
     foreach ($profile in $catalog) { [void]$list.Items.Add("$($profile.label) — $(Get-ProfileStatusLabel $profile.id)") }
 
@@ -308,6 +355,26 @@ function Show-ProfileManager([string]$focusId) {
 
     $closeBtn.Add_Click({ $dlg.Close() }.GetNewClosure())
 
+    $tokenSave.Add_Click({
+        if (!$script:apiSettings.providers) { $script:apiSettings.providers = @{} }
+        $value = $tokenBox.Text.Trim()
+        if ($value) {
+            $script:apiSettings.providers['github'] = @{ key = (ConvertFrom-SecureString (ConvertTo-SecureString $value -AsPlainText -Force)) }
+            $status.Text = 'Güncelleme tokenı kaydedildi. "Güncellemeleri denetle" ile dene.'
+        } else {
+            $status.Text = 'Boş token kaydedilmedi.'
+        }
+        $tokenBox.Text = ''
+        Save-ApiSettings
+    }.GetNewClosure())
+    $tokenClear.Add_Click({
+        if ($script:apiSettings.providers -and $script:apiSettings.providers.ContainsKey('github')) {
+            $script:apiSettings.providers.Remove('github')
+        }
+        Save-ApiSettings
+        $status.Text = 'Güncelleme tokenı silindi.'
+    }.GetNewClosure())
+
     # Buton üç halli: boşta "Güncellemeleri denetle" → tıklanınca GitHub'ı sorar →
     # güncelleme varsa "Şimdi güncelle"ye döner (bir tıklama daha indirip kurulumu
     # başlatır), yoksa "Güncelsiniz" yazıp birkaç saniye sonra kendini sıfırlar
@@ -338,7 +405,12 @@ function Show-ProfileManager([string]$focusId) {
             $dlg.Refresh()
             try {
                 $downloadPath = Join-Path $env:TEMP "MamidLabs_Setup_$($state.version).exe"
-                Invoke-WebRequest -Uri $state.downloadUrl -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
+                $token = Get-UpdateToken
+                $dlgUrl = if ($token -and $state.apiUrl) { $state.apiUrl } else { $state.downloadUrl }
+                $dlgHeaders = if ($token -and $state.apiUrl) {
+                    @{ 'User-Agent' = 'MamidLabs-Updater'; 'Accept' = 'application/octet-stream'; 'Authorization' = "Bearer $token" }
+                } else { @{ 'User-Agent' = 'MamidLabs-Updater' } }
+                Invoke-WebRequest -Uri $dlgUrl -Headers $dlgHeaders -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
                 if ($state.size -and (Get-Item -LiteralPath $downloadPath).Length -ne $state.size) {
                     throw 'İndirilen dosya boyutu uyuşmuyor.'
                 }
@@ -361,7 +433,7 @@ function Show-ProfileManager([string]$focusId) {
         $result = Test-MamidLabsUpdateAvailable
         $localText = if ($result.localVersion) { $result.localVersion } else { 'bilinmiyor' }
         if ($result.available) {
-            $updateBtn.Tag = @{ state = 'available'; downloadUrl = $result.downloadUrl; version = $result.version; size = $result.size }
+            $updateBtn.Tag = @{ state = 'available'; downloadUrl = $result.downloadUrl; apiUrl = $result.apiUrl; version = $result.version; size = $result.size }
             $updateBtn.Text = 'Şimdi güncelle'
             $updateBtn.Enabled = $true
             $status.Text = "Yeni sürüm var: $($result.version) (kurulu: $localText). Şimdi güncelle, kurulum sihirbazını açar ve MamidLabs'i kapatır."
@@ -374,7 +446,7 @@ function Show-ProfileManager([string]$focusId) {
         }
     }.GetNewClosure())
 
-    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $updateBtn, $closeBtn))
+    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear))
     $wanted = 0
     if ($focusId) {
         for ($i = 0; $i -lt $catalog.Count; $i++) { if ($catalog[$i].id -eq $focusId) { $wanted = $i; break } }

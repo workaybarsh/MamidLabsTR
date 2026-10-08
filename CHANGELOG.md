@@ -3,6 +3,23 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.4] - 2026-10-08
+
+### Eklenen
+- **Yerel web yönetimi:** uygulama arayüzü tarayıcıdan yönetilebilir (sohbet, model
+  değiştirme, üretilen dosyalar). Varsayılan olarak yalnızca bu bilgisayardan (127.0.0.1)
+  erişilir; şifre korumalıdır (Windows hesabına bağlı DPAPI) ve tek kullanımlık, 5 dakikada
+  süresi dolan bir bağlantı linki üretir. Yerel ağa açmak açık bir ayar ister; oturum 30 gün
+  sürer ve şifre değişince iptal olur. Dosya erişimi yalnızca `outputs\` ile sınırlıdır.
+- Üretilen dosyalar (görsel/video/belge) sohbet balonundan **tek tıkla açılabilir** ("Aç").
+
+### Düzeltilen
+- **Model yüklenememe hatası ("Model işlemi başarısız"):** MTP başlığı eklenince LITE modeli
+  ~464 MiB büyüyordu ve VRAM kontrolü 8 GB kartta modeli hiç açmıyordu. Kontrol artık küçük
+  aşımı tolere eder (llama.cpp büyük gömme tensorünü CPU'da tutar); yalnızca belirgin aşımda durur.
+- **Özel (private) depo güncelleme denetimi:** "Güncellemeleri denetle" 404 veriyordu; artık bir
+  GitHub tokenı (GITHUB_TOKEN/GH_TOKEN ya da Profiller penceresindeki "Güncelleme tokenı") kullanır.
+
 ## [1.0.3] - 2026-10-08
 
 ### Eklenen
@@ -110,6 +127,7 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Windows DPAPI ile şifrelenir.
 - Web araçları yalnızca genel HTTP(S) adreslerine erişir; DNS rebinding koruması vardır.
 
+[1.0.4]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.4
 [1.0.3]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.3
 [1.0.2]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.2
 [1.0.1]: https://github.com/workaybarsh/MamidLabsTR/releases/tag/v1.0.1
