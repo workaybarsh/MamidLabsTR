@@ -178,6 +178,7 @@ Aşağıdaki görseller ve videolar MamidLabs ile yerelde üretilmiştir.
 |---|---|
 | [docs/kurulum.md](docs/kurulum.md) | Kurulum, güncelleme, doğrulama, kaldırma ve sorun giderme |
 | [docs/teknik-notlar.md](docs/teknik-notlar.md) | Profiller, bellek bütçesi, medya hattı, araçlar ve bilinen notlar |
+| [docs/sunum/](docs/sunum/) | Teknik sunum: kaynak, HTML ve PDF (32 slayt) |
 | [AGENTS.md](AGENTS.md) | Geliştirici ve yapay zekâ ajanları için altyapı rehberi |
 | [CHANGELOG.md](CHANGELOG.md) | Sürüm geçmişi |
 
