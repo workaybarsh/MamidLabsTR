@@ -49,9 +49,9 @@ Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-qwen-desktop.vbs`
 
 | Profil | Model | Bağlam | Reasoning | max_tokens | Ölçülen hız |
 |---|---|---|---|---|---|
-| MAX (derin) | Qwen3.8 27B IQ4_XS | 32K | `xhigh` | 8192 | ~25 token/s |
-| FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 4096 | ~22–24 token/s |
-| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 3072 | ~35 token/s |
+| MAX (derin) | Qwen3.8 27B IQ4_XS | 32K | `xhigh` | 8192 | ~42–58 token/s |
+| FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 4096 | ~42–58 token/s |
+| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 3072 | ~97 token/s (16 GB'ta) |
 
 MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, flash-attn açık,
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta

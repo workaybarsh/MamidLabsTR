@@ -346,7 +346,7 @@ python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/confte
 
 | | 16 GB (RTX 5060 Ti) FLASH | 8 GB (RTX 4060 Laptop) LITE |
 |---|---|---|
-| Sohbet | ~24–25 tok/s | ~36 tok/s (şarjda), pilde 17–24 |
+| Sohbet | ~42–58 tok/s (MTP açık) | ~97 tok/s (16 GB'ta MTP ile) |
 | Görsel (`yeni`), uçtan uca | 60–95 sn | 68–139 sn |
 | Görselden yeniden üretim (`yeniden_uret`) | ölçülmedi | ~110–140 sn |
 | Fotoğraf düzenleme (`kimlik_duzenle`) | 74–160 sn (tek/iki görsel) | **desteklenmiyor** |

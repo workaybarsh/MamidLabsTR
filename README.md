@@ -65,11 +65,12 @@ API sağlayıcıları için kullanılır.
 | Düşünme | Derin | Kısa | Kısa, 300 token bütçe |
 | Görsel modeli | Krea-2 Turbo fp8 | Krea-2 Turbo fp8 | Krea-2 Turbo GGUF Q4_K_M |
 | Model indirmesi | ~52 GB (FLASH ile ortak) | ~52 GB | ~36 GB |
-| Ölçülen sohbet hızı | ~25 tok/s | ~22–24 tok/s | ~35–38 tok/s |
+| Ölçülen sohbet hızı | ~42–58 tok/s | ~42–58 tok/s | ~97 tok/s (16 GB'ta) |
 
 MAX ve FLASH aynı dosyaları kullanır; kurulumda tek bir **Qwen3.8 27B** seçeneği olarak sunulur,
-aralarındaki geçiş uygulamanın alt çubuğundan yapılır. Ölçüm donanımı: MAX ve FLASH için RTX 5060 Ti
-16 GB, LITE için RTX 4060 Laptop 8 GB (şarjda). Ayrıntılar: [docs/teknik-notlar.md](docs/teknik-notlar.md).
+aralarındaki geçiş uygulamanın alt çubuğundan yapılır. Ölçüm donanımı: RTX 5060 Ti 16 GB (MTP açık).
+LITE 16 GB'ta ~97 tok/s verir; 8 GB kartlar için aynı medya hattı küçültülür. Ayrıntılar:
+[docs/teknik-notlar.md](docs/teknik-notlar.md).
 
 ## Sistem gereksinimleri
 
