@@ -179,7 +179,6 @@ Aşağıdaki görseller ve videolar MamidLabs ile yerelde üretilmiştir.
 |---|---|
 | [docs/kurulum.md](docs/kurulum.md) | Kurulum, güncelleme, doğrulama, kaldırma ve sorun giderme |
 | [docs/teknik-notlar.md](docs/teknik-notlar.md) | Profiller, bellek bütçesi, medya hattı, araçlar ve bilinen notlar |
-| [docs/oturum-raporu-2026-10-09.md](docs/oturum-raporu-2026-10-09.md) | 1.0.8 oturum raporu: taşma çözümü, profil silme, ölçümler (MTP, tok/s) |
 | [AGENTS.md](AGENTS.md) | Geliştirici ve yapay zekâ ajanları için altyapı rehberi |
 | [CHANGELOG.md](CHANGELOG.md) | Sürüm geçmişi |
 

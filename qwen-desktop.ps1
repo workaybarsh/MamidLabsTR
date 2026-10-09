@@ -36,6 +36,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class QwenWindow {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int maxCount);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
@@ -62,6 +63,16 @@ $appTitle = 'MamidLabs'
 # DIKKAT: $null bir string parametresine baglanirken PowerShell onu "" yapar ve
 # FindWindow hicbir seyi bulamaz; sinif adini gercekten null gecmek icin [NullString]::Value sart.
 $existingWindow = [QwenWindow]::FindWindow([NullString]::Value, $appTitle)
+# Yalnizca gercek uygulama penceresine (WinForms sinifi) gorev cubugu katmani.
+# Explorer'in "TabProxyWindow"lari da bu basligi tasiyabildigi icin basliga gore
+# bulmak, uygulama zorla kapatildiktan sonra kalinti pencere "zaten acik" sanilip
+# uygulamanin HIC acilmamasina yol aciyordu (gercek makinede gorundu). Sinif adi
+# denetimi bunu ayirt eder: gercek form sinifi WindowsForms10.* ile baslar.
+if ($existingWindow -ne [IntPtr]::Zero) {
+    $className = New-Object System.Text.StringBuilder 256
+    [void][QwenWindow]::GetClassName($existingWindow, $className, 256)
+    if ($className.ToString() -notlike 'WindowsForms10.*') { $existingWindow = [IntPtr]::Zero }
+}
 if ($existingWindow -ne [IntPtr]::Zero) {
     if ([QwenWindow]::IsIconic($existingWindow)) { [QwenWindow]::ShowWindow($existingWindow, 9) | Out-Null }
     else { [QwenWindow]::ShowWindow($existingWindow, 5) | Out-Null }

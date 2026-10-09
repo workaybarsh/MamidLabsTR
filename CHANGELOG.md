@@ -6,6 +6,11 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
 ## [1.0.8] - 2026-10-09
 
 ### Düzeltilen
+- **Uygulama bazen hiç açılmıyordu ("pencere açılmadan kapandı"):** Tek-örnek denetimi
+  yalnızca pencere başlığına (`MamidLabs`) bakıyordu. Aynı başlığı taşıyan başka bir pencere
+  (ör. Windows Gezgini'nin `TabProxyWindow`'u ya da bir video/medya penceresi) varken uygulama
+  kendini "zaten açık" sanıp açılmadan çıkıyordu. Denetim artık pencere **sınıfını** da doğrular
+  (yalnızca `WindowsForms10.*` gerçek uygulama penceresi sayılır).
 - **"Model işlemi başarısız" hatası ve taşma (yapısal kök neden):** Uygulamanın açtığı tek
   büyük CUDA bağlamı boşta bekleyen ComfyUI'ydi. Bağlam açıkken sürücü VRAM'i parçalı
   tutuyor; boş VRAM yeterli görünse bile 27B model paylaşılan belleğe taşıp üretim ~6

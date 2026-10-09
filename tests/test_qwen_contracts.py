@@ -272,6 +272,22 @@ def test_chat_history_remains_account_encrypted():
     assert "$loadedChatId -match '^[0-9a-fA-F]{32}$'" in desktop
 
 
+def test_single_instance_check_verifies_the_window_class():
+    """'MamidLabs' basligini tasiyan baska bir pencere (orn. Explorer'in
+    TabProxyWindow'i ya da bir video/medya penceresi) yuzunden uygulama kendini
+    'zaten acik' sanip HIC acilmiyordu (gercek makinede goruldu; arayuz smoke
+    adimi 'pencere acilmadan kapandi' verdi). Tek-ornek denetimi artik yalnizca
+    gercek WinForms penceresini (sinif adi WindowsForms10.*) kabul eder."""
+    desktop = read_text("qwen-desktop.ps1")
+    assert "GetClassName" in desktop
+    assert "WindowsForms10.*" in desktop
+    # Sinif denetimi FindWindow sonucundan sonra ve erken return'den once olmali.
+    idx_find = desktop.index("[QwenWindow]::FindWindow([NullString]::Value, $appTitle)")
+    idx_class = desktop.index("WindowsForms10.*", idx_find)
+    idx_return = desktop.index("return", idx_find)
+    assert idx_find < idx_class < idx_return
+
+
 def test_remote_url_validation_blocks_local_and_non_http_targets():
     path = ROOT / "agent" / "qwen-agent-tools.py"
     spec = importlib.util.spec_from_file_location("qwen_agent_tools", path)

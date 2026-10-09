@@ -61,7 +61,7 @@ Varsayılan kurulum kökü `%LOCALAPPDATA%\Programs\MamidLabs`.
 | `requirements/app.txt`, `requirements/imagegen.txt` | Python paketleri (sabit sürümler) |
 | `tests/` | pytest; PowerShell fonksiyonlarını gerçek `pwsh` ile de çalıştırır |
 | `tests/ui-automation/` | Uygulamayı ve sihirbazı UI Automation/Win32 ile süren yardımcılar |
-| `docs/` | `kurulum.md`, `teknik-notlar.md`, `media/`, oturum raporları |
+| `docs/` | `kurulum.md`, `teknik-notlar.md`, `media/` |
 | `.github/workflows/` | `testler.yml` (pytest), `kurulum-paketi.yml` (Inno derleme ve sürüm yayımı) |
 | `AGENTS.md`, `CLAUDE.md` | Bu rehber; `CLAUDE.md` Claude Code için buraya yönlendirir. Kurulum köküne kopyalanmaz. |
 
@@ -462,7 +462,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-09 | Oturum raporu eklendi: `docs/oturum-raporu-2026-10-09.md` (1.0.8 özeti: taşma çözümü, profil silme, PRO etiketi ve tüm ölçümler — MTP draft kabulü, tok/s, VRAM). | docs/oturum-raporu-2026-10-09.md, README.md |
+| 2026-10-09 | Tek-örnek penceresi denetimi sağlamlaştırıldı: yalnızca başlık yerine pencere SINIFI da doğrulanır. Aynı başlıklı başka bir pencere (Explorer `TabProxyWindow`, video penceresi) varken uygulama açılmadan kapanıyordu ("pencere açılmadan kapandı"). | qwen-desktop.ps1, tests/test_qwen_contracts.py |
 | 2026-10-09 | Taşma/«Model işlemi başarısız» yapısal kök nedeni çözüldü (1.0.8): uygulamanın tek büyük CUDA bağlamı ComfyUI, dil modeli yüklenmeden önce HER ZAMAN kapatılıyor (bağlam açıkken sürücü VRAM'i parçalıyor; 15.290 MiB "boş" + bağlam → 6 tok/s). MAX/FLASH bellek payı 800→600 MiB (eşik 15200); temiz GPU'da 15244 MiB boşken çalışan 27B model artık reddedilmiyor. LITE+MAX birlikte doğrulandı (97 / 58 tok/s). Profil yöneticisine "Profili sil" eklendi (yalnızca profile özel dosyalar; LITE'ın ortak medyası korunur). Sihirbazda 27B etiketi "PRO". ENG'e de uygulandı. | scripts/manage-qwen.ps1, agent/profile-catalog.ps1, packaging/windows/mamidlabs.iss, tests/test_memory_admission.py, tests/test_profile_delete.py |
 | 2026-10-09 | VRAM eşiği gerilemesi düzeltildi (1.0.7): 1.0.6'daki 1000 MiB pay eşiği 15600 MiB yapıp makinenin normal boş değerini (15442–15558) yanlış reddediyordu. Pay 800 MiB'a çekildi (eşik 15400); ComfyUI açıkken kapatılır, kapalı/açılışta model yüklenir. ENG sürümüne de uygulandı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
 | 2026-10-09 | Medya sonrası ~6 tok/s düşüşünün kök nedeni düzeltildi: VRAM bütçe tahmini gerçek yükü eksik hesaplıyordu (pay 300→1000 MiB, MAX/FLASH toleransı 256→0). 27B model GPU'da ~15378-15442 MiB ister; boştaki ComfyUI varken MTP draft bağlamı CPU'ya taşınıp üretim 44→6-7 tok/s'ye düşüyordu. Ayrıca `Release-Comfy` gerçek boş VRAM'i doğrular. Smoke testine gerçek arayüzü süren `arayuz` adımı eklendi (MTP + "sunucu kapatıldı" kontrolü). | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, agent/imagegen-run.ps1, agent/videogen-run.ps1, scripts/smoke-test.ps1, tests/test_memory_admission.py, tests/test_media_release.py, tests/test_smoke_test_script.py |
