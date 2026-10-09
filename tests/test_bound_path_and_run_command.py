@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PRELUDE = r"""
 $ErrorActionPreference = 'Stop'
+# Python ciktiyi UTF-8 cozer; konsol kod sayfasi farkliysa (or. Turkce Windows'ta
+# cp1254) Turkce karakterler bozulup testi ortama gore kararsiz yapiyordu. Cikti
+# kodlamasini sabitleyerek testi deterministik hale getir.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 function Get-Functions([string]$path) {
     $tokens=$null; $errs=$null
     $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errs)
