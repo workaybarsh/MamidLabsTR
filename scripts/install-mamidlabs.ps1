@@ -278,6 +278,36 @@ function Invoke-Layout {
     }
     Write-Ok ('Program dosyalari kopyalandi -> ' + $Root)
 
+    # Sihirbazla kurulmus bir kok, program kaynagini {kok}\kurulum-kaynak altinda da tutar;
+    # Inno iptal/geri alma ve yeniden kurulum bunu kullanir. Betik tabanli guncelleme
+    # (bu asama) bu klasoru tazelemedigi icin onceki surumden kaliyordu; varsa ayni [Files]
+    # kumesiyle tazelenir. Betikle yapilan kurulumda (klasor yoksa) bosuna olusturulmaz.
+    $kaynak = Join-Path $Root 'kurulum-kaynak'
+    if (Test-Path -LiteralPath $kaynak -PathType Container) {
+        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE')) {
+            $from = Join-Path $Source $file
+            if (Test-Path -LiteralPath $from -PathType Leaf) { Copy-Item -LiteralPath $from -Destination $kaynak -Force }
+        }
+        foreach ($folder in @('agent', 'scripts', 'requirements')) {
+            $from = Join-Path $Source $folder
+            if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $kaynak -Recurse -Force }
+        }
+        $assets = Join-Path $Source 'assets'
+        if (Test-Path -LiteralPath $assets) {
+            # assets\installer yalnizca sihirbaz derlemesinde kullanilir; .iss da disarida birakir.
+            New-Item -ItemType Directory -Path (Join-Path $kaynak 'assets') -Force | Out-Null
+            Get-ChildItem -LiteralPath $assets -Force | Where-Object { $_.Name -ne 'installer' } | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $kaynak 'assets') -Recurse -Force
+            }
+        }
+        $doc = Join-Path $Source 'docs\kurulum.md'
+        if (Test-Path -LiteralPath $doc -PathType Leaf) {
+            New-Item -ItemType Directory -Path (Join-Path $kaynak 'docs') -Force | Out-Null
+            Copy-Item -LiteralPath $doc -Destination (Join-Path $kaynak 'docs\kurulum.md') -Force
+        }
+        Write-Ok ('Kurulum kaynak paketi tazelendi -> ' + $kaynak)
+    }
+
     # Masaustu kisayolu: cift tikla ac, konsol penceresi acmadan calisir. MamidLabs.lnk
     # baska bir klasordeki kuruluma isaret ediyorsa ona dokunulmaz; bu kurulum icin
     # "MamidLabs (<klasor>).lnk" acilir. Kaldirici yalnizca bu koke isaret edenleri siler.

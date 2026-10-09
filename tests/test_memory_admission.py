@@ -60,13 +60,26 @@ def test_memory_budget_tolerates_small_overflow_for_mtp_grown_lite():
     """MTP basligi eklenince LITE modeli ~464 MiB buyur; 8 GB kartta kontrol artik
     'sigmaz' deyip modeli hic acmiyordu ("Model islemi basarisiz"). Gercekte llama.cpp
     buyuk gomme tensorunu CPU'da tutup kucuk asimi kaldirir (olculdu: ~165 MiB asimda
-    model yuklendi, ~41 tok/s). Kucuk asim engellenmemeli; yalnizca payin uzerine ~1 GB
-    asimda durdurulmali."""
+    model yuklendi, ~41 tok/s). LITE'ta kucuk asim engellenmemeli."""
     manager = read_text("scripts/manage-qwen.ps1")
-    assert "$toleranceMiB = 1024" in manager
+    assert "$toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 256 }" in manager
     assert "if ($freeMiB -lt ($neededMiB - $toleranceMiB))" in manager
     # Kucuk asimda kullanici uyarilir ama yukleme surer.
     assert "Write-Warning" in manager
+
+
+def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
+    """16 GB MAX/FLASH'ta ~1 GB tolerans 27B modelin katmanlarini paylasilan bellege
+    tasirip sohbeti ~5-6 tok/s'ye dusuruyordu (medya sonrasi olculdu). Bu yuzden
+    MAX/FLASH icin tolerans kucuk, LITE icin genis olmali."""
+    manager = read_text("scripts/manage-qwen.ps1")
+    line = next(
+        (l for l in manager.splitlines() if "$toleranceMiB = if" in l), ""
+    )
+    assert line, "profil-farkinda tolerans satiri bulunamadi"
+    assert "{ 1024 } else { 256 }" in line
+    # Ifade yalnizca 'lite' icin 1024 verir; diger (16 GB) profiller 256 alir.
+    assert "$profileName -eq 'lite'" in line
 
 
 def test_max_budget_fits_a_16_gb_card():

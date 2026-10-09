@@ -11,7 +11,7 @@
 
 ; Surumun tek kaynagi. CI etiketi (v1.0.0) bu degerle karsilastirir; CHANGELOG.md'de
 ; ayni numarali bir bolum olmalidir.
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppName "MamidLabs"
 #define MyAppPublisher "workaybarsh"
 #define MyAppURL "https://github.com/workaybarsh/MamidLabsTR"

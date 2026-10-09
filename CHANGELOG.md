@@ -3,6 +3,21 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.5] - 2026-10-09
+
+### Düzeltilen
+- **Medya sonrası sohbet kat kat yavaşlaması:** 16 GB kartta (MAX/FLASH) VRAM payı
+  toleransı ~1 GB idi; bu, 27B modelin katmanlarının Windows'un paylaşılan belleğine
+  taşmasına ve sohbetin ~5–6 tok/s'ye düşmesine yol açabiliyordu (ör. bir görsel/düzenleme
+  işinden sonra dil modeli geri yüklenirken). Tolerans artık profile göre: LITE'ta 1024 MiB
+  (MTP ile büyüyen 9B modelin 8 GB karttaki küçük aşımı, llama.cpp büyük gömme tensorünü
+  CPU'da tutarak sorunsuz kaldırıyor), MAX/FLASH'ta 256 MiB. Böylece VRAM dara girdiğinde
+  boşta bekleyen ComfyUI kapatılır ve model paylaşılan belleğe taşmadan tam sığar.
+- **Eksik güncelleme paketi:** betik tabanlı güncelleme (`install-mamidlabs.ps1 -Stage layout`)
+  sihirbazın kaynak paketini (`kurulum-kaynak`) tazelemiyordu; Inno ile kurulmuş bir kökte bu
+  klasör önceki sürümden kalıyordu. Artık varsa aynı dosya kümesiyle tazelenir (yoksa
+  oluşturulmaz).
+
 ## [1.0.4] - 2026-10-08
 
 ### Eklenen

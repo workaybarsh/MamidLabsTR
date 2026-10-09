@@ -109,10 +109,14 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
     # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti
-    # (yalnizca 32 MiB bos kaldi). Bu yuzden kucuk bir asim engellenmez; yalnizca belirgin
-    # asimda (payin ustune ~1 GB) durdurulur ki katmanlar paylasilan bellege tasip sohbet
-    # kat kat yavaslamasin. MAX (27B, 16 GB) hedef donaniminda pay yine korunur.
-    $toleranceMiB = 1024
+    # (yalnizca 32 MiB bos kaldi). Bu yuzden LITE icin kucuk asim engellenmez; LITE'ta
+    # tolerans genis tutulur. MAX/FLASH (16 GB) icin ayni genis tolerans zararliydi:
+    # ~1 GB asima izin verince 27B modelin katmanlari paylasilan bellege tasip sohbet
+    # ~5-6 tok/s'ye dusuyordu (medya sonrasi olculdu: 5.6 tok/s, bos VRAM 49 MiB).
+    # 16 GB'ta tolerans kucuk tutulur; boylece bosta bekleyen ComfyUI (~300 MiB) VRAM'i
+    # daralttiginda kapatilir ve model tam sigar. Olcum (RTX 5060 Ti): 27B model sigarken
+    # ~158-166 MiB bos kalir ve ~39-44 tok/s calisir.
+    $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 256 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
             "tahmini en az $neededMiB MiB gerekir (model ~$modelMiB MiB, onbellek/hesap " +

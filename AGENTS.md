@@ -138,7 +138,13 @@ Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 **VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + 300 MiB.
 Boş VRAM yetmezse önce boştaki ComfyUI kapatılıp tekrar ölçülür, yine yetmezse "Yetersiz bos VRAM"
 hatası verilir. Amaç, modelin paylaşılan sistem belleğine taşıp sohbeti yavaşlatmasını önlemek.
-16 GB kartta 27B model ~14.640 MiB kullanır.
+16 GB kartta 27B model ~14.640 MiB kullanır ve sığdığında ~158–166 MiB boş VRAM kalır.
+Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
+llama.cpp büyük gömme tensorünü CPU'da tutar, ~41 tok/s), **MAX/FLASH 256 MiB**. 16 GB'ta
+1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti ~5–6 tok/s'ye düşürüyordu
+(medya sonrası geri yüklemede ölçüldü: 5.6 tok/s, 49 MiB boş VRAM); dar tolerans boştaki
+ComfyUI'yi (~300 MiB) kapatıp modelin tam sığmasını sağlar. Ölçüm: 27B, ComfyUI açıkken
+~39 tok/s, kapalıyken ~44 tok/s.
 
 ## 6. Sohbet isteğinin akışı
 
@@ -236,6 +242,8 @@ hatası verilir. Amaç, modelin paylaşılan sistem belleğine taşıp sohbeti y
   `runtime`, `llama`, `python`, `comfyui` (sabit commit'lere getirir, yerel değişiklikleri
   `tools\yedek\*.patch`'e alır), `verify`. Uygulama açıksa `layout` durur, çünkü dosyalar kilitli
   olur. Paket boyutları doğrulanır. `-Root` varsayılanı `%LOCALAPPDATA%\Programs\MamidLabs`.
+  `layout`, Inno ile kurulmuş bir kökte varsa `kurulum-kaynak` (sihirbazın açtığı kaynak paketi;
+  iptal/geri alma ve yeniden kurulum için) da tazeler; betik kurulumunda oluşturmaz.
 - Sabit sürümler: PowerShell 7.6.6, llama.cpp b10998 (CUDA 13.4), ComfyUI `b0f4b7b`, ComfyUI-GGUF
   `6ea2651`, comfyui-krea2edit `86f886d`, torch cu130.
 - Disk eşikleri (`profile-report.ps1` ve `install-mamidlabs.ps1`, birebir aynı): LITE 58 GB,
@@ -437,6 +445,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-09 | Medya sonrası sohbet yavaşlaması düzeltildi: VRAM payı toleransı profile göre yapıldı (LITE 1024 MiB, MAX/FLASH 256 MiB); 16 GB'ta ~1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti ~5–6 tok/s'ye düşürüyordu. Ayrıca `install-mamidlabs.ps1 -Stage layout` varsa `kurulum-kaynak` kaynak paketini tazeler. | scripts/manage-qwen.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_install_layout_source.py |
 | 2026-10-08 | Yerel web yönetimi eklendi: tarayıcıdan sohbet/model değiştirme/üretilen dosyalar. Sunucu (`agent/web-server.ps1`) varsayılan yalnızca localhost'a bağlanır, sabit şifre + HttpOnly/SameSite=Strict oturum çerezi (30 gün), tek kullanımlık 5 dk'lık bağlantı linki (OpenCode 'pair' tarzı), 5 hatalı girişte kilit, `outputs\` ile sınırlı dosya erişimi. Ayrıca: MTP sonrası VRAM payı küçük aşımı tolere eder (model açılmama hatası düzeldi); private depo güncelleme denetimi GitHub tokenı kullanır; üretilen dosyalar "Aç" ile tek tıkla açılır. | agent/web-server.ps1, agent/web-settings.ps1, scripts/web-serve.ps1, scripts/manage-qwen.ps1, agent/profile-catalog.ps1, qwen-desktop.ps1, tests/test_web_server.py, tests/test_memory_admission.py, tests/test_qwen_contracts.py |
 | 2026-10-08 | Lisans MIT'den tescilli (tüm hakları saklı, telif: Aybars Haydar Altuntaş) lisansa geçirildi. | LICENSE, README.md, docs/kurulum.md, tests/test_setup_wizard.py, CHANGELOG.md |
 | 2026-10-08 | LITE'ta MTP (speculative decoding) etkinleştirildi: 9B GGUF'una dönüşümde düşen MTP/nextn başlığı indirme sırasında `mtp_inject.py` ile eklenir (kaynak HF safetensors'tan yalnızca MTP tensorleri, HTTP range; normlara `w+1`). `manage-qwen.ps1` MTP'yi artık GGUF'ta `nextn` katmanı varsa (max/flash/lite) açar (`Test-GgufHasMtp`), yoksa eklemez. Ölçülen kabul ~0,93, ~2x hız; çıktı kayıpsız. | agent/mtp_inject.py, agent/hf-hub.py, agent/profiles.json, agent/profile-catalog.ps1, scripts/download-profile.ps1, scripts/manage-qwen.ps1, tests/test_lite_profile.py, tests/test_mtp_inject.py |
