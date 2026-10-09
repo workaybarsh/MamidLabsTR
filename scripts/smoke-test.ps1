@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, gecmis devam, MTP, OCR, gorsel, video.
+    Kurulum sonrasi uctan uca duman testi: sohbet, belge, cevrimdisi araclar, ag gecisleri, gecmis devam, OCR, gorsel, fotograf duzenleme, video ve gercek arayuz (MTP + baglanti hatasi kontrolu).
 
 .DESCRIPTION
     install-mamidlabs.ps1 yalnizca altyapiyi hazirlar (binary'ler, ortamlar);
@@ -46,6 +46,9 @@ param(
     [switch]$SkipNetworkSwitch,
     # Gecmis sohbetten devam (kapat -> ac -> yukle -> devam) adimini atlar.
     [switch]$SkipHistoryResume,
+    # Gercek arayuzu (masaustu uygulamasini) baslatip MTP ve baglanti hatasi
+    # kontrolunu atlar.
+    [switch]$SkipUi,
     # MTP (speculative decoding) dogrulama adimini atlar.
     [switch]$SkipMtp,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
@@ -576,6 +579,106 @@ if ($SkipVideo) {
         Report 'video' $true ("$([int]$sw.Elapsed.TotalSeconds) sn, " + [IO.Path]::GetFileName($videoEvent.text) + " ($([math]::Round($size/1KB)) KB)")
     } catch {
         Report 'video' $false $_.Exception.Message
+    }
+}
+
+# ------------------------------------------------------------------ arayuz
+# Gercek masaustu arayuzunu (qwen-desktop.ps1) baslatir; pencerenin ve dil
+# modelinin hazir oldugunu dogrular. Ardindan arayuzun kullandigi gercek cikarim
+# iscisini (agent\qwen-inference.ps1) ayni sekilde calistirip "yerel sunucu
+# baglantisi koptu / istek baslatilamadi" turu bir hatanin OLMADIGINI ve MTP'nin
+# (--spec-type draft-mtp) gercekten calistigini kanitlar. Uygulama kapaninca
+# sunucuyu da durdurur; bu yuzden adim en sonda (video sonrasi) calisir.
+Write-Section 'Arayuz (gercek uygulama) + MTP'
+if ($SkipUi) {
+    Write-Host '   [atla] -SkipUi verildi'
+} else {
+    $settingsDir = Join-Path $Root 'settings'
+    $settingsBackup = Join-Path $env:TEMP 'mamidlabs-smoke-settings-backup'
+    $appProcess = $null
+    try {
+        # Uygulama acikken ayarlar kapanista ezilir (bkz. AGENTS.md tuzak 10); yedekle.
+        Remove-Item -LiteralPath $settingsBackup -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $settingsDir) { Copy-Item -LiteralPath $settingsDir -Destination $settingsBackup -Recurse -Force }
+
+        # Onceki testlerden acik kalmis bir arayuz varsa kapat (dosya kilitlenmesin).
+        Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -and $_.CommandLine -like '*qwen-desktop.ps1*' } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        & $manage -Action stop | Out-Null
+
+        $appScript = Join-Path $Root 'qwen-desktop.ps1'
+        $appPwsh = Join-Path $Root 'runtime\pwsh\pwsh.exe'
+        if (!(Test-Path -LiteralPath $appScript -PathType Leaf)) { throw "Uygulama bulunamadi: $appScript" }
+        if (!(Test-Path -LiteralPath $appPwsh -PathType Leaf)) { throw "Gomulu pwsh bulunamadi: $appPwsh" }
+
+        # Kisayolun yaptigi gibi baslat (-STA; gorunur pencere).
+        $appProcess = Start-Process -FilePath $appPwsh -PassThru -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', $appScript)
+        $deadline = [DateTime]::UtcNow.AddSeconds(240)
+        $windowReady = $false
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if ($appProcess.HasExited) { throw "Uygulama penceresi acilmadan kapandi (cikis kodu $($appProcess.ExitCode))." }
+            $appProcess.Refresh()
+            if ($appProcess.MainWindowHandle -ne 0) { $windowReady = $true; break }
+            Start-Sleep -Milliseconds 800
+        }
+        if (!$windowReady) { throw 'Uygulama penceresi 240 saniyede acilmadi.' }
+        if (!(Wait-ForHealth 240)) { throw 'Arayuz acildi ama dil modeli hazir olmadi (sunucu baslatilamadi).' }
+
+        # MTP bayragi sunucuda gercekten var mi?
+        $serverProc = @(Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if (!$serverProc -or $serverProc.CommandLine -notmatch '--spec-type\s+draft-mtp') {
+            throw 'Sunucu --spec-type draft-mtp ile baslatilmamis.'
+        }
+
+        # Arayuzun kullandigi gercek isci ile bir tur: hata ve watchdog metni olmamali.
+        $jobData = @{
+            root = $Root; messages = @(@{ role = 'user'; content = 'Merhaba, kendini tek cumleyle tanit.' })
+            provider = 'local'; model = "smoke-ui-$Profile"; profile = $Profile
+            maxTokens = 300; contextLimit = 32768; boundFolder = $null
+            consultProviders = @{}; attachedDocuments = @(); currentImagePaths = @()
+            hasCurrentImage = $false; multiImageOcr = $false; multiImageOcrMode = $false
+            internet = $false; agent = $false; office = $false; documentCreate = $false; effort = 'low'
+        }
+        $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
+            AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
+        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+        $items = @(Receive-Job -Job $job -Wait); Remove-Job -Job $job -Force
+        $errEvent = @($items | Where-Object { $_.kind -eq 'error' })
+        if ($errEvent.Count) { throw "Arayuz turu hata verdi: $($errEvent[0].text)" }
+        $done = @($items | Where-Object { $_.kind -eq 'done' }) | Select-Object -Last 1
+        if (!$done) { throw 'Arayuz turu done olayi uretmedi.' }
+        $joined = ($items | ForEach-Object { [string]$_.text }) -join "`n"
+        # .Contains() LITERAL arama yapar. -like "*[Hata]*" KULLANMA: PowerShell'de
+        # [Hata] karakter sinifi (H/a/t) sayilir ve neredeyse her metne takilir (gercek
+        # makinede yanlis pozitif olarak yakalandi); oysa arayuz "[Hata]"yi yalnizca
+        # error olayi geldiginde ekler ve bunu yukarida zaten denetliyoruz.
+        foreach ($marker in @('zorla kapat', 'baglanti kesildi', 'baglanti koptu', '[Hata]', 'istek baslatilamadi', 'WSAECONNRESET')) {
+            if ($joined.Contains($marker)) { throw "Arayuz turunda istenmeyen metin gecti: '$marker'" }
+        }
+
+        # MTP gercekten draft uretip kabul ediyor mu?
+        $body = @{ prompt = "1`n2`n3`n"; n_predict = 32; temperature = 0; seed = 7; stream = $false; cache_prompt = $false } | ConvertTo-Json
+        $resp = Invoke-RestMethod 'http://127.0.0.1:8080/completion' -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 120
+        $draftN = [int]$resp.timings.draft_n; $acc = [int]$resp.timings.draft_n_accepted
+        if ($draftN -le 0) { throw 'MTP draft token uretmedi (--spec-type etkin degil?).' }
+        if ($acc -le 0) { throw "MTP etkin ama kabul 0/$draftN (baslik islevsiz)." }
+
+        Report 'arayuz' $true "pencere acildi, model hazir, arayuz turu hatasiz; MTP draft kabul $acc/$draftN"
+    } catch {
+        Report 'arayuz' $false $_.Exception.Message
+    } finally {
+        if ($appProcess -and !$appProcess.HasExited) {
+            try { Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue } catch { }
+        }
+        # Uygulamanin actigi sunucuyu ve varsa kalan surecleri kapat (sonraki adim yok, ama temizlik).
+        & $manage -Action stop | Out-Null
+        if (Test-Path -LiteralPath $settingsBackup) {
+            Remove-Item -LiteralPath $settingsDir -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item -LiteralPath $settingsBackup -Destination $settingsDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $settingsBackup -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

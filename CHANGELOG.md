@@ -3,6 +3,30 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.6] - 2026-10-09
+
+### Eklenen
+- **Arayüz smoke adımı (`arayuz`):** smoke testi artık gerçek masaüstü uygulamasını
+  (`qwen-desktop.ps1`) başlatıp pencerenin ve dil modelinin hazır olduğunu doğrular; ardından
+  arayüzün kullandığı gerçek işçiyle (`agent/qwen-inference.ps1`) bir tur atıp **"sunucu
+  kapatıldı"/watchdog metni olmadığını** ve **MTP'nin gerçekten çalıştığını** (`--spec-type
+  draft-mtp` + draft kabulü) kanıtlar. Uygulama kapanışta ayarları ezdiği için ayarlar
+  yedeklenip geri yüklenir (`-SkipUi` ile atlanır).
+
+### Düzeltilen
+- **Medya sonrası sohbetin ~6 tok/s'ye düşmesi (kök neden):** VRAM bütçe tahmini gerçek
+  yükü eksik hesaplıyordu (model + 300 MiB). Oysa 27B model 16 GB kartta (32K bağlam, q4_0 KV,
+  MTP draft bağlamı) GPU'da ~**15.378 MiB** yer kaplar; dosya ile arasındaki ~778 MiB
+  hesaplanmıyordu. Bu yüzden bütçe "sığar" diyor, ama boşta bekleyen ComfyUI (~300–460 MiB)
+  varken model tam sığmayıp bir bileşeni (MTP draft bağlamı, ~185 MiB) sessizce CPU'ya
+  taşınıyor ve üretim 44 tok/s'den ~6–7 tok/s'ye düşüyordu (ölçüldü: llamaVRAM 15378 → 15193).
+  Pay gerçeğe çekildi (**1000 MiB**) ve MAX/FLASH toleransı **0** yapıldı; böylece boş VRAM
+  yetmezse önce boştaki ComfyUI kapatılıp yer açılır ve model her seferinde tam sığar.
+- **`Release-Comfy` sağlamlaştırması:** ComfyUI `/free` ile kendi PyTorch önbelleğini boşaltsa
+  bile CUDA bağlamı ve sürücü tarafı rezervasyon bir süre VRAM tutabiliyordu; artık gerçek boş
+  VRAM (`nvidia-smi`) de doğrulanır ve yetmezse ComfyUI kapatılır (görsel/video işçileri
+  MAX/FLASH 14000 MiB, LITE 6000 MiB eşiği geçirir).
+
 ## [1.0.5] - 2026-10-09
 
 ### Düzeltilen

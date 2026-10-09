@@ -62,38 +62,63 @@ def test_memory_budget_tolerates_small_overflow_for_mtp_grown_lite():
     buyuk gomme tensorunu CPU'da tutup kucuk asimi kaldirir (olculdu: ~165 MiB asimda
     model yuklendi, ~41 tok/s). LITE'ta kucuk asim engellenmemeli."""
     manager = read_text("scripts/manage-qwen.ps1")
-    assert "$toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 256 }" in manager
+    assert "$toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }" in manager
     assert "if ($freeMiB -lt ($neededMiB - $toleranceMiB))" in manager
     # Kucuk asimda kullanici uyarilir ama yukleme surer.
     assert "Write-Warning" in manager
 
 
 def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
-    """16 GB MAX/FLASH'ta ~1 GB tolerans 27B modelin katmanlarini paylasilan bellege
-    tasirip sohbeti ~5-6 tok/s'ye dusuruyordu (medya sonrasi olculdu). Bu yuzden
-    MAX/FLASH icin tolerans kucuk, LITE icin genis olmali."""
+    """16 GB MAX/FLASH'ta tolerans 0'dır: 27B model kartın sınırında çalışır ve
+    ~185 MiB'lik küçük bir aşım bile MTP draft bağlamını CPU'ya taşıyıp üretimi
+    ~6-7 tok/s'ye düşürüyordu. LITE'ta geniş tolerans korunur."""
     manager = read_text("scripts/manage-qwen.ps1")
     line = next(
         (l for l in manager.splitlines() if "$toleranceMiB = if" in l), ""
     )
     assert line, "profil-farkinda tolerans satiri bulunamadi"
-    assert "{ 1024 } else { 256 }" in line
-    # Ifade yalnizca 'lite' icin 1024 verir; diger (16 GB) profiller 256 alir.
+    assert "{ 1024 } else { 0 }" in line
+    # Ifade yalnizca 'lite' icin 1024 verir; diger (16 GB) profiller 0 alir.
     assert "$profileName -eq 'lite'" in line
 
 
 def test_max_budget_fits_a_16_gb_card():
-    """RTX 5060 Ti 16 GB'ta olculdu: yuklemeden once ~15008 MiB bos, MAX dil
-    modeli dosyasi 14600 MiB, GPU'daki gercek kullanim ~14640 MiB. Eski +2560
-    MiB pay 17160+ MiB isteyip MAX'i hedef donaniminda hic acmiyordu."""
+    """RTX 5060 Ti 16 GB'ta ölçüldü: 27B dosyası GPU'da ~15378-15442 MiB ister.
+    MAX/FLASH bütçesi model + 1000 MiB pay kullanır (gereken ~15600 MiB). Bu değer,
+    boştaki ComfyUI kapatıldıktan sonraki boş VRAM'e (~16100 MiB) sığmalı ama
+    ComfyUI açıkken (~15550 MiB) yetmemeli ki ComfyUI kapatılıp model tam sığsın."""
     import re
 
     manager = read_text("scripts/manage-qwen.ps1")
-    match = re.search(r"\$overheadMiB = (-?\d+)\s*$", manager, re.MULTILINE)
-    assert match, "overheadMiB satiri bulunamadi"
-    measured_free_mib = 15008
+    match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
+    assert match, "profil-farkinda overheadMiB satiri bulunamadi"
+    overhead = int(match.group(2))  # else dali = MAX/FLASH
+    assert overhead == 1000
     max_model_mib = 14600
-    assert max_model_mib + int(match.group(1)) <= measured_free_mib
+    measured_free_with_comfy_open = 15550
+    measured_free_with_comfy_closed = 16100
+    needed = max_model_mib + overhead
+    # ComfyUI kapatilinca siger...
+    assert needed <= measured_free_with_comfy_closed
+    # ...ama acikken yetmez, bu yuzden ComfyUI kapatilir (tolerans 0).
+    assert needed > measured_free_with_comfy_open
+    # Gercek gereksinimin (~15442 MiB) uzerinde olmali ki marj kalsin.
+    assert needed > 15442
+
+
+def test_lite_budget_is_not_tightened_by_the_max_fix():
+    """Kök neden düzeltmesi (pay artışı, tolerans 0) yalnızca 16 GB profillerine
+    uygulanmalı. LITE 8 GB kartta zaten sınırda çalışır ve küçük aşımı llama.cpp
+    (token_embd CPU'da) kaldırır; pay orada büyütülürse çalışan LITE kurulumu boşa
+    reddedilirdi. Bu yüzden LITE payı 300 MiB ve toleransı 1024 kalmalı."""
+    import re
+
+    manager = read_text("scripts/manage-qwen.ps1")
+    match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
+    assert match, "profil-farkinda overheadMiB satiri bulunamadi"
+    assert int(match.group(1)) == 300, "LITE payi buyutulmus (LITE kurulumu bozulur)"
+    tol = next((l for l in manager.splitlines() if "$toleranceMiB = if" in l), "")
+    assert "{ 1024 } else { 0 }" in tol
 
 
 def test_max_projector_runs_on_cpu_and_stays_out_of_vram_budget():

@@ -135,16 +135,17 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + 300 MiB.
+**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **1000 MiB**.
 Boş VRAM yetmezse önce boştaki ComfyUI kapatılıp tekrar ölçülür, yine yetmezse "Yetersiz bos VRAM"
 hatası verilir. Amaç, modelin paylaşılan sistem belleğine taşıp sohbeti yavaşlatmasını önlemek.
-16 GB kartta 27B model ~14.640 MiB kullanır ve sığdığında ~158–166 MiB boş VRAM kalır.
-Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
-llama.cpp büyük gömme tensorünü CPU'da tutar, ~41 tok/s), **MAX/FLASH 256 MiB**. 16 GB'ta
-1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti ~5–6 tok/s'ye düşürüyordu
-(medya sonrası geri yüklemede ölçüldü: 5.6 tok/s, 49 MiB boş VRAM); dar tolerans boştaki
-ComfyUI'yi (~300 MiB) kapatıp modelin tam sığmasını sağlar. Ölçüm: 27B, ComfyUI açıkken
-~39 tok/s, kapalıyken ~44 tok/s.
+1000 MiB pay ölçümden gelir: 27B dosyası 14.600 MiB iken GPU'da ~**15.378–15.442 MiB** yer kaplar;
+aradaki ~778 MiB 32K bağlamın q4_0 KV önbelleği + hesap tamponu + MTP draft bağlamıdır. Eski
+300 MiB pay eksik kaldığı için boşta bekleyen ComfyUI (~300–460 MiB) varken 27B model tam
+sığmayıp MTP draft bağlamı (~185 MiB) sessizce CPU'ya taşınıyordu: ölçüldü, üretim 44 → ~6–7
+tok/s (llamaVRAM 15378 → 15193). Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin
+8 GB karttaki küçük aşımı; llama.cpp büyük gömme tensorünü CPU'da tutar), **MAX/FLASH 0** (27B
+kartın sınırında; küçük bir aşım bile felaket). Tolerans 0 sayesinde boştaki ComfyUI kapatılır
+ve model her yüklemede tam sığar. Ölçüm: 27B tam sığdığında ~44 tok/s.
 
 ## 6. Sohbet isteğinin akışı
 
@@ -178,6 +179,10 @@ ComfyUI'yi (~300 MiB) kapatıp modelin tam sığmasını sağlar. Ölçüm: 27B,
   ile `agent\imagegen-run.ps1`'i başlatır. Dil modeli yalnızca istemi yazar.
 - `media-model-swap.ps1`: `Stop-LocalModelForMedia` → `Start-OrReuseComfy` → üretim →
   `restoreProfile` ile dil modelini geri yükle. LITE'ta ComfyUI `--lowvram` ve Krea-2 GGUF kullanır.
+  - `Release-Comfy` üretimden sonra `/free` ile modelleri boşaltır; **torch sayacı sıfırlansa bile
+    gerçek boş VRAM'i (`nvidia-smi`) doğrular** ve geri yüklenecek modele yetmiyorsa (MAX/FLASH
+    14000 MiB, LITE 6000 MiB) ComfyUI'yi kapatır. Aksi halde CUDA bağlamı VRAM tutarken başlayan
+    dil modeli paylaşılan belleğe taşınır ve sohbet ~6 tok/s'ye düşer.
 - **Modlar** (`generate_image.mode`):
   - `yeni`: metinden üretir. Krea-2 Turbo, 8 adım, cfg 1.
   - `yeniden_uret` / `stil_referansi`: eklenen görselden yola çıkar.
@@ -323,7 +328,10 @@ python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/confte
   (sohbeti kaydet → yeniden yükle → devam et; hata yok), `mtp` (sunucu `draft-mtp` ile başlatıldıysa
   `/completion` yanıtının `timings.draft_n_accepted` değeri >0 olmalı; 0 ise başlık işlevsizdir;
   `-SkipMtp` ile atlanır), `ocr`, `gorsel`, `duzenleme`,
-  `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`.
+  `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`, `arayuz` (gerçek
+  masaüstü uygulamasını başlatır; pencere + model hazır olmalı, arayüzün kullandığı gerçek işçiyle
+  bir tur atıp "sunucu kapatıldı"/watchdog metni olmadan yanıt üretmeli ve MTP çalışmalı;
+  `-SkipUi` ile atlanır). `arayuz` en sonda çalışır çünkü uygulama kapanınca sunucuyu durdurur.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
 
@@ -445,7 +453,8 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-09 | Medya sonrası sohbet yavaşlaması düzeltildi: VRAM payı toleransı profile göre yapıldı (LITE 1024 MiB, MAX/FLASH 256 MiB); 16 GB'ta ~1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti ~5–6 tok/s'ye düşürüyordu. Ayrıca `install-mamidlabs.ps1 -Stage layout` varsa `kurulum-kaynak` kaynak paketini tazeler. | scripts/manage-qwen.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_install_layout_source.py |
+| 2026-10-09 | Medya sonrası ~6 tok/s düşüşünün kök nedeni düzeltildi: VRAM bütçe tahmini gerçek yükü eksik hesaplıyordu (pay 300→1000 MiB, MAX/FLASH toleransı 256→0). 27B model GPU'da ~15378-15442 MiB ister; boştaki ComfyUI varken MTP draft bağlamı CPU'ya taşınıp üretim 44→6-7 tok/s'ye düşüyordu. Ayrıca `Release-Comfy` gerçek boş VRAM'i doğrular. Smoke testine gerçek arayüzü süren `arayuz` adımı eklendi (MTP + "sunucu kapatıldı" kontrolü). | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, agent/imagegen-run.ps1, agent/videogen-run.ps1, scripts/smoke-test.ps1, tests/test_memory_admission.py, tests/test_media_release.py, tests/test_smoke_test_script.py |
+| 2026-10-09 | Medya sonrası sohbet yavaşlaması düzeltildi (1.0.5): VRAM payı toleransı profile göre yapıldı; 16 GB'ta ~1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti yavaşlatıyordu. Ayrıca `install-mamidlabs.ps1 -Stage layout` varsa `kurulum-kaynak` kaynak paketini tazeler. (Kök neden 1.0.6'da netleşti; bkz. üstteki satır.) | scripts/manage-qwen.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_install_layout_source.py |
 | 2026-10-08 | Yerel web yönetimi eklendi: tarayıcıdan sohbet/model değiştirme/üretilen dosyalar. Sunucu (`agent/web-server.ps1`) varsayılan yalnızca localhost'a bağlanır, sabit şifre + HttpOnly/SameSite=Strict oturum çerezi (30 gün), tek kullanımlık 5 dk'lık bağlantı linki (OpenCode 'pair' tarzı), 5 hatalı girişte kilit, `outputs\` ile sınırlı dosya erişimi. Ayrıca: MTP sonrası VRAM payı küçük aşımı tolere eder (model açılmama hatası düzeldi); private depo güncelleme denetimi GitHub tokenı kullanır; üretilen dosyalar "Aç" ile tek tıkla açılır. | agent/web-server.ps1, agent/web-settings.ps1, scripts/web-serve.ps1, scripts/manage-qwen.ps1, agent/profile-catalog.ps1, qwen-desktop.ps1, tests/test_web_server.py, tests/test_memory_admission.py, tests/test_qwen_contracts.py |
 | 2026-10-08 | Lisans MIT'den tescilli (tüm hakları saklı, telif: Aybars Haydar Altuntaş) lisansa geçirildi. | LICENSE, README.md, docs/kurulum.md, tests/test_setup_wizard.py, CHANGELOG.md |
 | 2026-10-08 | LITE'ta MTP (speculative decoding) etkinleştirildi: 9B GGUF'una dönüşümde düşen MTP/nextn başlığı indirme sırasında `mtp_inject.py` ile eklenir (kaynak HF safetensors'tan yalnızca MTP tensorleri, HTTP range; normlara `w+1`). `manage-qwen.ps1` MTP'yi artık GGUF'ta `nextn` katmanı varsa (max/flash/lite) açar (`Test-GgufHasMtp`), yoksa eklemez. Ölçülen kabul ~0,93, ~2x hız; çıktı kayıpsız. | agent/mtp_inject.py, agent/hf-hub.py, agent/profiles.json, agent/profile-catalog.ps1, scripts/download-profile.ps1, scripts/manage-qwen.ps1, tests/test_lite_profile.py, tests/test_mtp_inject.py |

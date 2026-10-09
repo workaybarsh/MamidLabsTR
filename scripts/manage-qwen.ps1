@@ -98,25 +98,32 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # (tarayici + masaustu ~1,5 GB VRAM tutarken) varsayilan profili sessizce
     # reddedip kullaniciyi calisan bir kurulumdan mahrum birakirdi.
     #
-    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, llama.cpp --verbose
-    # bellek dokumu): 14600 MiB'lik dosyanin 644 MiB'i (token_embd) CPU'da kalir,
-    # GPU'da 13729 agirlik + 576 KV + 150 recurrent + 184 hesap = ~14640 MiB, yani
-    # dosya boyutu + ~40 MiB. Pay 300 MiB tutuldu. Onceki +2560 MiB pay 17160+
-    # MiB istiyordu; 16 GB kartin bos alanindan (~15000-15700 MiB) buyuk oldugu
-    # icin MAX hedef donaniminda hic acilamiyordu.
-    $overheadMiB = 300
+    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, llama.cpp): 14600 MiB'lik
+    # dosya GPU'da ~15378-15442 MiB yer kaplar. Aradaki ~780-840 MiB; 32K baglamin q4_0
+    # KV onbellegi + hesap tamponu + MTP draft baglamidir. Eski 300 MiB pay bu ek yuku
+    # saymadigi icin butce "sigar" diyor, ama bosta bekleyen ComfyUI (~300-460 MiB) varken
+    # model tam sigmayip bir bileseni (MTP draft baglami) sessizce CPU'ya tasiyordu:
+    # olculdu, uretim 44 tok/s'den ~6-7 tok/s'ye dusuyordu (llamaVRAM 15378/15442 -> 15193).
+    # Bu yuzden 16 GB profillerinde pay 1000 MiB'dir; yetmezse bosta bekleyen ComfyUI
+    # kapatilip yer acilir ve model her seferinde tam sizar.
+    #
+    # LITE'ta pay BILEREK kucuk (300 MiB) ve tolerans genistir: 8 GB kartta model zaten
+    # sinirda calisir; llama.cpp buyuk gomme tensorunu CPU'da tutup kucuk asimi sorunsuz
+    # kaldirir ve ~41 tok/s ile calismaya devam eder (bkz. asagidaki tolerans notu). Pay
+    # burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB VRAM tutarken)
+    # LITE'i bos yere reddedip calisan kurulumu bozardi.
+    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 1000 }
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
-    # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti
-    # (yalnizca 32 MiB bos kaldi). Bu yuzden LITE icin kucuk asim engellenmez; LITE'ta
-    # tolerans genis tutulur. MAX/FLASH (16 GB) icin ayni genis tolerans zararliydi:
-    # ~1 GB asima izin verince 27B modelin katmanlari paylasilan bellege tasip sohbet
-    # ~5-6 tok/s'ye dusuyordu (medya sonrasi olculdu: 5.6 tok/s, bos VRAM 49 MiB).
-    # 16 GB'ta tolerans kucuk tutulur; boylece bosta bekleyen ComfyUI (~300 MiB) VRAM'i
-    # daralttiginda kapatilir ve model tam sigar. Olcum (RTX 5060 Ti): 27B model sigarken
-    # ~158-166 MiB bos kalir ve ~39-44 tok/s calisir.
-    $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 256 }
+    # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti.
+    # Bu yuzden LITE icin kucuk asim engellenmez; LITE'ta tolerans genis tutulur.
+    # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: 27B model zaten kartin sinirinda calisir
+    # ve ~185 MiB'lik kucuk bir asim bile MTP draft baglamini CPU'ya tasiyip uretimi
+    # ~6-7 tok/s'ye dusuruyordu. Tolerans sifir oldugunda, bos VRAM yetmezse once bosta
+    # bekleyen ComfyUI kapatilir (bkz. asagidaki akis) ve model tam sizar; boylece
+    # yukleme saat gibi tutarli olur.
+    $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
             "tahmini en az $neededMiB MiB gerekir (model ~$modelMiB MiB, onbellek/hesap " +

@@ -372,7 +372,9 @@ try {
         Remove-Item -Force -ErrorAction SilentlyContinue
 
     Emit 'status' 'Gorsel modeli bellekten bosaltiliyor...'
-    Release-Comfy $comfy $comfyUrl
+    # Geri yuklenecek dil modelinin tam sigmasi icin gereken asgari bos VRAM
+    # (MAX/FLASH ~14.6 GB; LITE ~6.2 GB + projektor). Yetmezse ComfyUI kapatilir.
+    Release-Comfy $comfy $comfyUrl $(if ($lite) { 6000 } else { 14000 })
     $comfy = $null
     $Shared.Process = $null
 

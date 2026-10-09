@@ -293,7 +293,8 @@ try {
     Remove-Item -LiteralPath $sourcePath -Force -ErrorAction SilentlyContinue
 
     Emit 'status' 'Video modeli bellekten bosaltiliyor...'
-    Release-Comfy $comfy $comfyUrl
+    # Geri yuklenecek dil modelinin tam sigmasi icin gereken asgari bos VRAM.
+    Release-Comfy $comfy $comfyUrl $(if ($lite) { 6000 } else { 14000 })
     $comfy = $null
     $Shared.Process=$null
 

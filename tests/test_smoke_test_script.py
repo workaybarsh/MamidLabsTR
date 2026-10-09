@@ -15,8 +15,43 @@ def read_text(path: str) -> str:
 
 def test_every_component_can_be_skipped_independently():
     script = read_text("scripts/smoke-test.ps1")
-    for flag in ("SkipChat", "SkipDocument", "SkipImage", "SkipVideo"):
+    for flag in ("SkipChat", "SkipDocument", "SkipImage", "SkipVideo", "SkipUi"):
         assert f"[switch]${flag}" in script
+
+
+def test_ui_step_launches_real_app_and_checks_mtp_and_no_connection_error():
+    """Arayüz adımı: gerçek uygulamayı başlatır, pencere + model hazır olmasını
+    doğrular, arayüzün kullandığı gerçek işçiyle bir tur atar ve 'sunucu kapatıldı'
+    / watchdog metni olmadığını ve MTP'nin çalıştığını kanıtlar."""
+    script = read_text("scripts/smoke-test.ps1")
+
+    # Gerçek uygulama (masaüstü) başlatılır.
+    assert "Join-Path $Root 'qwen-desktop.ps1'" in script
+    assert "'-STA'" in script
+    # Arayüz turu gerçek işçiyle (arayüzün kullandığı kod) çalışır.
+    assert "agent\\qwen-inference.ps1" in script
+    # MTP bayrağı ve gerçek draft kabulü doğrulanır.
+    assert "--spec-type\\s+draft-mtp" in script
+    assert "draft_n_accepted" in script
+    # İstenmeyen bağlantı/kapanma metinleri LITERAL aranır (.Contains); -like "*[Hata]*"
+    # PowerShell'de karakter sınıfı olur ve yanlış pozitif verir.
+    assert "$joined.Contains($marker)" in script
+    assert '-like "*$marker*"' not in script
+    for marker in ("zorla kapat", "baglanti kesildi", "WSAECONNRESET", "[Hata]"):
+        assert marker in script
+    # Adım mutlaka raporlanır.
+    assert "Report 'arayuz'" in script
+
+
+def test_ui_step_restores_settings_and_stops_the_server():
+    """Uygulama kapanışta ayarları ezer ve kendi sunucusunu durdurur; adım
+    ayarları yedekleyip geri yüklemeli ve sunucuyu kapatmalı."""
+    script = read_text("scripts/smoke-test.ps1")
+    assert "mamidlabs-smoke-settings-backup" in script
+    assert "Copy-Item -LiteralPath $settingsDir -Destination $settingsBackup" in script
+    assert "Copy-Item -LiteralPath $settingsBackup -Destination $settingsDir" in script
+    # finally bloğunda sunucu durdurulur.
+    assert "& $manage -Action stop" in script
 
 
 def test_each_component_reports_pass_or_fail_independently():
