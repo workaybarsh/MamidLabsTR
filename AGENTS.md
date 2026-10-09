@@ -135,14 +135,18 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **1000 MiB**.
+**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **800 MiB**.
 Boş VRAM yetmezse önce boştaki ComfyUI kapatılıp tekrar ölçülür, yine yetmezse "Yetersiz bos VRAM"
 hatası verilir. Amaç, modelin paylaşılan sistem belleğine taşıp sohbeti yavaşlatmasını önlemek.
-1000 MiB pay ölçümden gelir: 27B dosyası 14.600 MiB iken GPU'da ~**15.378–15.442 MiB** yer kaplar;
-aradaki ~778 MiB 32K bağlamın q4_0 KV önbelleği + hesap tamponu + MTP draft bağlamıdır. Eski
+800 MiB pay ölçümden gelir: 27B dosyası 14.600 MiB iken GPU'da ~**15.422–15.442 MiB** yer kaplar;
+aradaki ~822–842 MiB 32K bağlamın q4_0 KV önbelleği + hesap tamponu + MTP draft bağlamıdır. Eski
 300 MiB pay eksik kaldığı için boşta bekleyen ComfyUI (~300–460 MiB) varken 27B model tam
 sığmayıp MTP draft bağlamı (~185 MiB) sessizce CPU'ya taşınıyordu: ölçüldü, üretim 44 → ~6–7
-tok/s (llamaVRAM 15378 → 15193). Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin
+tok/s (llamaVRAM 15378 → 15193). 800 MiB'lik eşik (model+800 = 15400) makinenin gerçek boş
+aralığına oturur: ComfyUI açıkken boş ~15020 (< 15400) → boştaki ComfyUI kapatılır; ComfyUI
+kapalı/açılışta boş ~15442–15670 (≥ 15400) → model yüklenir. 1000 MiB'lik pay (eşik 15600) bu
+makinede normal boş değeri (15442–15558) bile yanlış reddediyordu (gerçek makinede görüldü).
+Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin
 8 GB karttaki küçük aşımı; llama.cpp büyük gömme tensorünü CPU'da tutar), **MAX/FLASH 0** (27B
 kartın sınırında; küçük bir aşım bile felaket). Tolerans 0 sayesinde boştaki ComfyUI kapatılır
 ve model her yüklemede tam sığar. Ölçüm: 27B tam sığdığında ~44 tok/s.
@@ -453,6 +457,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-09 | VRAM eşiği gerilemesi düzeltildi (1.0.7): 1.0.6'daki 1000 MiB pay eşiği 15600 MiB yapıp makinenin normal boş değerini (15442–15558) yanlış reddediyordu. Pay 800 MiB'a çekildi (eşik 15400); ComfyUI açıkken kapatılır, kapalı/açılışta model yüklenir. ENG sürümüne de uygulandı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
 | 2026-10-09 | Medya sonrası ~6 tok/s düşüşünün kök nedeni düzeltildi: VRAM bütçe tahmini gerçek yükü eksik hesaplıyordu (pay 300→1000 MiB, MAX/FLASH toleransı 256→0). 27B model GPU'da ~15378-15442 MiB ister; boştaki ComfyUI varken MTP draft bağlamı CPU'ya taşınıp üretim 44→6-7 tok/s'ye düşüyordu. Ayrıca `Release-Comfy` gerçek boş VRAM'i doğrular. Smoke testine gerçek arayüzü süren `arayuz` adımı eklendi (MTP + "sunucu kapatıldı" kontrolü). | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, agent/imagegen-run.ps1, agent/videogen-run.ps1, scripts/smoke-test.ps1, tests/test_memory_admission.py, tests/test_media_release.py, tests/test_smoke_test_script.py |
 | 2026-10-09 | Medya sonrası sohbet yavaşlaması düzeltildi (1.0.5): VRAM payı toleransı profile göre yapıldı; 16 GB'ta ~1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti yavaşlatıyordu. Ayrıca `install-mamidlabs.ps1 -Stage layout` varsa `kurulum-kaynak` kaynak paketini tazeler. (Kök neden 1.0.6'da netleşti; bkz. üstteki satır.) | scripts/manage-qwen.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_install_layout_source.py |
 | 2026-10-08 | Yerel web yönetimi eklendi: tarayıcıdan sohbet/model değiştirme/üretilen dosyalar. Sunucu (`agent/web-server.ps1`) varsayılan yalnızca localhost'a bağlanır, sabit şifre + HttpOnly/SameSite=Strict oturum çerezi (30 gün), tek kullanımlık 5 dk'lık bağlantı linki (OpenCode 'pair' tarzı), 5 hatalı girişte kilit, `outputs\` ile sınırlı dosya erişimi. Ayrıca: MTP sonrası VRAM payı küçük aşımı tolere eder (model açılmama hatası düzeldi); private depo güncelleme denetimi GitHub tokenı kullanır; üretilen dosyalar "Aç" ile tek tıkla açılır. | agent/web-server.ps1, agent/web-settings.ps1, scripts/web-serve.ps1, scripts/manage-qwen.ps1, agent/profile-catalog.ps1, qwen-desktop.ps1, tests/test_web_server.py, tests/test_memory_admission.py, tests/test_qwen_contracts.py |

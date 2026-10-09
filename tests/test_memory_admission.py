@@ -83,27 +83,27 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
 
 
 def test_max_budget_fits_a_16_gb_card():
-    """RTX 5060 Ti 16 GB'ta ölçüldü: 27B dosyası GPU'da ~15378-15442 MiB ister.
-    MAX/FLASH bütçesi model + 1000 MiB pay kullanır (gereken ~15600 MiB). Bu değer,
-    boştaki ComfyUI kapatıldıktan sonraki boş VRAM'e (~16100 MiB) sığmalı ama
-    ComfyUI açıkken (~15550 MiB) yetmemeli ki ComfyUI kapatılıp model tam sığsın."""
+    """RTX 5060 Ti 16 GB'ta ölçüldü: model GPU'da ~15422-15442 MiB ister; boştaki ComfyUI
+    boş VRAM'i ~15020 MiB'ye düşürür (model sığmaz, ~6 tok/s). MAX/FLASH bütçesi model +
+    800 MiB (gereken 15400 MiB) olmalı: ComfyUI kapalıyken (~15442-15670 boş) sığar, açıkken
+    (~15020 boş) yetmez ki ComfyUI kapatılıp model tam sığsın."""
     import re
 
     manager = read_text("scripts/manage-qwen.ps1")
     match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
     assert match, "profil-farkinda overheadMiB satiri bulunamadi"
     overhead = int(match.group(2))  # else dali = MAX/FLASH
-    assert overhead == 1000
+    assert overhead == 800
     max_model_mib = 14600
-    measured_free_with_comfy_open = 15550
-    measured_free_with_comfy_closed = 16100
-    needed = max_model_mib + overhead
+    measured_free_with_comfy_open = 15020
+    measured_free_with_comfy_closed = 15442
+    needed = max_model_mib + overhead  # 15400
     # ComfyUI kapatilinca siger...
     assert needed <= measured_free_with_comfy_closed
     # ...ama acikken yetmez, bu yuzden ComfyUI kapatilir (tolerans 0).
     assert needed > measured_free_with_comfy_open
-    # Gercek gereksinimin (~15442 MiB) uzerinde olmali ki marj kalsin.
-    assert needed > 15442
+    # 1000 MiB'lik pay (esik 15600) makinenin normal bos degerini bile yanlis reddediyordu.
+    assert needed < max_model_mib + 1000
 
 
 def test_lite_budget_is_not_tightened_by_the_max_fix():

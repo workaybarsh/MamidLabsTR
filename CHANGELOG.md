@@ -3,6 +3,16 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.7] - 2026-10-09
+
+### Düzeltilen
+- **VRAM eşiği makineyi yanlış reddedebiliyordu (1.0.6 gerilemesi):** 1.0.6'da MAX/FLASH payı
+  1000 MiB'a çıkarılınca eşik 15600 MiB oldu; bu makinenin normal boş değeri (15442–15558 MiB)
+  bile bu eşiğin altında kalıp "Yetersiz bos VRAM" hatası veriyordu (sohbet ve arayüz smoke
+  adımları düştü). Ölçüm: model GPU'da ~15422–15442 MiB ister, ComfyUI açıkken boş ~15020 MiB'ye
+  düşer. Pay **800 MiB**'a çekildi (eşik 15400): ComfyUI açıkken kapatılır, ComfyUI kapalı/açılışta
+  model yüklenir. Aynı düzeltme ENG sürümüne de uygulandı.
+
 ## [1.0.6] - 2026-10-09
 
 ### Eklenen

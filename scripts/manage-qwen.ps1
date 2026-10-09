@@ -104,15 +104,20 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # saymadigi icin butce "sigar" diyor, ama bosta bekleyen ComfyUI (~300-460 MiB) varken
     # model tam sigmayip bir bileseni (MTP draft baglami) sessizce CPU'ya tasiyordu:
     # olculdu, uretim 44 tok/s'den ~6-7 tok/s'ye dusuyordu (llamaVRAM 15378/15442 -> 15193).
-    # Bu yuzden 16 GB profillerinde pay 1000 MiB'dir; yetmezse bosta bekleyen ComfyUI
-    # kapatilip yer acilir ve model her seferinde tam sizar.
+    # Bu yuzden 16 GB profillerinde pay 800 MiB'dir; bu, kartin bosta kaldigi gercek
+    # araliga oturur. Olcum (RTX 5060 Ti): model GPU'da ~15422-15442 MiB ister; bosta
+    # bekleyen ComfyUI bos VRAM'i ~15020 MiB'ye dusurur (27B orada tam sigmaz, ~6 tok/s);
+    # ComfyUI kapali/acilista bos VRAM ~15442-15670 MiB'dir. Esik model+800=15400 MiB;
+    # boylece ComfyUI acikken (15020 < 15400) kapatilir, soguk/acilis durumunda (>=15442)
+    # yuklenir. Daha buyuk pay (or. 1000 -> esik 15600) makinenin normal bos degerini bile
+    # yanlis reddediyordu (gercek makinede goruldu).
     #
     # LITE'ta pay BILEREK kucuk (300 MiB) ve tolerans genistir: 8 GB kartta model zaten
     # sinirda calisir; llama.cpp buyuk gomme tensorunu CPU'da tutup kucuk asimi sorunsuz
     # kaldirir ve ~41 tok/s ile calismaya devam eder (bkz. asagidaki tolerans notu). Pay
     # burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB VRAM tutarken)
     # LITE'i bos yere reddedip calisan kurulumu bozardi.
-    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 1000 }
+    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 800 }
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
