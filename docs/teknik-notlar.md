@@ -79,8 +79,10 @@ RTX 5060 Ti 16 GB üzerinde llama.cpp'nin bellek dökümüyle ölçüldü (32K b
 Görsel projektör GPU'da ağırlık ve hesap tamponuyla 1.133 MiB daha istiyordu; toplam boş alanı
 aşıp ~420 MiB paylaşılan belleğe taşıyordu. Projektör CPU'ya alınınca sohbet 19,6'dan 25,0 tok/s'ye,
 tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-qwen.ps1` içindeki bellek kontrolü
-model dosyası + 300 MiB ister; yetmezse ve kuyruğu boşsa boşta bekleyen ComfyUI kapatılıp bellek
-yeniden ölçülür.
+model dosyası + 600 MiB ister. **Asıl koruma:** dil modeli yüklenmeden önce uygulamanın tek büyük
+CUDA bağlamı olan ComfyUI her zaman kapatılır; bağlam açıkken `memory.free` yanıltıcıdır (sürücü
+VRAM'i parçalar) ve 27B model paylaşılan belleğe taşıp ~6 tok/s'ye düşer. Bir sonraki görsel/video
+ComfyUI'yi yeniden açar.
 
 ### Lite profili (8 GB VRAM / 16 GB RAM)
 

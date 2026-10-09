@@ -3,6 +3,28 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.8] - 2026-10-09
+
+### Düzeltilen
+- **"Model işlemi başarısız" hatası ve taşma (yapısal kök neden):** Uygulamanın açtığı tek
+  büyük CUDA bağlamı boşta bekleyen ComfyUI'ydi. Bağlam açıkken sürücü VRAM'i parçalı
+  tutuyor; boş VRAM yeterli görünse bile 27B model paylaşılan belleğe taşıp üretim ~6
+  tok/s'ye düşüyordu (ölçüldü: 15.290 MiB "boş" + başka bağlam → 6 tok/s; aynı model temiz
+  GPU'da 45+ tok/s). Artık dil modeli yüklenmeden önce ComfyUI **her zaman** kapatılır
+  (kuyruğu boşsa); boş VRAM ölçümü yalnızca o zaman güvenilirdir. Ayrıca MAX/FLASH bellek
+  payı 800→600 MiB'a çekildi: 1.0.4–1.0.7'deki 800/1000 MiB eşikleri, temiz GPU'da 15244
+  MiB boşken çalışan (45 tok/s) modeli yanlış reddedip jenerik "Model işlemi başarısız"
+  hatası veriyordu. Bir sonraki görsel/video ComfyUI'yi yeniden açar.
+- LITE ve MAX/FLASH profilleri aynı makinede birlikte sorunsuz çalışır (ölçüldü: LITE
+  ~97 tok/s, MAX ~58 tok/s, ikisinde de MTP etkin).
+
+### Eklenen
+- **Profil silme:** Profil yöneticisinde "Profili sil" düğmesi. Yalnızca o profile ÖZEL
+  dosyalar silinir; başka profillerle paylaşılanlar korunur (LITE'ın MAX/FLASH ile ortak
+  medya dosyaları). Etkin profil siliniyorsa önce model durdurulur. MAX ve FLASH aynı dosya
+  kümesini kullandığından takma ad sayılır; birini silmek diğerini de kaldırır.
+- **Kurulum sihirbazında 27B profili artık "PRO" olarak görünür** (kullanıcıya görünen ad).
+
 ## [1.0.7] - 2026-10-09
 
 ### Düzeltilen

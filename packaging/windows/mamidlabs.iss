@@ -11,7 +11,7 @@
 
 ; Surumun tek kaynagi. CI etiketi (v1.0.0) bu degerle karsilastirir; CHANGELOG.md'de
 ; ayni numarali bir bolum olmalidir.
-#define MyAppVersion "1.0.7"
+#define MyAppVersion "1.0.8"
 #define MyAppName "MamidLabs"
 #define MyAppPublisher "workaybarsh"
 #define MyAppURL "https://github.com/workaybarsh/MamidLabsTR"
@@ -138,7 +138,7 @@ const
   OptLite = 0;
   { FLASH ve MAX birebir aynı dosyaları kullanır (agent/profiles.json'da "target" yolları
     özdeş); yalnızca çalışma zamanı ayarları (reasoning effort/predict) farklıdır. Kurulumda
-    tek "Qwen3.8 27B" seçeneği vardır ve indirme 'flash' kataloğuyla yapılır. FLASH/MAX
+    tek "PRO" (Qwen3.8 27B) seçeneği vardır ve indirme 'flash' kataloğuyla yapılır. FLASH/MAX
     geçişi uygulamanın alt çubuğundan yapılır (agent/model-registry.ps1). }
   OptQwen38 = 1;
   OptLater = 2;
@@ -209,7 +209,7 @@ begin
     'uygulamada Profiller → Profil yöneticisi → Eksikleri indir ile istediğin zaman kurabilirsin.',
     True, False);
   ProfilePage.Add('LITE — 8 GB ekran kartı (Qwen3.5 9B, ~36 GB indirme)');
-  ProfilePage.Add('Qwen3.8 27B — 16 GB ekran kartı (~52 GB indirme)');
+  ProfilePage.Add('PRO — 16 GB ekran kartı (Qwen3.8 27B, ~52 GB indirme)');
   ProfilePage.Add('Şimdi model indirme — profili daha sonra kuracağım');
   ProfilePage.Add('Kendi modelimi ya da API hesabımı kullanacağım');
   ProfilePage.SelectedValueIndex := OptLite;

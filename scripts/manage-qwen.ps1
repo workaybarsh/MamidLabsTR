@@ -98,36 +98,34 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # (tarayici + masaustu ~1,5 GB VRAM tutarken) varsayilan profili sessizce
     # reddedip kullaniciyi calisan bir kurulumdan mahrum birakirdi.
     #
-    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, llama.cpp): 14600 MiB'lik
-    # dosya GPU'da ~15378-15442 MiB yer kaplar. Aradaki ~780-840 MiB; 32K baglamin q4_0
-    # KV onbellegi + hesap tamponu + MTP draft baglamidir. Eski 300 MiB pay bu ek yuku
-    # saymadigi icin butce "sigar" diyor, ama bosta bekleyen ComfyUI (~300-460 MiB) varken
-    # model tam sigmayip bir bileseni (MTP draft baglami) sessizce CPU'ya tasiyordu:
-    # olculdu, uretim 44 tok/s'den ~6-7 tok/s'ye dusuyordu (llamaVRAM 15378/15442 -> 15193).
-    # Bu yuzden 16 GB profillerinde pay 800 MiB'dir; bu, kartin bosta kaldigi gercek
-    # araliga oturur. Olcum (RTX 5060 Ti): model GPU'da ~15422-15442 MiB ister; bosta
-    # bekleyen ComfyUI bos VRAM'i ~15020 MiB'ye dusurur (27B orada tam sigmaz, ~6 tok/s);
-    # ComfyUI kapali/acilista bos VRAM ~15442-15670 MiB'dir. Esik model+800=15400 MiB;
-    # boylece ComfyUI acikken (15020 < 15400) kapatilir, soguk/acilis durumunda (>=15442)
-    # yuklenir. Daha buyuk pay (or. 1000 -> esik 15600) makinenin normal bos degerini bile
-    # yanlis reddediyordu (gercek makinede goruldu).
+    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, MTP acik, llama.cpp):
+    # temiz GPU'da (ComfyUI kapali) 14600 MiB'lik dosya GPU'da ~15170-15650 MiB yer
+    # kaplar; llama.cpp musait bellege gore buyuk gomme tensorunu CPU'da tutar ve
+    # kucuk farklari boyle kaldirir. Bos VRAM 15244 MiB iken model yuklendi ve
+    # ~45 tok/s ile calisti (olculdu). 1000 MiB'lik pay (esik 15600) ve 800 MiB'lik
+    # pay (esik 15400) bu durumu yanlislikla reddediyordu (gercek makinede goruldu):
+    # "Model islemi basarisiz" hatasi. Bu yuzden 16 GB profillerinde pay 600 MiB'dir
+    # (esik 15200); temiz GPU + makul masaustu kullanimiyla model yuklenir.
+    # ASIL koruma, bos VRAM'e bakmaktan cok ComfyUI'nin HER ZAMAN kapatilmasidir
+    # (bkz. asagidaki akis): baska bir CUDA baglami varken pay yetse/VRAM "bos"
+    # gorunse bile surucu bellegi parcalar ve model paylasilan bellege tasip
+    # ~6 tok/s'ye duser (15.290 MiB bos + baska baglam -> 6 tok/s olculdu).
     #
     # LITE'ta pay BILEREK kucuk (300 MiB) ve tolerans genistir: 8 GB kartta model zaten
     # sinirda calisir; llama.cpp buyuk gomme tensorunu CPU'da tutup kucuk asimi sorunsuz
     # kaldirir ve ~41 tok/s ile calismaya devam eder (bkz. asagidaki tolerans notu). Pay
     # burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB VRAM tutarken)
     # LITE'i bos yere reddedip calisan kurulumu bozardi.
-    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 800 }
+    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 600 }
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
     # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti.
     # Bu yuzden LITE icin kucuk asim engellenmez; LITE'ta tolerans genis tutulur.
     # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: 27B model zaten kartin sinirinda calisir
-    # ve ~185 MiB'lik kucuk bir asim bile MTP draft baglamini CPU'ya tasiyip uretimi
-    # ~6-7 tok/s'ye dusuruyordu. Tolerans sifir oldugunda, bos VRAM yetmezse once bosta
-    # bekleyen ComfyUI kapatilir (bkz. asagidaki akis) ve model tam sizar; boylece
-    # yukleme saat gibi tutarli olur.
+    # ve bir CUDA baglami (ComfyUI) acikken kucuk bir asim bile bir bileseni paylasilan
+    # bellege tasiyip uretimi ~6 tok/s'ye dusurur. Bu yuzden olcumden once ComfyUI her
+    # zaman kapatilir (bkz. asagidaki akis); toleransla asim kabul edilmez.
     $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
@@ -142,11 +140,12 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     }
 }
 
-# Isler arasinda acik bekleyen ComfyUI (bkz. agent\media-model-swap.ps1) modeller
-# bosaltilmis olsa da CUDA baglami icin ~300 MiB VRAM tutar (RTX 5060 Ti'de olculdu).
-# 8 GB Lite kartta bu pay dil modelini sigdirmayabilir. Bellek yetmezse ve ComfyUI'nin
-# kuyrugu bossa kapatilir; bir sonraki gorsel/video onu yeniden acar (~15-20 sn).
-# Calisan bir is varsa dokunulmaz.
+# Bizim actigimiz tek buyuk CUDA baglami ComfyUI'nin. Modeller bosaltilmis olsa da
+# baglam (surucu tarafi rezervasyonla) ~300 MiB ve daha onemlisi parcali VRAM tutar
+# (RTX 5060 Ti'de olculdu). Dil modeli yuklenmeden once kuyrugu bossa HER ZAMAN
+# kapatilir; boylece bos VRAM olcumu guvenilir olur ve 27B model paylasilan bellege
+# tasmaz. Bir sonraki gorsel/video onu yeniden acar (~15-20 sn). Calisan is varsa
+# dokunulmaz.
 function Stop-IdleComfy {
     $comfy = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' } | Select-Object -First 1
@@ -201,15 +200,17 @@ try {
     if (!(Test-Path -LiteralPath $model -PathType Leaf)) { throw "Model bulunamadı: $model" }
     # Lite profili gorsel projektoru olmadan da calisir; digerlerinde mmproj zorunludur.
     if (!$custom -and $Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector -PathType Leaf)) { throw "Görsel projektörü bulunamadı: $projector" }
+    # Tek GPU sahibi: bizim actigimiz tek buyuk CUDA baglami ComfyUI'nin. Kuyrugu
+    # bossa HER ZAMAN kapatilir; baglam acikken surucu VRAM'i parcali tutar ve 27B
+    # model "bos" VRAM yetiyor gorunse bile paylasilan bellege tasip ~6 tok/s'ye
+    # duser (gercek makinede olculdu: 15.290 MiB bos VRAM + baska baglam -> 6 tok/s;
+    # ayni model temiz GPU'da 45+ tok/s). Bos VRAM yalnizca ComfyUI kapaliyken
+    # guvenilirdir; bir sonraki gorsel/video ComfyUI'yi yeniden acar.
+    [void](Stop-IdleComfy)
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
     if (!$SkipMemoryCheck) {
-        try { Test-MemoryBudget $model $Profile $projector }
-        catch {
-            # Yer acilamazsa ilk (aciklayici) hata aynen iletilir.
-            if (!(Stop-IdleComfy)) { throw }
-            Test-MemoryBudget $model $Profile $projector
-        }
+        Test-MemoryBudget $model $Profile $projector
     }
     New-Item -ItemType Directory -Path $logs -Force | Out-Null
 

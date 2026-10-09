@@ -135,21 +135,18 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **800 MiB**.
-Boş VRAM yetmezse önce boştaki ComfyUI kapatılıp tekrar ölçülür, yine yetmezse "Yetersiz bos VRAM"
-hatası verilir. Amaç, modelin paylaşılan sistem belleğine taşıp sohbeti yavaşlatmasını önlemek.
-800 MiB pay ölçümden gelir: 27B dosyası 14.600 MiB iken GPU'da ~**15.422–15.442 MiB** yer kaplar;
-aradaki ~822–842 MiB 32K bağlamın q4_0 KV önbelleği + hesap tamponu + MTP draft bağlamıdır. Eski
-300 MiB pay eksik kaldığı için boşta bekleyen ComfyUI (~300–460 MiB) varken 27B model tam
-sığmayıp MTP draft bağlamı (~185 MiB) sessizce CPU'ya taşınıyordu: ölçüldü, üretim 44 → ~6–7
-tok/s (llamaVRAM 15378 → 15193). 800 MiB'lik eşik (model+800 = 15400) makinenin gerçek boş
-aralığına oturur: ComfyUI açıkken boş ~15020 (< 15400) → boştaki ComfyUI kapatılır; ComfyUI
-kapalı/açılışta boş ~15442–15670 (≥ 15400) → model yüklenir. 1000 MiB'lik pay (eşik 15600) bu
-makinede normal boş değeri (15442–15558) bile yanlış reddediyordu (gerçek makinede görüldü).
-Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin
-8 GB karttaki küçük aşımı; llama.cpp büyük gömme tensorünü CPU'da tutar), **MAX/FLASH 0** (27B
-kartın sınırında; küçük bir aşım bile felaket). Tolerans 0 sayesinde boştaki ComfyUI kapatılır
-ve model her yüklemede tam sığar. Ölçüm: 27B tam sığdığında ~44 tok/s.
+**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
+(LITE'ta 300 MiB). **ASIL koruma:** dil modeli yüklenmeden önce, uygulamanın açtığı tek büyük
+CUDA bağlamı olan ComfyUI **her zaman** kapatılır (kuyruğu boşsa). Bağlam açıkken sürücü VRAM'i
+parçalı tutar; boş VRAM yeterli görünse bile 27B model paylaşılan belleğe taşıp üretim ~6 tok/s'ye
+düşer (ölçüldü: 15.290 MiB "boş" + başka bağlam → 6 tok/s; aynı model temiz GPU'da 45+ tok/s).
+Bu yüzden boş VRAM ölçümü yalnızca ComfyUI kapalıyken güvenilirdir; bir sonraki görsel/video
+ComfyUI'yi yeniden açar. Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
+ile çalıştı (dosya 14.600 MiB → gerçek pay ~600 MiB). 1.0.4–1.0.7'deki 800/1000 MiB paylar (eşik
+15400/15600) bu çalışan durumu yanlış reddedip jenerik "Model işlemi başarısız" hatası veriyordu.
+Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
+llama.cpp büyük gömme tensorünü CPU'da tutar), **MAX/FLASH 0** (27B kartın sınırında; küçük bir
+aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97 tok/s.
 
 ## 6. Sohbet isteğinin akışı
 
@@ -243,6 +240,12 @@ ve model her yüklemede tam sığar. Ölçüm: 27B tam sığdığında ~44 tok/s
 - `hf-hub.py` indirir ve boyutu `bytes` ile doğrular; eksik dosya kaldığı yerden sürer.
   `HF_HOME` kökün altındadır.
 - Profil durumu yalnızca dosyanın varlığına bakar, boyut karşılaştırmaz.
+- **Profil silme** (Profil yöneticisi → "Profili sil"): yalnızca o profile ÖZEL dosyalar
+  silinir (`Get-ProfileUniqueTargets`); başka profillerle paylaşılanlar korunur. LITE'ın
+  Krea-2 GGUF dışındaki medya dosyaları MAX/FLASH ile ortaktır. MAX ve FLASH aynı dosya
+  kümesini kullandığından takma ad sayılır; birini silmek diğerini de kaldırır. Etkin profil
+  siliniyorsa önce `Stop-LocalQwen` çağrılır, sonra `Update-ProviderSelection` ile liste
+  tazelenir. Ölçülen: LITE ~14 GB, MAX/FLASH ~29 GB.
 
 ## 10. Kurulum, sihirbaz, güncelleme ve kaldırma
 
@@ -379,9 +382,11 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
    kullanıcı mesajına koy.
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
-7. **VRAM payı küçük tutulur** (300 MiB). Büyük pay 16 GB kartta MAX'ı hiç açtırmaz.
-   MAX/FLASH'ta mmproj CPU'da (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe
-   taşar ve hız 25'ten 19 tok/s'ye düşer.
+7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
+   kartta MAX'ı hiç açtırmaz. **Daha önemlisi: dil modeli yüklenmeden önce ComfyUI HER ZAMAN
+   kapatılır** (bkz. bölüm 5/7); bağlam açıkken `memory.free` yanıltıcıdır ve model paylaşılan
+   belleğe taşıp ~6 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da (`--no-mmproj-offload`). GPU'ya
+   alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten 19 tok/s'ye düşer.
 8. **Tek görsel kuralı:** Sohbete aynı anda yalnızca bir görsel gider (çoklu görsel yalnızca
    "çoklu görsel okuma modu"nda OCR ile).
 9. **UI Automation ile test:** Modal pencere açan bir menü öğesine UIA `Invoke` pencere kapanana
@@ -457,6 +462,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-09 | Taşma/«Model işlemi başarısız» yapısal kök nedeni çözüldü (1.0.8): uygulamanın tek büyük CUDA bağlamı ComfyUI, dil modeli yüklenmeden önce HER ZAMAN kapatılıyor (bağlam açıkken sürücü VRAM'i parçalıyor; 15.290 MiB "boş" + bağlam → 6 tok/s). MAX/FLASH bellek payı 800→600 MiB (eşik 15200); temiz GPU'da 15244 MiB boşken çalışan 27B model artık reddedilmiyor. LITE+MAX birlikte doğrulandı (97 / 58 tok/s). Profil yöneticisine "Profili sil" eklendi (yalnızca profile özel dosyalar; LITE'ın ortak medyası korunur). Sihirbazda 27B etiketi "PRO". ENG'e de uygulandı. | scripts/manage-qwen.ps1, agent/profile-catalog.ps1, packaging/windows/mamidlabs.iss, tests/test_memory_admission.py, tests/test_profile_delete.py |
 | 2026-10-09 | VRAM eşiği gerilemesi düzeltildi (1.0.7): 1.0.6'daki 1000 MiB pay eşiği 15600 MiB yapıp makinenin normal boş değerini (15442–15558) yanlış reddediyordu. Pay 800 MiB'a çekildi (eşik 15400); ComfyUI açıkken kapatılır, kapalı/açılışta model yüklenir. ENG sürümüne de uygulandı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
 | 2026-10-09 | Medya sonrası ~6 tok/s düşüşünün kök nedeni düzeltildi: VRAM bütçe tahmini gerçek yükü eksik hesaplıyordu (pay 300→1000 MiB, MAX/FLASH toleransı 256→0). 27B model GPU'da ~15378-15442 MiB ister; boştaki ComfyUI varken MTP draft bağlamı CPU'ya taşınıp üretim 44→6-7 tok/s'ye düşüyordu. Ayrıca `Release-Comfy` gerçek boş VRAM'i doğrular. Smoke testine gerçek arayüzü süren `arayuz` adımı eklendi (MTP + "sunucu kapatıldı" kontrolü). | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, agent/imagegen-run.ps1, agent/videogen-run.ps1, scripts/smoke-test.ps1, tests/test_memory_admission.py, tests/test_media_release.py, tests/test_smoke_test_script.py |
 | 2026-10-09 | Medya sonrası sohbet yavaşlaması düzeltildi (1.0.5): VRAM payı toleransı profile göre yapıldı; 16 GB'ta ~1 GB tolerans 27B katmanlarını paylaşılan belleğe taşırıp sohbeti yavaşlatıyordu. Ayrıca `install-mamidlabs.ps1 -Stage layout` varsa `kurulum-kaynak` kaynak paketini tazeler. (Kök neden 1.0.6'da netleşti; bkz. üstteki satır.) | scripts/manage-qwen.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_install_layout_source.py |

@@ -18,15 +18,17 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     manager = read_text("scripts/manage-qwen.ps1")
     assert "function Test-MemoryBudget" in manager
     # Gorsel projektoru de VRAM'e yuklendigi icin butceye dahil edilir.
-    assert "try { Test-MemoryBudget $model $Profile $projector }" in manager
-    # Yer yoksa once bosta bekleyen ComfyUI kapatilir, sonra bir kez daha olculur;
-    # yine de yetmezse ilk hata aynen iletilir.
-    assert "if (!(Stop-IdleComfy)) { throw }" in manager
+    assert "Test-MemoryBudget $model $Profile $projector" in manager
+    # Tek GPU sahibi: bizim CUDA baglamimiz (ComfyUI) olcumden once HER ZAMAN kapatilir.
+    # Baglam acikken surucu VRAM'i parcalar; bos VRAM yeterli gorunse bile 27B model
+    # paylasilan bellege tasip ~6 tok/s'ye duser (gercek makinede olculdu).
+    assert "[void](Stop-IdleComfy)" in manager
     # Kontrol, dosya varlik kontrollerinden SONRA (model yolu belliyken) ama
-    # model sureci baslatilmadan ONCE calismali.
+    # model sureci baslatilmadan ONCE calismali; ComfyUI kapatma da olcumden once.
+    idx_comfy = manager.index("[void](Stop-IdleComfy)")
     idx_check = manager.index("Test-MemoryBudget $model $Profile $projector")
     idx_start = manager.index("$child = Start-DetachedProcess $server")
-    assert idx_check < idx_start
+    assert idx_comfy < idx_check < idx_start
 
 
 def test_idle_comfy_is_only_stopped_when_its_queue_is_empty():
@@ -83,27 +85,26 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
 
 
 def test_max_budget_fits_a_16_gb_card():
-    """RTX 5060 Ti 16 GB'ta ölçüldü: model GPU'da ~15422-15442 MiB ister; boştaki ComfyUI
-    boş VRAM'i ~15020 MiB'ye düşürür (model sığmaz, ~6 tok/s). MAX/FLASH bütçesi model +
-    800 MiB (gereken 15400 MiB) olmalı: ComfyUI kapalıyken (~15442-15670 boş) sığar, açıkken
-    (~15020 boş) yetmez ki ComfyUI kapatılıp model tam sığsın."""
+    """RTX 5060 Ti 16 GB'ta ölçüldü: temiz GPU'da (ComfyUI kapalı) 27B model 15244 MiB
+    boş VRAM ile yüklendi ve ~45 tok/s çalıştı; dosya 14600 MiB olduğundan gerçek pay
+    ~600 MiB'dır. Eski 800/1000 MiB paylar (eşik 15400/15600) bu durumu yanlış reddedip
+    "Model işlemi başarısız" hatası veriyordu. Asıl koruma paydan çok ComfyUI'nin her
+    zaman kapatılmasıdır: başka bir CUDA bağlamı varken 15290 MiB boş VRAM bile taşıp
+    ~6 tok/s'ye düşürüyordu."""
     import re
 
     manager = read_text("scripts/manage-qwen.ps1")
     match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
     assert match, "profil-farkinda overheadMiB satiri bulunamadi"
     overhead = int(match.group(2))  # else dali = MAX/FLASH
-    assert overhead == 800
+    assert overhead == 600
     max_model_mib = 14600
-    measured_free_with_comfy_open = 15020
-    measured_free_with_comfy_closed = 15442
-    needed = max_model_mib + overhead  # 15400
-    # ComfyUI kapatilinca siger...
-    assert needed <= measured_free_with_comfy_closed
-    # ...ama acikken yetmez, bu yuzden ComfyUI kapatilir (tolerans 0).
-    assert needed > measured_free_with_comfy_open
-    # 1000 MiB'lik pay (esik 15600) makinenin normal bos degerini bile yanlis reddediyordu.
-    assert needed < max_model_mib + 1000
+    measured_free_ok = 15244  # temiz GPU'da 45 tok/s ile yuklendi
+    needed = max_model_mib + overhead  # 15200
+    # Model bu boş değerle yüklenebilmeli...
+    assert needed <= measured_free_ok
+    # ...ama eski 800 MiB'lik pay (eşik 15400) makineyi yanlış reddediyordu.
+    assert needed < max_model_mib + 800
 
 
 def test_lite_budget_is_not_tightened_by_the_max_fix():

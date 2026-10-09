@@ -71,6 +71,58 @@ function Get-ProfileState([string]$id) {
     return $state
 }
 
+# Bir profile ait HEDEFLERDEN baska profillerle paylasilanlari cikarir; profil silme
+# yalnizca bu benzersiz dosyalari kaldirir ki diger profilin kurulumu bozulmasin.
+# Ornek: MAX ve FLASH birebir ayni dosya kumesini kullanir (takma ad sayilir, paylasim
+# degil); LITE ise medya dosyalarinin bir kismini MAX/FLASH ile paylasir.
+function Get-ProfileUniqueTargets([string]$id) {
+    $catalog = @(Get-ProfileCatalog)
+    $entry = @($catalog | Where-Object { $_.id -eq $id })[0]
+    if (!$entry) { return @() }
+    $myTargets = @($entry.files | ForEach-Object { [string]$_.target })
+    $mySignature = ($myTargets | Sort-Object -Unique) -join '|'
+    $shared = @{}
+    foreach ($profile in $catalog) {
+        if ($profile.id -eq $id) { continue }
+        $otherTargets = @($profile.files | ForEach-Object { [string]$_.target })
+        # Ayni dosya kumesi = ayni profilin takma adi (MAX/FLASH); paylasim sayilmaz.
+        if ((($otherTargets | Sort-Object -Unique) -join '|') -eq $mySignature) { continue }
+        foreach ($target in $otherTargets) { $shared[$target] = $true }
+    }
+    $unique = [Collections.Generic.List[string]]::new()
+    $seen = @{}
+    foreach ($target in $myTargets) {
+        if ($seen.ContainsKey($target)) { continue }
+        $seen[$target] = $true
+        if (!$shared.ContainsKey($target)) { [void]$unique.Add($target) }
+    }
+    return $unique.ToArray()
+}
+
+# Profili sil: yalnizca benzersiz dosyalari kaldirir, bosalan klasorleri temizler ve
+# silinen dosya sayisini/hatayi dondurur. Cagiran (Profil yoneticisi) onay alir.
+function Remove-ProfileFiles([string]$id) {
+    $result = @{ removed = 0; failed = 0; totalBytes = 0L }
+    foreach ($target in (Get-ProfileUniqueTargets $id)) {
+        $full = Join-Path $root $target
+        if (!(Test-Path -LiteralPath $full -PathType Leaf)) { continue }
+        try { $result.totalBytes += [long](Get-Item -LiteralPath $full).Length } catch { }
+        try { Remove-Item -LiteralPath $full -Force -ErrorAction Stop; $result.removed++ }
+        catch { $result.failed++ }
+    }
+    # Geride bos kalan klasorleri kaldir (yalnizca bu profilin hedeflerinin klasorleri).
+    foreach ($target in (Get-ProfileUniqueTargets $id)) {
+        $dir = Split-Path -Parent (Join-Path $root $target)
+        try {
+            if ((Test-Path -LiteralPath $dir -PathType Container) -and
+                !(Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+    }
+    return $result
+}
+
 # Bir profilin SOHBET icin gerekli dosyalarinin (dil modeli + mmproj) diskte
 # olup olmadigini kontrol eder. ComfyUI altindaki medya (gorsel/video) modelleri
 # kasten disaridadir: -SkipMedia ile kurulmus olabilirler ve sohbetin calismasi
@@ -259,17 +311,20 @@ function Show-ProfileManager([string]$focusId) {
 
     $downloadBtn = [Windows.Forms.Button]::new()
     $downloadBtn.Text = 'Eksikleri indir'
-    $downloadBtn.SetBounds(16, 376, 210, 34)
+    $downloadBtn.SetBounds(16, 376, 180, 34)
     $switchBtn = [Windows.Forms.Button]::new()
     $switchBtn.Text = 'Bu profile geç'
-    $switchBtn.SetBounds(240, 376, 170, 34)
+    $switchBtn.SetBounds(202, 376, 150, 34)
+    $deleteBtn = [Windows.Forms.Button]::new()
+    $deleteBtn.Text = 'Profili sil'
+    $deleteBtn.SetBounds(358, 376, 120, 34)
     $updateBtn = [Windows.Forms.Button]::new()
     $updateBtn.Text = 'Güncellemeleri denetle'
-    $updateBtn.SetBounds(416, 376, 214, 34)
+    $updateBtn.SetBounds(484, 376, 180, 34)
     $updateBtn.Tag = @{ state = 'idle' }
     $closeBtn = [Windows.Forms.Button]::new()
     $closeBtn.Text = 'Kapat'
-    $closeBtn.SetBounds(642, 376, 120, 34)
+    $closeBtn.SetBounds(670, 376, 104, 34)
 
     # Ozel (private) depo icin guncelleme denetimi/indirmesi token ister (bkz. Get-UpdateToken).
     $tokenLabel = [Windows.Forms.Label]::new()
@@ -354,6 +409,38 @@ function Show-ProfileManager([string]$focusId) {
     }.GetNewClosure())
 
     $closeBtn.Add_Click({ $dlg.Close() }.GetNewClosure())
+
+    # Profil silme: yalnizca bu profile OZEL dosyalar kaldirilir; baska profillerle
+    # paylasilanlar (or. LITE'in MAX/FLASH ile ortak medya dosyalari) korunur. Aktif
+    # profil siliniyorsa once model durdurulur.
+    $deleteBtn.Add_Click({
+        $index = $list.SelectedIndex
+        if ($index -lt 0) { return }
+        if ($script:busy -or $script:imageBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
+        $profile = $catalog[$index]
+        $present = @((Get-ProfileUniqueTargets $profile.id) | Where-Object {
+            Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf })
+        if (!$present.Count) {
+            $status.Text = 'Silinecek dosya yok: profil kurulu değil ya da tüm dosyaları başka bir profille paylaşılıyor.'
+            return
+        }
+        $bytes = 0L
+        foreach ($rel in $present) { try { $bytes += [long](Get-Item -LiteralPath (Join-Path $root $rel)).Length } catch { } }
+        $isActive = ([string]$script:apiSettings.selectedModel -eq "builtin-$($profile.id)")
+        $warn = if ($isActive) { "`r`n`r`nDIKKAT: Bu profil şu an seçili. Model çalışıyorsa önce durdurulur." } else { '' }
+        $answer = [Windows.Forms.MessageBox]::Show(
+            ($profile.label + ' profiline ait ' + $present.Count + ' dosya (' + (Format-ByteSize $bytes) + ') silinecek.' +
+             "`r`nBaşka profillerle paylaşılan dosyalar korunur." + $warn + "`r`n`r`nSilinsin mi?"),
+            'Profili sil', 'YesNo', 'Warning')
+        if ($answer -ne 'Yes') { return }
+        if ($isActive) { try { Stop-LocalQwen } catch { } }
+        $result = Remove-ProfileFiles $profile.id
+        $list.Items[$index] = "$($profile.label) — $(Get-ProfileStatusLabel $profile.id)"
+        & $refresh
+        $status.Text = if ($result.failed) { "$($result.failed) dosya silinemedi (kullanımda olabilir)." }
+            else { "Profil dosyaları silindi ($($result.removed) dosya, $(Format-ByteSize $result.totalBytes)); paylaşılan dosyalar korundu." }
+        try { Update-ProviderSelection } catch { }
+    }.GetNewClosure())
 
     $tokenSave.Add_Click({
         if (!$script:apiSettings.providers) { $script:apiSettings.providers = @{} }
@@ -446,7 +533,7 @@ function Show-ProfileManager([string]$focusId) {
         }
     }.GetNewClosure())
 
-    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear))
+    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $deleteBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear))
     $wanted = 0
     if ($focusId) {
         for ($i = 0; $i -lt $catalog.Count; $i++) { if ($catalog[$i].id -eq $focusId) { $wanted = $i; break } }
