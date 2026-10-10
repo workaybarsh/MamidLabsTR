@@ -136,12 +136,13 @@ Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
 **VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
-(LITE'ta 300 MiB). **ASIL koruma:** dil modeli yüklenmeden önce, uygulamanın açtığı tek büyük
-CUDA bağlamı olan ComfyUI **her zaman** kapatılır (kuyruğu boşsa). Bağlam açıkken sürücü VRAM'i
-parçalı tutar; boş VRAM yeterli görünse bile 27B model paylaşılan belleğe taşıp üretim ~6 tok/s'ye
-düşer (ölçüldü: 15.290 MiB "boş" + başka bağlam → 6 tok/s; aynı model temiz GPU'da 45+ tok/s).
-Bu yüzden boş VRAM ölçümü yalnızca ComfyUI kapalıyken güvenilirdir; bir sonraki görsel/video
-ComfyUI'yi yeniden açar. Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
+(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`): varsayılan
+**true** ile ComfyUI açık tutulur (medya işleri arasında ~15–20 sn yeniden açılma olmaz). Bu
+**taşma yapmaz**: ölçüldü, iki durumda da GPU tampon yerleşimi birebir aynı (CPU_Mapped 644 MiB,
+CUDA0 model 13945 MiB, KV 576 MiB, graph splits 2) ve MTP kabulü aynı (82/131); yalnızca genel
+GPU etkisiyle sohbet ~%11 yavaşlar (49,7 → 44,2 tok/s). `comfyKeepAlive=false` ile ComfyUI yükleme
+öncesi kapatılır ve sohbet tam hızda kalır. Her iki durumda da yer yetmezse (kuyruk boşsa) ComfyUI
+kapatılıp yeniden ölçülür. Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
 ile çalıştı (dosya 14.600 MiB → gerçek pay ~600 MiB). 1.0.4–1.0.7'deki 800/1000 MiB paylar (eşik
 15400/15600) bu çalışan durumu yanlış reddedip jenerik "Model işlemi başarısız" hatası veriyordu.
 Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
@@ -314,6 +315,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
+  - Medya: `comfyKeepAlive` (varsayılan `true`; ComfyUI'yi açık tutar, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
 
@@ -383,10 +385,11 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
 7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
-   kartta MAX'ı hiç açtırmaz. **Daha önemlisi: dil modeli yüklenmeden önce ComfyUI HER ZAMAN
-   kapatılır** (bkz. bölüm 5/7); bağlam açıkken `memory.free` yanıltıcıdır ve model paylaşılan
-   belleğe taşıp ~6 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da (`--no-mmproj-offload`). GPU'ya
-   alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten 19 tok/s'ye düşer.
+   kartta MAX'ı hiç açtırmaz. **ComfyUI** varsayılan olarak açık tutulur (`comfyKeepAlive=true`);
+   bu taşma yapmaz (tampon yerleşimi birebir aynı, bölüm 5) ama sohbeti ~%11 yavaşlatır. Yer
+   yetmezse (kuyruk boşsa) kapatılıp yeniden ölçülür. MAX/FLASH'ta mmproj CPU'da
+   (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
+   19 tok/s'ye düşer.
 8. **Tek görsel kuralı:** Sohbete aynı anda yalnızca bir görsel gider (çoklu görsel yalnızca
    "çoklu görsel okuma modu"nda OCR ile).
 9. **UI Automation ile test:** Modal pencere açan bir menü öğesine UIA `Invoke` pencere kapanana
@@ -462,6 +465,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-09 | `comfyKeepAlive` ayarı eklendi (1.0.9, varsayılan `true`): ComfyUI medya işleri arasında açık kalır (yeniden açılma yok). Ölçüm: taşma yok (tampon yerleşimi aynı, graph splits 2), sohbet ~%11 yavaş (49,7→44,2 tok/s). `false` ile tam hız. Ayrıca iki flaky test deterministik yapıldı (run_command çıktı kodlaması UTF-8; boş-dosya testi tmp_path). | scripts/manage-qwen.ps1, tests/test_memory_admission.py, tests/test_bound_path_and_run_command.py, tests/test_binary_file_detection.py |
 | 2026-10-09 | Tek-örnek penceresi denetimi sağlamlaştırıldı: yalnızca başlık yerine pencere SINIFI da doğrulanır. Aynı başlıklı başka bir pencere (Explorer `TabProxyWindow`, video penceresi) varken uygulama açılmadan kapanıyordu ("pencere açılmadan kapandı"). | qwen-desktop.ps1, tests/test_qwen_contracts.py |
 | 2026-10-09 | Taşma/«Model işlemi başarısız» yapısal kök nedeni çözüldü (1.0.8): uygulamanın tek büyük CUDA bağlamı ComfyUI, dil modeli yüklenmeden önce HER ZAMAN kapatılıyor (bağlam açıkken sürücü VRAM'i parçalıyor; 15.290 MiB "boş" + bağlam → 6 tok/s). MAX/FLASH bellek payı 800→600 MiB (eşik 15200); temiz GPU'da 15244 MiB boşken çalışan 27B model artık reddedilmiyor. LITE+MAX birlikte doğrulandı (97 / 58 tok/s). Profil yöneticisine "Profili sil" eklendi (yalnızca profile özel dosyalar; LITE'ın ortak medyası korunur). Sihirbazda 27B etiketi "PRO". ENG'e de uygulandı. | scripts/manage-qwen.ps1, agent/profile-catalog.ps1, packaging/windows/mamidlabs.iss, tests/test_memory_admission.py, tests/test_profile_delete.py |
 | 2026-10-09 | VRAM eşiği gerilemesi düzeltildi (1.0.7): 1.0.6'daki 1000 MiB pay eşiği 15600 MiB yapıp makinenin normal boş değerini (15442–15558) yanlış reddediyordu. Pay 800 MiB'a çekildi (eşik 15400); ComfyUI açıkken kapatılır, kapalı/açılışta model yüklenir. ENG sürümüne de uygulandı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |

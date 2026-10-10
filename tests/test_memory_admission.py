@@ -19,9 +19,8 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     assert "function Test-MemoryBudget" in manager
     # Gorsel projektoru de VRAM'e yuklendigi icin butceye dahil edilir.
     assert "Test-MemoryBudget $model $Profile $projector" in manager
-    # Tek GPU sahibi: bizim CUDA baglamimiz (ComfyUI) olcumden once HER ZAMAN kapatilir.
-    # Baglam acikken surucu VRAM'i parcalar; bos VRAM yeterli gorunse bile 27B model
-    # paylasilan bellege tasip ~6 tok/s'ye duser (gercek makinede olculdu).
+    # Tek GPU sahibi: varsayilan davranista bizim CUDA baglamimiz (ComfyUI) olcumden
+    # once kapatilir (comfyKeepAlive=false). Bkz. test_comfy_keep_alive_*.
     assert "[void](Stop-IdleComfy)" in manager
     # Kontrol, dosya varlik kontrollerinden SONRA (model yolu belliyken) ama
     # model sureci baslatilmadan ONCE calismali; ComfyUI kapatma da olcumden once.
@@ -29,6 +28,20 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     idx_check = manager.index("Test-MemoryBudget $model $Profile $projector")
     idx_start = manager.index("$child = Start-DetachedProcess $server")
     assert idx_comfy < idx_check < idx_start
+
+
+def test_comfy_keep_alive_setting_defaults_to_open():
+    """settings/api.json -> comfyKeepAlive. Varsayilan true: ComfyUI acik tutulur; medya
+    isleri arasinda yeniden acilma (~15-20 sn) olmaz. Sohbet ~%11 yavaslar (olculdu
+    49,7 -> 44,2 tok/s) ama TASMA OLMAZ: GPU tampon yerlesimi iki durumda da birebir ayni
+    (CPU_Mapped 644 MiB, CUDA0 model 13945 MiB; graph splits 2). false ile tam hiz."""
+    manager = read_text("scripts/manage-qwen.ps1")
+    assert "$comfyKeepAlive = $true" in manager
+    assert "$settings.comfyKeepAlive" in manager
+    # Kapali tutma yalnizca ayar kapaliyken kosulsuz uygulanir.
+    assert "if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }" in manager
+    # Ayar acikken yer yetmezse guvenlik icin yine de kapatilip tekrar olculur.
+    assert "if ($comfyKeepAlive -and (Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector }" in manager
 
 
 def test_idle_comfy_is_only_stopped_when_its_queue_is_empty():

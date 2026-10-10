@@ -200,17 +200,24 @@ try {
     if (!(Test-Path -LiteralPath $model -PathType Leaf)) { throw "Model bulunamadı: $model" }
     # Lite profili gorsel projektoru olmadan da calisir; digerlerinde mmproj zorunludur.
     if (!$custom -and $Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector -PathType Leaf)) { throw "Görsel projektörü bulunamadı: $projector" }
-    # Tek GPU sahibi: bizim actigimiz tek buyuk CUDA baglami ComfyUI'nin. Kuyrugu
-    # bossa HER ZAMAN kapatilir; baglam acikken surucu VRAM'i parcali tutar ve 27B
-    # model "bos" VRAM yetiyor gorunse bile paylasilan bellege tasip ~6 tok/s'ye
-    # duser (gercek makinede olculdu: 15.290 MiB bos VRAM + baska baglam -> 6 tok/s;
-    # ayni model temiz GPU'da 45+ tok/s). Bos VRAM yalnizca ComfyUI kapaliyken
-    # guvenilirdir; bir sonraki gorsel/video ComfyUI'yi yeniden acar.
-    [void](Stop-IdleComfy)
+    # ComfyUI yasam dongusu. Varsayilan (comfyKeepAlive=true): ComfyUI acik tutulur; medya
+    # isleri arasinda yeniden acilma (~15-20 sn) olmaz. Sohbet ~%11 yavaslar (olculdu
+    # 49,7 -> 44,2 tok/s) ama TASMA OLMAZ: iki durumda da GPU tampon yerlesimi birebir ayni
+    # (CPU_Mapped 644 MiB, CUDA0 model 13945 MiB, KV 576 MiB; graph splits 2). comfyKeepAlive
+    # =false ile ComfyUI yukleme oncesi kapatilir ve sohbet tam hizda kalir. Yer yetmezse
+    # (kuyruk bossa da VRAM darsa) guvenlik icin kapatilip tekrar olculur.
+    $comfyKeepAlive = $true
+    if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
+    if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
     if (!$SkipMemoryCheck) {
-        Test-MemoryBudget $model $Profile $projector
+        try { Test-MemoryBudget $model $Profile $projector }
+        catch {
+            # ComfyUI acik tutuluyordu ama yer yetmedi: kuyrugu bossa kapat, tekrar dene.
+            if ($comfyKeepAlive -and (Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector }
+            else { throw }
+        }
     }
     New-Item -ItemType Directory -Path $logs -Force | Out-Null
 

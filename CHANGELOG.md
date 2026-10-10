@@ -3,6 +3,22 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.0.9] - 2026-10-09
+
+### Eklenen
+- **ComfyUI açık kalma ayarı (`settings/api.json` → `comfyKeepAlive`, varsayılan `true`):**
+  ComfyUI artık medya işleri arasında açık tutulur; her görsel/video sonrası yeniden açılma
+  (~15–20 sn) olmaz. Ölçüldü: bu **taşma yapmaz** — ComfyUI açık/kapalı iki durumda da GPU
+  tampon yerleşimi birebir aynı (CPU_Mapped 644 MiB, CUDA0 model 13945 MiB, KV 576 MiB; graph
+  splits 2) ve MTP kabulü aynı (82/131). Yalnızca genel GPU etkisiyle sohbet ~%11 yavaşlar
+  (49,7 → 44,2 tok/s; prefill 829 → 765). Tam hız isteyenler `"comfyKeepAlive": false` yazar.
+  Yer yetmezse (kuyruk boşsa, ör. 8 GB LITE) ComfyUI güvenlik için kapatılıp yeniden ölçülür.
+
+### Düzeltilen
+- **Test kararlılığı:** iki ortam-bağımlı (flaky) test deterministik yapıldı. `run_command`
+  test paketi çıktı kodlamasını UTF-8'e sabitliyor; boş-dosya ikili algılama testi sabit
+  paylaşılan geçici yol yerine benzersiz `tmp_path` kullanıyor.
+
 ## [1.0.8] - 2026-10-09
 
 ### Düzeltilen

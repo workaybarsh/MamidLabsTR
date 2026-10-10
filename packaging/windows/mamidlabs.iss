@@ -11,7 +11,7 @@
 
 ; Surumun tek kaynagi. CI etiketi (v1.0.0) bu degerle karsilastirir; CHANGELOG.md'de
 ; ayni numarali bir bolum olmalidir.
-#define MyAppVersion "1.0.8"
+#define MyAppVersion "1.0.9"
 #define MyAppName "MamidLabs"
 #define MyAppPublisher "workaybarsh"
 #define MyAppURL "https://github.com/workaybarsh/MamidLabsTR"
@@ -615,3 +615,4 @@ begin
     DelTree(App + '\settings', True, True, True);
   end;
 end;
+
