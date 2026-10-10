@@ -460,6 +460,9 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 ## 15. Değişiklik yaparken kontrol listesi
 
 - [ ] İlgili testleri çalıştır; yeni davranışa test ekle (`python -m pytest -q`).
+- [ ] **Yayın öncesi varyant kapısı (zorunlu):** etiket/yayın öncesi **TR ve ENG** depolarda;
+      **PRO (MAX/FLASH)** ve **LITE** profilleriyle tam smoke testi; ayrıca kurulum paketinin
+      (Inno, `MamidLabs_Setup.exe`) TR/ENG derlemesi. **Hepsi geçmeden yayın yok.**
 - [ ] Medya/sohbet akışına dokunduysan smoke testini ilgili adımlarla çalıştır.
 - [ ] Kullanıcıya görünen metin Türkçe ve doğru karakterlerle mi (BOM)?
 - [ ] Kurulum/kaldırma etkisi: yeni dosya ya da klasör kökün dışına yazıyor mu? Yazıyorsa
@@ -476,6 +479,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-10 | 1.0.0 yayın öncesi varyant kapısı + doğrulama: **PRO (flash) smoke 13/13**, **LITE smoke 12/13** (+1 beklenen atlama: `kimlik_duzenle`), pytest **TR 318 / ENG 317**, kurulum `verify` 12/12, Inno paketi TR/ENG derlendi ve **v1.0.0 yayımlandı**. LITE ölçüm: 85,7 tok/s, medya sonrası 88,4 (oran 1,03), ComfyUI açık kaldı. §15'e "yayın öncesi varyant kapısı" eklendi. | AGENTS.md |
 | 2026-10-10 | ComfyUI "kesinlikle açık kalsın" çözüldü: kaçak/mükerrer tespiti süreç **sayısı** yerine örnek **kökü** ile yapılır. ComfyUI bir süreç çiftidir (launcher + base python çocuğu); `Count -gt 1` tek sağlıklı ComfyUI'yi de kaçak sanıp kapatıyordu (isteğin tersi). `Get-ComfyInstanceRoots` + `Stop-ComfyLeaks` yalnızca ek kökleri kapatır ve :8188'i dinleyen örneği korur (`Test-ComfyUnderRoot`); `media-model-swap.ps1` `Clear-ComfyLeaks` aynı mantık; eski `Select-Object -First 1` yalnızca biri kapatıyordu. Ölçüm: gerçek görsel sonrası ComfyUI kapatılmadan MAX yüklendi → **62 tok/s**. | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, scripts/smoke-test.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_smoke_test_script.py |
 | 2026-10-10 | ComfyUI mükerrer/kaçak süreç kusuru bulundu ve düzeltildi: ComfyUI tek süreç değil bir **çifttir** (venv başlatıcı + base python çocuğu); eski `Select-Object -First 1` yalnızca birini kapatıp kalan bağlamı bırakıyordu. Kaçak/mükerrer ComfyUI varken MAX 32K taşıp 0,89 tok/s; tek (taze) ComfyUI ile aynı model 61 tok/s (192 MiB boş) — yani ComfyUI açık kalabilir. `Get-ComfyProcesses` + `Stop-IdleComfy` artık TÜM eşleşen süreçleri kapatır; `media-model-swap.ps1` `Clear-ComfyLeaks` mükerrer kopyaları temizler; smoke-test sonu, arayüz finally'si ve install comfyui aşaması boştaki ComfyUI'yi kapatır. `comfyKeepAlive` varsayılan `true` (açık) korunur. | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, scripts/smoke-test.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_smoke_test_script.py |
 | 2026-10-10 | 1.1.0 tam doğrulandı: `python -m pytest -q` **318 geçti** (4 beklenen atlama) ve tam smoke testi **13/13** (sohbet 44 tok/s, MTP kabul 82/87, grafik bar/pie/function, görsel 56 sn, düzenleme 96 sn, medya sonrası geçiş oran 0,97, video 161 sn, arayüz turu MTP 23/23). Kurulu kök repoyla **program dosyaları birebir aynı**. | AGENTS.md |
