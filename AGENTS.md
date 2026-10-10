@@ -39,6 +39,7 @@ Varsayılan kurulum kökü `%LOCALAPPDATA%\Programs\MamidLabs`.
 | `agent/web-server.ps1`, `agent/web-settings.ps1`, `scripts/web-serve.ps1` | Yerel web yönetimi (tarayıcıdan erişim): HTTP sunucusu, ayar penceresi, başlatıcı. Varsayılan yalnızca localhost, şifre korumalı; OpenCode'un sunucu modeli örnek alındı |
 | `agent/imagegen-run.ps1` | Yerel görsel üretimi / düzenleme işçisi (ComfyUI API) |
 | `agent/videogen-run.ps1` | Yerel video üretimi işçisi (Wan 2.2) |
+| `agent/chart-run.ps1` | Bağımsız grafik üreticisi (gömülü pwsh + System.Drawing; sohbet aracı `generate_chart`) |
 | `agent/api-media-run.ps1`, `agent/api-media.py` | API ile görsel/video üretimi, profil indirme işi |
 | `agent/media-model-swap.ps1` | Dil modelini boşalt → ComfyUI başlat/yeniden kullan → geri yükle (tek sahip) |
 | `agent/media-paths.ps1` | Harici (kopyalanmayan) model yolları, `comfy-extra-models.yaml` |
@@ -159,11 +160,12 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
    `$jobData.root` kökü **açıkça** taşır (bkz. tuzak 2).
 4. İşçi `Emit` ile `[pscustomobject]@{kind; text; usage; data}` olayları üretir. Arayüz
    zamanlayıcısı bunları okur. Türler: `thinking`, `answer`, `answer-rewrite`, `status`, `metrics`,
-   `tool`, `artifact`, `ocr`, `imagegen`, `videogen`, `compact`, `denied`, `cancelled`, `error`, `done`.
+   `tool`, `artifact`, `chart`, `ocr`, `imagegen`, `videogen`, `compact`, `denied`, `cancelled`,
+   `error`, `done`.
 5. **Araçlar** (`qwen-inference.ps1`): `search_web`, `fetch_page`, `read_document`,
-   `read_images_ocr`, `create_document`, `generate_image`, `generate_video`, `find_reference_image`,
-   `ask_model`, `list_bound_files`, `read_bound_file`, `write_bound_file`, `run_command`. Araçlar
-   niyete ve çiplere (İnternet, Ajan) göre tanımlanır.
+   `read_images_ocr`, `create_document`, `generate_image`, `generate_video`, `generate_chart`,
+   `find_reference_image`, `ask_model`, `list_bound_files`, `read_bound_file`, `write_bound_file`,
+   `run_command`. Araçlar niyete ve çiplere (İnternet, Ajan) göre tanımlanır.
 6. **Onay:** Yazma/çalıştırma araçları `Request-Approval` ile `$Shared.AskTool/AskDetail/AskId`
    yazar. Arayüz "İzin gerekiyor — <araç>" penceresini açar (10 dk zaman aşımı → red). "Tam erişim"
    çipi açıksa sorulmaz. Reddedilince arayüz modelden bağımsız "İşlem yapılmadı" notu ekler.
@@ -465,6 +467,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-10 | Bağımsız grafik üretimi eklendi (1.1.0): sohbet aracı `generate_chart` + `agent/chart-run.ps1` (gömülü pwsh + System.Drawing; bar/line/pie/scatter/function; güvenli ifade çözümleyici, `Invoke-Expression` yok). Sonuç sohbette satır içi gösterilir ve `outputs\grafikler`'e kaydedilir. Smoke testine `grafik` adımı eklendi (`-SkipChart`). ENG sürümüne de uygulandı. | qwen-desktop.ps1, agent/qwen-inference.ps1, agent/chart-run.ps1, scripts/smoke-test.ps1, tests/test_chart_run.py |
 | 2026-10-10 | Matematik (LaTeX) yanıtları için `Convert-MathText` eklendi (1.1.0): ham `$$`/`\frac`/`\int` yerine okunur Unicode (∫, ∞, π, √, ∑, →, ≠, Yunan harfleri), kesir → a/b, üs/alt simge → Unicode (x², ∫₀). Para birimi `$` korunur. | qwen-desktop.ps1, tests/test_math_render.py |
 | 2026-10-09 | `comfyKeepAlive` ayarı eklendi (1.0.9, varsayılan `true`): ComfyUI medya işleri arasında açık kalır (yeniden açılma yok). Ölçüm: taşma yok (tampon yerleşimi aynı, graph splits 2), sohbet ~%11 yavaş (49,7→44,2 tok/s). `false` ile tam hız. Ayrıca iki flaky test deterministik yapıldı (run_command çıktı kodlaması UTF-8; boş-dosya testi tmp_path). | scripts/manage-qwen.ps1, tests/test_memory_admission.py, tests/test_bound_path_and_run_command.py, tests/test_binary_file_detection.py |
 | 2026-10-09 | Tek-örnek penceresi denetimi sağlamlaştırıldı: yalnızca başlık yerine pencere SINIFI da doğrulanır. Aynı başlıklı başka bir pencere (Explorer `TabProxyWindow`, video penceresi) varken uygulama açılmadan kapanıyordu ("pencere açılmadan kapandı"). | qwen-desktop.ps1, tests/test_qwen_contracts.py |

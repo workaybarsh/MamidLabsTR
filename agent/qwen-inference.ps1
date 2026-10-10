@@ -258,6 +258,7 @@ function Get-ToolAuditDetail([string]$name, $arguments) {
         'ask_model' { return [string]$arguments.provider }
         'generate_image' { return [string]$arguments.prompt }
         'generate_video' { return [string]$arguments.prompt }
+        'generate_chart' { return "$([string]$arguments.type) $([string]$arguments.title)" }
         default { return '' }
     }
 }
@@ -408,6 +409,73 @@ function Test-FileIntent([string]$text) {
     if ([string]::IsNullOrWhiteSpace($text)) { return $false }
     $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
     return $normalized -match '(dosya|klasor|belge|dokuman|evrak|defter|\bpdf\b|word|excel|powerpoint|\.docx|\.xlsx|\.pptx|\bzip\b|\brar\b|\bcsv\b|notlar|metin dosya|bagli klas|kayitli dosya|\bfile\b|\bfolder\b|\bdocument\b)'
+}
+
+# Bagimsiz grafik ureticisi (agent\chart-run.ps1). Dil modeli yalnizca spec'i yazar;
+# gorsel dosyayi gomulu pwsh + System.Drawing uretir. GPU/ComfyUI gerekmez, hizlidir.
+function Invoke-ChartTool($arguments) {
+    $scriptPath = Join-Path (Get-InstallRoot) 'agent\chart-run.ps1'
+    if (!(Test-Path -LiteralPath $scriptPath -PathType Leaf)) { return 'Grafik araci kurulu degil (chart-run.ps1 bulunamadi).' }
+    $pwsh = Join-Path (Get-InstallRoot) 'runtime\pwsh\pwsh.exe'
+    if (!(Test-Path -LiteralPath $pwsh -PathType Leaf)) {
+        # Kurulum kokunde gomulu pwsh yoksa (test/izole ortam) PATH'teki pwsh'a dus.
+        $cmd = Get-Command pwsh -ErrorAction SilentlyContinue
+        if ($cmd) { $pwsh = [string]$cmd.Source }
+    }
+    if (!$pwsh -or !(Test-Path -LiteralPath $pwsh -PathType Leaf)) { return "Gomulu PowerShell bulunamadi: $pwsh" }
+
+    $spec = @{}
+    foreach ($prop in $arguments.PSObject.Properties) { $spec[$prop.Name] = $prop.Value }
+    $type = ([string]$spec.type).ToLowerInvariant()
+    if ($type -notin @('bar', 'line', 'pie', 'scatter', 'function')) {
+        return "Gecersiz grafik turu: '$type'. Gecerli turler: bar, line, pie, scatter, function."
+    }
+
+    $dir = Join-Path (Get-InstallRoot) 'outputs\grafikler'
+    if (!(Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $base = if ($spec.title) { [string]$spec.title } else { $type }
+    $base = ($base -replace '[^\p{L}\p{Nd}]+', '-').Trim('-')
+    if (!$base) { $base = $type }
+    if ($base.Length -gt 40) { $base = $base.Substring(0, 40) }
+    $spec.out = Join-Path $dir ("$base-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.png')
+
+    $payload = $spec | ConvertTo-Json -Depth 16 -Compress
+    $psi = [Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $pwsh
+    $psi.ArgumentList.Add('-NoProfile')
+    $psi.ArgumentList.Add('-ExecutionPolicy'); $psi.ArgumentList.Add('Bypass')
+    $psi.ArgumentList.Add('-File'); $psi.ArgumentList.Add($scriptPath)
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $p = [Diagnostics.Process]::Start($psi)
+    try {
+        $p.StandardInput.Write($payload)
+        $p.StandardInput.Close()
+        $out = $p.StandardOutput.ReadToEnd()
+        $err = $p.StandardError.ReadToEnd()
+        if (!$p.WaitForExit(60000)) {
+            try { $p.Kill($true) } catch { }
+            return 'Grafik uretimi zaman asimina ugradi.'
+        }
+        if ($p.ExitCode -ne 0 -and [string]::IsNullOrWhiteSpace($out)) { return "Grafik araci hata verdi: $err" }
+        $parsed = $null
+        try { $parsed = $out | ConvertFrom-Json -ErrorAction Stop } catch { }
+        if (!$parsed) { return "Grafik araci gecersiz yanit dondurdu: $out $err" }
+        if ($parsed.error) { return "Grafik olusturulamadi: $([string]$parsed.error)" }
+        $path = [string]$parsed.path
+        if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { return 'Grafik dosyasi olusturulamadi.' }
+        $script:createdArtifact = $path
+        $script:chartFile = $path
+        return "Grafik olusturuldu ($($parsed.type), $($parsed.width)x$($parsed.height) piksel): $path"
+    } finally {
+        $p.Dispose()
+    }
 }
 
 function Invoke-Tool([string]$name, $arguments, [string]$folder) {
@@ -639,6 +707,9 @@ function Invoke-Tool([string]$name, $arguments, [string]$folder) {
         $backupNote = if ($backup) { "`n[onceki surum yedeklendi: $backup]" } else { '' }
         return "$result`n[dosya yolu: $target]$backupNote"
     }
+    if ($name -eq 'generate_chart') {
+        return (Invoke-ChartTool $arguments)
+    }
     return "Bilinmeyen arac: $name"
 }
 
@@ -784,6 +855,21 @@ function Get-ToolDefinitions([hashtable]$job) {
             $imageProperties.scene_from_previous = @{ type = 'boolean'; description = 'Yalnizca kimlik_duzenle: true ise onceki turda eklenen gorsel SAHNE, son eklenen gorsel KISI olur ("bu kisiyi o sahneye koy"). Varsayilan false.' }
         }
         $defs += @{ type = 'function'; function = @{ name = 'generate_image'; description = $imageDescription; parameters = @{ type = 'object'; required = @('prompt'); properties = $imageProperties } } }
+    }
+    if ($job.chartgen) {
+        $defs += @{ type = 'function'; function = @{ name = 'generate_chart'; description = 'Kullanici grafik, cizim, cubuk/pasta/cizgi grafigi veya bir fonksiyonun egrisini isteyince cagir. Verileri sen hazirlarsin; sistem PNG uretir. type ile tur secilir: bar (cubuk), line (cizgi), pie (pasta), scatter (sacilim), function (y=f(x)). Tek seri icin labels + values yeterlidir; coklu seri icin series kullan. function turunde functions listesi ver (orn ["sin(x)","cos(x)"]). Grafigi genellikle BIR kez uretmek yeterlidir; ayni grafigi tekrar tekrar olusturma, sonucu kullaniciya bildir.'; parameters = @{ type = 'object'; required = @('type'); properties = @{
+            type = @{ type = 'string'; description = 'Grafik turu.'; enum = @('bar', 'line', 'pie', 'scatter', 'function') }
+            title = @{ type = 'string'; description = 'Grafik basligi (Turkce).' }
+            xlabel = @{ type = 'string'; description = 'X ekseni etiketi.' }
+            ylabel = @{ type = 'string'; description = 'Y ekseni etiketi.' }
+            labels = @{ type = 'array'; items = @{ type = 'string' }; description = 'Kategori/etiket adlari (bar, line, pie icin).' }
+            values = @{ type = 'array'; items = @{ type = 'number' }; description = 'Tek seri sayisal degerleri (bar, line, pie icin). labels ile ayni uzunlukta olmali.' }
+            series = @{ type = 'array'; description = 'Coklu seri. Her oge { name, values:[sayi] } (bar/line) veya { name, points:[{x,y}] } (scatter).'; items = @{ type = 'object'; properties = @{ name = @{ type = 'string' }; values = @{ type = 'array'; items = @{ type = 'number' } }; points = @{ type = 'array'; items = @{ type = 'object'; properties = @{ x = @{ type = 'number' }; y = @{ type = 'number' } } } } } } }
+            functions = @{ type = 'array'; items = @{ type = 'string' }; description = 'Yalnizca function turu: y=f(x) ifadeleri. Desteklenen: sin cos tan asin acos atan sinh cosh tanh exp ln log log10 sqrt abs floor ceil round; sabitler pi, e; islemler + - * / ^ ( ). Ornek: x^2, sin(x), exp(-x)*sin(x).' }
+            xmin = @{ type = 'number'; description = 'Yalnizca function: x alt siniri (varsayilan -10).' }
+            xmax = @{ type = 'number'; description = 'Yalnizca function: x ust siniri (varsayilan 10).' }
+            samples = @{ type = 'integer'; description = 'Yalnizca function: ornekleme sayisi (varsayilan 600).' }
+        } } } }
     }
     return $defs
 }
@@ -1467,6 +1553,7 @@ try {
                 $script:createdArtifact = $null
                 $script:lastApprovalOutcome = $null
                 $script:deniedNote = $null
+                $script:chartFile = $null
                 $arguments = $tc.function.arguments | ConvertFrom-Json -ErrorAction Stop
                 $auditDetail = Get-ToolAuditDetail $name $arguments
                 $result = if ($name -eq 'generate_image') {
@@ -1478,6 +1565,7 @@ try {
                 $auditResult = if ($approval -in @('asked_no', 'cancelled', 'timeout')) { 'denied' } else { 'ok' }
                 Write-AuditLog $name $approval $auditResult $auditDetail ([string]$script:createdArtifact)
                 if ($script:createdArtifact) { Emit 'artifact' $script:createdArtifact }
+                if ($name -eq 'generate_chart' -and $script:chartFile) { Emit 'chart' $script:chartFile }
                 if ($script:deniedNote) { Emit 'denied' $script:deniedNote }
                 if ($name -eq 'read_images_ocr') {
                     $multiOcr = $null

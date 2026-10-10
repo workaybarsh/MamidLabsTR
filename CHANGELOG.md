@@ -5,6 +5,17 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
 
 ## [1.1.0] - 2026-10-10
 
+### Eklenen
+- **Grafik üretimi (bağımsız, ek paket gerekmez):** sohbet aracısı `generate_chart` ile
+  çubuk, çizgi, pasta, saçılım ve fonksiyon eğrisi (y=f(x)) grafikleri üretir. Görsel,
+  gömülü PowerShell + System.Drawing ile doğrudan PNG olarak çizilir (GPU/ComfyUI ya da
+  numpy/matplotlib gerekmez); sonuç sohbette satır içi gösterilir ve `outputs\grafikler`
+  altına kaydedilir. Model yalnızca veriyi/spec'i yazar. Fonksiyon ifadeleri güvenli bir
+  çözümleyiciyle değerlendirilir (`Invoke-Expression` kullanılmaz; yalnızca sayılar, x, pi, e,
+  + - * / ^ ( ) ve sin/cos/… /sqrt/abs gibi fonksiyonlar).
+- **Bağımsız grafik adımı smoke testinde:** `sohbet, belge, …` yanında `grafik` adımı bar,
+  pasta ve fonksiyon grafiklerinin gerçekten üretildiğini doğrular (`-SkipChart` ile atlanır).
+
 ### Düzeltilen
 - **Matematik yanıtları "bozuk sembol" gibi görünüyordu:** model bir matematik sorusuna LaTeX
   ile yanıt verdiğinde (`$$\int_0^\infty \frac{(\ln x)^4}{1+x^6}dx$$`), arayüz ham `$`, `\frac`,

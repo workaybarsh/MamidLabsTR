@@ -1965,6 +1965,7 @@ function Get-SystemPrompt {
     }
     $lines += 'Kullanici acikca video uret veya kisa video olustur derse generate_video cagir. Video promptunu Ingilizce yaz; hareketi, kamera hareketini, isigi, sureyi ve stili ayrintilandir.'
     $lines += 'Kullanici PDF olustur, Word belgesi hazirla veya sunum yap derse create_document cagir. format degeri yalnizca pdf, docx veya pptx olabilir. Belge icerigini markdown olarak yaz.'
+    $lines += 'Kullanici grafik, cizim, cubuk/pasta/cizgi grafigi isterse ya da bir fonksiyonun egrisini cizmeni isterse generate_chart cagir. type degerleri: bar (cubuk), line (cizgi), pie (pasta), scatter (sacilim), function (y=f(x)). Tek seri icin labels + values ver; coklu seri icin series kullan. Verileri sohbetteki sayilardan veya kendi hesapladigin degerlerden hazirla. Ayni grafigi tekrar tekrar uretmeye calisma; arac genellikle BIR kez cagrilir, sonra sonucu kullaniciya kisaca bildir.'
     $lines += 'Sadece bir gorseli, belgeyi veya videoyu okumak/aciklamak icin uretim araclarini cagirmani. Ekli belge hakkinda soru varsa read_document kullan; dosya yazma ve belge olusturma islemleri izin gerektirir.'
     return ($lines -join ' ')
 }
@@ -2150,6 +2151,7 @@ function Begin-Generation {
         videogen = $true
         office = $true
         documentCreate = $true
+        chartgen = $true
         boundFolder = $script:boundFolder
         hasSourceImage = [bool]$script:lastUserImage
         hasPreviousImage = [bool]$script:previousUserImage
@@ -2363,6 +2365,13 @@ function Render-JobEvent($jobEvent) {
         'artifact' {
             if ($b) { Add-BubbleArtifact $b ([string]$jobEvent.text); $script:dirty = $true }
         }
+        'chart' {
+            # Bagimsiz grafik uretildi (PNG). Baloncukta satir ici gosterilir; dosya
+            # artifacts listesine eklenir (Set-BubbleImage icinde) ve sohbetle kaydedilir.
+            if ($b) { Set-BubbleImage $b ([string]$jobEvent.text) }
+            $script:dirty = $true
+            Save-Chat
+        }
         'denied' {
             # Reddedilen islemin notu modelin metninden bagimsiz gosterilir ('done'da eklenir).
             if ($b) { $b.deniedNote = (@($b.deniedNote, [string]$jobEvent.text) | Where-Object { $_ }) -join "`r`n" }
@@ -2446,7 +2455,7 @@ function Render-JobEvent($jobEvent) {
             $script:dirty = $true
         }
         'tool' {
-            $names = @{ search_web = 'Web araması'; fetch_page = 'Sayfa okunuyor'; list_bound_files = 'Klasör listeleniyor'; read_bound_file = 'Dosya okunuyor'; write_bound_file = 'Dosya yazılıyor'; run_command = 'Komut çalıştırılıyor'; read_images_ocr = 'Çoklu görsel okuma aktif — görseller okunuyor'; read_document = 'Belge okunuyor'; create_document = 'Belge oluşturuluyor'; generate_image = 'Görsel hazırlanıyor'; generate_video = 'Video hazırlanıyor' }
+            $names = @{ search_web = 'Web araması'; fetch_page = 'Sayfa okunuyor'; list_bound_files = 'Klasör listeleniyor'; read_bound_file = 'Dosya okunuyor'; write_bound_file = 'Dosya yazılıyor'; run_command = 'Komut çalıştırılıyor'; read_images_ocr = 'Çoklu görsel okuma aktif — görseller okunuyor'; read_document = 'Belge okunuyor'; create_document = 'Belge oluşturuluyor'; generate_image = 'Görsel hazırlanıyor'; generate_video = 'Video hazırlanıyor'; generate_chart = 'Grafik oluşturuluyor' }
             $label = $names[[string]$jobEvent.text]
             if (!$label) { $label = [string]$jobEvent.text }
             $metric.Text = "$label…"

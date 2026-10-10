@@ -51,6 +51,8 @@ param(
     [switch]$SkipUi,
     # MTP (speculative decoding) dogrulama adimini atlar.
     [switch]$SkipMtp,
+    # Bagimsiz grafik uretimi (agent\chart-run.ps1) adimini atlar.
+    [switch]$SkipChart,
     # Medya sonrasi sohbet hizi bu orandan (ilk olcume gore) duserse VRAM tasmasi sayilir.
     [double]$MinSpeedRatio = 0.7,
     [string]$ReportPath
@@ -216,6 +218,58 @@ if ($SkipMtp) {
 }
 
 # ------------------------------------------------------------------- belge
+# ------------------------------------------------------------------- grafik
+# Bagimsiz grafik ureticisi: gomulu pwsh + System.Drawing ile PNG uretir (GPU/ComfyUI
+# gerekmez). Ayni kod yolu sohbet araci generate_chart tarafindan da kullanilir.
+Write-Section 'Grafik uretimi (bagimsiz, System.Drawing)'
+if ($SkipChart) {
+    Write-Host '   [atla] -SkipChart verildi'
+} else {
+    try {
+        $chartScript = Join-Path $Root 'agent\chart-run.ps1'
+        if (!(Test-Path -LiteralPath $chartScript -PathType Leaf)) { throw "Grafik betigi bulunamadi: $chartScript" }
+        $chartPwsh = Join-Path $Root 'runtime\pwsh\pwsh.exe'
+        if (!(Test-Path -LiteralPath $chartPwsh -PathType Leaf)) { throw "Gomulu pwsh bulunamadi: $chartPwsh" }
+        $chartDir = Join-Path $Root 'outputs\grafikler'
+        if (!(Test-Path -LiteralPath $chartDir -PathType Container)) { New-Item -ItemType Directory -Path $chartDir -Force | Out-Null }
+        $chartCases = @(
+            @{ name = 'bar'; spec = @{ type = 'bar'; labels = @('Ocak', 'Subat', 'Mart'); values = @(3, 7, 4); title = 'Smoke bar' } },
+            @{ name = 'pie'; spec = @{ type = 'pie'; labels = @('X', 'Y', 'Z'); values = @(5, 3, 2); title = 'Smoke pasta' } },
+            @{ name = 'function'; spec = @{ type = 'function'; functions = @('sin(x)', 'x^2'); xmin = -3; xmax = 3; title = 'Smoke fonksiyon' } }
+        )
+        $chartMade = 0
+        foreach ($chartCase in $chartCases) {
+            $spec = $chartCase.spec
+            $spec.out = Join-Path $chartDir ('smoke-' + $chartCase.name + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.png')
+            $psi = [Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $chartPwsh
+            foreach ($arg in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $chartScript)) { $psi.ArgumentList.Add($arg) }
+            $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+            $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+            $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+            $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+            $chartProc = [Diagnostics.Process]::Start($psi)
+            try {
+                $chartProc.StandardInput.Write(($spec | ConvertTo-Json -Depth 8 -Compress))
+                $chartProc.StandardInput.Close()
+                $chartOut = $chartProc.StandardOutput.ReadToEnd()
+                $chartErr = $chartProc.StandardError.ReadToEnd()
+                $chartProc.WaitForExit()
+            } finally { $chartProc.Dispose() }
+            $chartResult = $null
+            try { $chartResult = $chartOut | ConvertFrom-Json -ErrorAction Stop } catch { }
+            if (!$chartResult) { throw "Grafik ($($chartCase.name)) gecersiz yanit: $chartOut $chartErr" }
+            if ($chartResult.error) { throw "Grafik ($($chartCase.name)) hatasi: $($chartResult.error)" }
+            if (!(Test-Path -LiteralPath ([string]$chartResult.path) -PathType Leaf)) { throw "Grafik ($($chartCase.name)) dosyasi olusmadi." }
+            $chartMade++
+        }
+        Report 'grafik' $true "$chartMade tur uretildi (bar, pie, function); outputs\grafikler"
+    } catch {
+        Report 'grafik' $false $_.Exception.Message
+    }
+}
+
 Write-Section 'Belge okuma (gercek .docx)'
 if ($SkipDocument) {
     Write-Host '   [atla] -SkipDocument verildi'
