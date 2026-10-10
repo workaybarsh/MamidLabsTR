@@ -33,25 +33,23 @@ def test_memory_budget_function_exists_and_is_called_before_start():
 
 def test_idle_comfy_is_kept_open_but_leaks_are_cleaned():
     """ComfyUI medya isleri arasinda ACIK tutulur (varsayilan), ama dil modeli yuklenmeden
-    once MUKERRER/kacak ComfyUI temizlenir. Gercek makinede olculdu: tek (taze) ComfyUI ile
-    MAX 32K birlikte 61 tok/s calisti (192 MiB bos); IKI ComfyUI sureci (biri smoke testinden
-    kalan bir kopya) varken 27B paylasilan bellege tasip 0,89 tok/s'ye dustu. ComfyUI bir
-    surec CIFTI'dir (venv baslatici + base python cocugu); eski kod `Select-Object -First 1`
-    ile yalnizca birini kapatiyordu, kalan baglami tutuyordu. Bu yuzden temizlik TUM eslesen
-    surecleri kapatir."""
+    once YALNIZCA mukerrer/kacak ComfyUI temizlenir. Gercek makinede olculdu: tek (taze)
+    ComfyUI ile MAX 32K birlikte 61 tok/s calisti; IKI ComfyUI ornegi varken 27B tasip
+    0,89 tok/s oldu. ComfyUI bir surec CIFTI'dir (launcher + base python cocugu), bu yuzden
+    surec SAYISI ile "kacak" karari verilemez: tek ornek 2 surec olabilir (yanlislikla
+    kapatilirsa ComfyUI her yuklemede kapanirdi). Örnekler parent'i ComfyUI eslesmeyen
+    "kök" sureclerle sayilir; 8188'i dinleyen ornek korunur."""
     manager = read_text("scripts/manage-qwen.ps1")
     # Ayar geri geldi ve varsayilan acik (medya isleri arasinda reopen ~27 sn onlenir).
     assert "$comfyKeepAlive = $true" in manager
     assert "$settings.comfyKeepAlive" in manager
-    # Mukerrer tespiti: birden fazla surec varsa hepsi kapatilir.
-    assert "@(Get-ComfyProcesses).Count -gt 1" in manager
-    # Tek-surec varsayimi yerine TUM surecleri hedefleyen temizlik.
-    assert "function Get-ComfyProcesses" in manager
-    stop = manager.split("function Stop-IdleComfy")[1].split("function Get-ManagedServers")[0]
-    assert "Select-Object -First 1" not in stop
-    assert "foreach ($comfy in $procs)" in stop
-    # Kuyruk bossa kapatilir ilkesi korunur; calisan medya isine dokunulmaz.
-    assert "queue_running" in stop
+    # Kacak tespiti surec sayisina DEGIL örnek köklerine dayanir.
+    assert "function Get-ComfyInstanceRoots" in manager
+    assert "function Stop-ComfyLeaks" in manager
+    assert "Get-NetTCPConnection -LocalPort 8188" in manager
+    # Yukleme öncesi yalnizca kacaklar temizlenir; tek örnek korunur.
+    assert "[void](Stop-ComfyLeaks)" in manager
+    assert "@(Get-ComfyProcesses).Count -gt 1" not in manager
     # Butce yetmezse kapatip tekrar dene (fallback korunur).
     assert "if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }" in manager
 

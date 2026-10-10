@@ -29,20 +29,56 @@ function Get-RunningComfy {
     try { return [Diagnostics.Process]::GetProcessById([int]$found.ProcessId) } catch { return $null }
 }
 
-# ComfyUI bir surec CIFTI'dir (venv baslatici + base python cocugu) ve eski bir kopya
-# kalabilir. Birden fazla eslesen surec varsa hepsi kapatilir: aksi halde ikinci kopya
-# bos VRAM tutar ve dil modeliyle birlikte 27B'yi tasirir (gercek makinede 0,89 tok/s).
+# ComfyUI bir surec CIFTI'dir (venv baslatici + base python cocugu), bu yuzden surec SAYISI
+# ile "kacak" karari verilemez: saglikli tek örnek 2 surectir. Örnekleri parent'i ComfyUI
+# eslesmeyen "kök" sureclerle sayariz. Birden fazla kök varsa kaçak örnekler kapatilir;
+# tek saglikli örnek DOKUNULMAZ (aksi halde her medya isi ComfyUI'yi gereksiz kapatirdi).
 function Get-ComfyLeakProcesses {
     @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' })
 }
 function Clear-ComfyLeaks {
     $all = @(Get-ComfyLeakProcesses)
-    if ($all.Count -le 1) { return }
-    foreach ($p in $all) {
-        try { $proc = [Diagnostics.Process]::GetProcessById([int]$p.ProcessId); $proc.Kill($true); $proc.WaitForExit(20000) | Out-Null } catch { }
+    if ($all.Count -eq 0) { return }
+    $ids = @($all | ForEach-Object { [int]$_.ProcessId })
+    $roots = @($all | Where-Object { $ids -notcontains [int]$_.ParentProcessId })
+    if ($roots.Count -le 1) { return }  # tek örnek (çift olabilir) -> dokunma
+    $listener = 0
+    try { $listener = [int](Get-NetTCPConnection -LocalPort 8188 -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess } catch { }
+    $keepRoot = [int]$roots[0].ProcessId
+    if ($listener) {
+        foreach ($r in $roots) {
+            $cur = $listener; $hit = $false
+            for ($i = 0; $i -lt 8; $i++) {
+                if ($cur -eq [int]$r.ProcessId) { $hit = $true; break }
+                $m = $all | Where-Object { [int]$_.ProcessId -eq $cur } | Select-Object -First 1
+                if (!$m) { break }
+                $cur = [int]$m.ParentProcessId
+            }
+            if ($hit) { $keepRoot = [int]$r.ProcessId; break }
+        }
     }
     foreach ($p in $all) {
+        # korunan örnege ait mi? (parent zinciri keepRoot'a ulasiyor mu)
+        $cur = [int]$p.ProcessId; $under = $false
+        for ($i = 0; $i -lt 8; $i++) {
+            if ($cur -eq $keepRoot) { $under = $true; break }
+            $m = $all | Where-Object { [int]$_.ProcessId -eq $cur } | Select-Object -First 1
+            if (!$m) { break }
+            $cur = [int]$m.ParentProcessId
+        }
+        if ($under) { continue }
+        try { $proc = [Diagnostics.Process]::GetProcessById([int]$p.ProcessId); $proc.Kill($true); $proc.WaitForExit(15000) | Out-Null } catch { }
+    }
+    foreach ($p in $all) {
+        $cur = [int]$p.ProcessId; $under = $false
+        for ($i = 0; $i -lt 8; $i++) {
+            if ($cur -eq $keepRoot) { $under = $true; break }
+            $m = $all | Where-Object { [int]$_.ProcessId -eq $cur } | Select-Object -First 1
+            if (!$m) { break }
+            $cur = [int]$m.ParentProcessId
+        }
+        if ($under) { continue }
         if (Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue) { Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue }
     }
     Start-Sleep -Milliseconds 1500

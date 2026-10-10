@@ -152,6 +152,7 @@ function Get-ComfyProcesses {
 }
 
 # Kuyrugu bos olan TUM ComfyUI sureclerini kapatir. En az biri kapatildiysa $true.
+# (Acik temizlik icin: `-Action closecomfy`, install ve smoke-test hijyeni.)
 function Stop-IdleComfy {
     $procs = @(Get-ComfyProcesses)
     if ($procs.Count -eq 0) { return $false }
@@ -176,6 +177,58 @@ function Stop-IdleComfy {
         }
     }
     Start-Sleep -Milliseconds 1500  # Surucu VRAM'i biraz gecikmeyle serbest birakir.
+    return $killed
+}
+
+# TEK ComfyUI bir surec CIFTI olabilir (launcher + child). Bu yuzden surec SAYISI ile
+# "kacak" karari verilemez: saglikli tek örnek 2 surectir. Örnekleri "kök" sureclerle
+# sayariz: parent'i de ComfyUI eslesen bir surec, ayni örnegin cocugudur (kök sayilmaz).
+function Get-ComfyInstanceRoots($procs) {
+    $ids = @($procs | ForEach-Object { [int]$_.ProcessId })
+    @($procs | Where-Object { $ids -notcontains [int]$_.ParentProcessId })
+}
+
+# $p surecu, $rootId kökune ait mi? (ParentProcessId zinciri ComfyUI eslesmeleri icinde
+# $rootId'ye ulasiyorsa ya da $p kendisi $rootId ise.) Kisa zincir (<=8).
+function Test-ComfyUnderRoot($all, [int]$procId, [int]$rootId) {
+    $cur = $procId
+    for ($i = 0; $i -lt 8; $i++) {
+        if ($cur -eq $rootId) { return $true }
+        $m = $all | Where-Object { [int]$_.ProcessId -eq $cur } | Select-Object -First 1
+        if (!$m) { return $false }
+        $cur = [int]$m.ParentProcessId
+    }
+    return $false
+}
+
+# Yalnizca KAÇAK/mukerrer ComfyUI örneklerini kapatir; TEK saglikli örnege (cift sureciyle
+# birlikte) DOKUNMAZ. 8188'i dinleyen örnek korunur. Kaçak varsa $true.
+function Stop-ComfyLeaks {
+    $all = @(Get-ComfyProcesses)
+    if ($all.Count -eq 0) { return $false }
+    $roots = @(Get-ComfyInstanceRoots $all)
+    if ($roots.Count -le 1) { return $false }  # tek örnek (çift olabilir) -> dokunma
+    $listener = 0
+    try { $listener = [int](Get-NetTCPConnection -LocalPort 8188 -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess } catch { }
+    $keepRoot = [int]$roots[0].ProcessId
+    if ($listener) {
+        foreach ($r in $roots) { if (Test-ComfyUnderRoot $all $listener ([int]$r.ProcessId)) { $keepRoot = [int]$r.ProcessId; break } }
+    }
+    $killed = $false
+    foreach ($p in $all) {
+        if (Test-ComfyUnderRoot $all ([int]$p.ProcessId) $keepRoot) { continue }  # korunan örnek
+        try {
+            $process = [Diagnostics.Process]::GetProcessById([int]$p.ProcessId)
+            $process.Kill($true)
+            $process.WaitForExit(15000) | Out-Null
+            $killed = $true
+        } catch { }
+    }
+    foreach ($p in $all) {
+        if ((Test-ComfyUnderRoot $all ([int]$p.ProcessId) $keepRoot)) { continue }
+        if (Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue) { Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue; $killed = $true }
+    }
+    if ($killed) { Start-Sleep -Milliseconds 1500 }
     return $killed
 }
 
@@ -231,8 +284,10 @@ try {
     # yer yetmezse kuyrugu bos ComfyUI kapatilip yeniden olculur.
     $comfyKeepAlive = $true
     if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
-    # Kacak/mukerrer ComfyUI tespiti: birden fazla surec varsa hepsi kapatilir (tek ornek ilkesi).
-    if (@(Get-ComfyProcesses).Count -gt 1) { [void](Stop-IdleComfy) }
+    # Kaçak/mukerrer ComfyUI tespiti: örnek sayisi 1'den fazlaysa yalnizca kaçaklar kapatilir;
+    # tek saglikli örnek (çift sureciyle) KORUNUR (bkz. Stop-ComfyLeaks). Boylece ComfyUI
+    # medya isleri arasinda acik kalir.
+    [void](Stop-ComfyLeaks)
     if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
