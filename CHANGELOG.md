@@ -3,6 +3,16 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.1.0] - 2026-10-10
+
+### Düzeltilen
+- **Matematik yanıtları "bozuk sembol" gibi görünüyordu:** model bir matematik sorusuna LaTeX
+  ile yanıt verdiğinde (`$$\int_0^\infty \frac{(\ln x)^4}{1+x^6}dx$$`), arayüz ham `$`, `\frac`,
+  `\int`, `{}` işaretlerini gösteriyordu. Yeni `Convert-MathText` katmanı yaygın LaTeX
+  komutlarını okunur Unicode'a çevirir: ∫, ∞, π, √, ∑, →, ≤, ≥, ≠ ve Yunan harfleri; kesirler
+  `a/b` (sade terimler parantezsiz), üs/alt simgeler Unicode (`x^2`→`x²`, `\int_0`→`∫₀`). Gerçek
+  dizgi değil, okunur metindir; ham LaTeX izi kalmaz. Para birimi `$` (LaTeX yokken) korunur.
+
 ## [1.0.9] - 2026-10-09
 
 ### Eklenen

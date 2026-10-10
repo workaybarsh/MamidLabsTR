@@ -311,6 +311,224 @@ function Add-RichRun($rtb, [string]$text, [System.Drawing.Font]$font, [System.Dr
     $rtb.AppendText($text)
 }
 
+# LaTeX (matematik) -> okunur Unicode. RichTextBox matematik cizemez; model matematik
+# yaniti urettiginde ham "\frac{}{}", "$$", "\int" gibi isaretler "bozuk sembol" gibi
+# gorunuyordu. Yaygin LaTeX komutlarini Unicode karsiliklariyla degistirir, kesir/kok
+# gibi yapilari duzlestirir, us/alt simgeleri de Unicode'a cevirir (x^2 -> x², \int_0 ->
+# ∫₀). Boylece yanit okunur kalir (gercek sembol cizimi degil).
+# Harf-duyarli (-creplace) ve dizi-cifti (sozluk anahtarlari harf-duyarsiz oldugu icin
+# "\Gamma"/"\gamma" cakisirdi) kullanilir.
+
+function Convert-ToSuperscript([string]$t) {
+    if (!$t) { return $null }
+    $m = @{ '0'='⁰';'1'='¹';'2'='²';'3'='³';'4'='⁴';'5'='⁵';'6'='⁶';'7'='⁷';'8'='⁸';'9'='⁹'
+            '+'='⁺';'-'='⁻';'='='⁼';'('='⁽';')'='⁾'
+            'a'='ᵃ';'b'='ᵇ';'c'='ᶜ';'d'='ᵈ';'e'='ᵉ';'f'='ᶠ';'g'='ᵍ';'h'='ʰ';'i'='ⁱ';'j'='ʲ'
+            'k'='ᵏ';'l'='ˡ';'m'='ᵐ';'n'='ⁿ';'o'='ᵒ';'p'='ᵖ';'r'='ʳ';'s'='ˢ';'t'='ᵗ';'u'='ᵘ'
+            'v'='ᵛ';'w'='ʷ';'x'='ˣ';'y'='ʸ';'z'='ᶻ' }
+    $sb = New-Object Text.StringBuilder
+    foreach ($ch in $t.ToCharArray()) {
+        $k = [string]$ch
+        if (!$m.ContainsKey($k)) { return $null }
+        [void]$sb.Append($m[$k])
+    }
+    return $sb.ToString()
+}
+
+function Convert-ToSubscript([string]$t) {
+    if (!$t) { return $null }
+    $m = @{ '0'='₀';'1'='₁';'2'='₂';'3'='₃';'4'='₄';'5'='₅';'6'='₆';'7'='₇';'8'='₈';'9'='₉'
+            '+'='₊';'-'='₋';'='='₌';'('='₍';')'='₎'
+            'a'='ₐ';'e'='ₑ';'h'='ₕ';'i'='ᵢ';'j'='ⱼ';'k'='ₖ';'l'='ₗ';'m'='ₘ';'n'='ₙ';'o'='ₒ'
+            'p'='ₚ';'r'='ᵣ';'s'='ₛ';'t'='ₜ';'u'='ᵤ';'v'='ᵥ';'x'='ₓ' }
+    $sb = New-Object Text.StringBuilder
+    foreach ($ch in $t.ToCharArray()) {
+        $k = [string]$ch
+        if (!$m.ContainsKey($k)) { return $null }
+        [void]$sb.Append($m[$k])
+    }
+    return $sb.ToString()
+}
+
+function Convert-MathText([string]$text) {
+    if ([string]::IsNullOrEmpty($text)) { return $text }
+    $s = $text
+    # Yalnizca metinde LaTeX izi varsa "$" sinirlayicilarini kaldir; aksi halde para
+    # birimi "$" oldugu gibi kalir.
+    if ($s -match '\\[a-zA-Z]+|\$\$') { $s = $s.Replace('$', '') }
+    # Gosteri/parantez sinirlayicilari
+    $s = $s -replace '\\\[', ' ' -replace '\\\]', ' ' -replace '\\\(', ' ' -replace '\\\)', ' '
+    # Kesirler (basit/ic ice olmayan): \frac{a}{b} (\dfrac, \tfrac dahil) -> a/b.
+    # Basit tek-terim (d, dx, x, 2 gibi) parantez almaz; aksi halde (a)/(b).
+    for ($k = 0; $k -lt 3; $k++) {
+        $s = [regex]::Replace($s, '\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}', {
+            param($m)
+            $a = $m.Groups[1].Value.Trim(); $b = $m.Groups[2].Value.Trim()
+            $na = if ($a -match '^[A-Za-z0-9]+$') { $a } else { '(' + $a + ')' }
+            $nb = if ($b -match '^[A-Za-z0-9]+$') { $b } else { '(' + $b + ')' }
+            return $na + '/' + $nb
+        })
+    }
+    # Kok ve cerceve
+    for ($k = 0; $k -lt 3; $k++) {
+        $s = $s -replace '\\sqrt\s*\{([^{}]*)\}', '√($1)'
+        $s = $s -replace '\\boxed\s*\{([^{}]*)\}', '[ $1 ]'
+    }
+    # Metin sarmalayicilari icerigiyle degistir
+    $s = $s -replace '\\(text|mathrm|mathbf|mathit|operatorname|mbox)\s*\{([^{}]*)\}', '$2'
+    # Boyut/parantez komutlarini at
+    $s = $s -replace '\\(left|right|big|Big|bigg|Bigg|displaystyle|textstyle)\b', ''
+    # Bosluk komutlari
+    $s = $s -replace '\\[,;:!>]', ' '
+    $s = $s -replace '\\quad', '   ' -replace '\\qquad', '     '
+    $s = $s.Replace('~', ' ')
+    # Glif tablosu duz metin olarak tutulur: PowerShell ic ice dizileri duzlestirdigi icin
+    # @(@('a','b')) -> @('a','b') olur ve tablo bozulurdu (harfleri yanlis degistiriyordu).
+    $table = @'
+\int=∫
+\iint=∬
+\oint=∮
+\sum=∑
+\prod=∏
+\infty=∞
+\partial=∂
+\nabla=∇
+\surd=√
+\times=×
+\div=÷
+\cdot=·
+\ast=∗
+\pm=±
+\mp=∓
+\leq=≤
+\le=≤
+\geq=≥
+\ge=≥
+\neq=≠
+\ne=≠
+\approx=≈
+\equiv=≡
+\cong=≅
+\sim=∼
+\simeq=≃
+\propto=∝
+\ll=≪
+\gg=≫
+\longrightarrow=⟶
+\rightarrow=→
+\to=→
+\leftarrow=←
+\Rightarrow=⇒
+\Leftrightarrow=⇔
+\mapsto=↦
+\notin=∉
+\in=∈
+\subseteq=⊆
+\subset=⊂
+\cup=∪
+\cap=∩
+\emptyset=∅
+\varnothing=∅
+\nexists=∄
+\exists=∃
+\forall=∀
+\neg=¬
+\land=∧
+\lor=∨
+\perp=⊥
+\parallel=∥
+\angle=∠
+\triangle=△
+\degree=°
+\circ=∘
+\prime=′
+\vdots=⋮
+\ddots=⋱
+\cdots=⋯
+\ldots=…
+\dots=…
+\varepsilon=ε
+\epsilon=ε
+\vartheta=ϑ
+\varphi=ϕ
+\varpi=ϖ
+\varsigma=ς
+\alpha=α
+\beta=β
+\gamma=γ
+\delta=δ
+\zeta=ζ
+\eta=η
+\theta=θ
+\iota=ι
+\kappa=κ
+\lambda=λ
+\mu=μ
+\nu=ν
+\xi=ξ
+\omicron=ο
+\pi=π
+\rho=ρ
+\sigma=σ
+\tau=τ
+\upsilon=υ
+\phi=φ
+\chi=χ
+\psi=ψ
+\omega=ω
+\Gamma=Γ
+\Delta=Δ
+\Theta=Θ
+\Lambda=Λ
+\Xi=Ξ
+\Pi=Π
+\Sigma=Σ
+\Upsilon=Υ
+\Phi=Φ
+\Psi=Ψ
+\Omega=Ω
+\ln=ln
+\log=log
+\exp=exp
+\lim=lim
+\max=max
+\min=min
+\sin=sin
+\cos=cos
+\tan=tan
+\cot=cot
+\sec=sec
+\csc=csc
+'@
+    $pairs = @($table -split "`n" | Where-Object { $_.Trim() } | ForEach-Object {
+        $p = $_.Trim() -split '=', 2; if ($p.Count -eq 2) { , @($p[0], $p[1]) } else { $null }
+    } | Where-Object { $_ })
+    $pairs = $pairs | Sort-Object { $_[0].Length } -Descending
+    # Harf duyarli (-creplace): \Gamma ile \gamma karismasin; kelime siniri: \in, \infty'u bozmasin.
+    foreach ($g in $pairs) {
+        $s = $s -creplace ([regex]::Escape($g[0]) + '(?![a-zA-Z])'), $g[1]
+    }
+    # Us/alt simgeler: ^{...}, ^x, _{...}, _x -> Unicode (tam cevrilebiliyorsa).
+    $s = [regex]::Replace($s, '\^\{([^{}]*)\}', { param($m)
+        $r = Convert-ToSuperscript $m.Groups[1].Value
+        if ($r) { $r } else { '^(' + $m.Groups[1].Value + ')' } })
+    $s = [regex]::Replace($s, '\^([A-Za-z0-9\+\-])', { param($m)
+        $r = Convert-ToSuperscript $m.Groups[1].Value
+        if ($r) { $r } else { $m.Value } })
+    $s = [regex]::Replace($s, '_\{([^{}]*)\}', { param($m)
+        $r = Convert-ToSubscript $m.Groups[1].Value
+        if ($r) { $r } else { '_(' + $m.Groups[1].Value + ')' } })
+    $s = [regex]::Replace($s, '_([A-Za-z0-9\+\-])', { param($m)
+        $r = Convert-ToSubscript $m.Groups[1].Value
+        if ($r) { $r } else { $m.Value } })
+    # Kalan bilinmeyen komutlar: ters boluyu at, adi kalsin
+    $s = $s -replace '\\([a-zA-Z]+)', '$1'
+    $s = $s -replace '\\', ''
+    # Coklu bosluklari sadelestir (satir sonlarina dokunmadan)
+    $s = [regex]::Replace($s, '(?<=\S)[ \t]{2,}(?=\S)', ' ')
+    return $s
+}
+
 # **kalin**, *egik* ve `kod` parcalarini ayri bicimlerle yazar
 function Add-RichInline($rtb, [string]$text, [System.Drawing.Font]$baseFont, [System.Drawing.Color]$color) {
     foreach ($part in [regex]::Split($text, '(\*\*.+?\*\*|(?<!\*)\*(?!\*).+?(?<!\*)\*(?!\*)|`[^`]+`)')) {
@@ -329,6 +547,7 @@ function Add-RichInline($rtb, [string]$text, [System.Drawing.Font]$baseFont, [Sy
 
 function Render-Markdown($rtb, [string]$text, [System.Drawing.Color]$color) {
     $rtb.Clear()
+    $text = Convert-MathText $text
     $lines = ($text -replace "`r`n", "`n").Split("`n")
     $i = 0
     while ($i -lt $lines.Count) {
@@ -2294,8 +2513,9 @@ function Render-JobEvent($jobEvent) {
                     if ($displayFinal -match '(?m)^\s*(\||#{1,6}\s|[-*+]\s|\d+[.)]\s|```)' -or $displayFinal -match '\*\*.+?\*\*|`[^`]+`') {
                         Render-Markdown $b.body $displayFinal $colText
                         $b.hasRich = $true
-                    } elseif (!$b.body.Text -or $b.deniedNote) {
-                        $b.body.Text = $displayFinal
+                    } else {
+                        # LaTeX/matematik isaretlerini okunur hale getir (bkz. Convert-MathText).
+                        $b.body.Text = (Convert-MathText $displayFinal)
                     }
                 }
             }
