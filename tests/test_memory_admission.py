@@ -19,8 +19,9 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     assert "function Test-MemoryBudget" in manager
     # Gorsel projektoru de VRAM'e yuklendigi icin butceye dahil edilir.
     assert "Test-MemoryBudget $model $Profile $projector" in manager
-    # Tek GPU sahibi: varsayilan davranista bizim CUDA baglamimiz (ComfyUI) olcumden
-    # once kapatilir (comfyKeepAlive=false). Bkz. test_comfy_keep_alive_*.
+    # Tek GPU sahibi: bizim CUDA baglamimiz (ComfyUI) olcumden once ele alinir. Varsayilan
+    # acik tutmak; mukerrer/kacak varsa kapatilir; butce yetmezse kapatilip tekrar olculur.
+    # Bkz. test_idle_comfy_is_kept_open_but_leaks_are_cleaned.
     assert "[void](Stop-IdleComfy)" in manager
     # Kontrol, dosya varlik kontrollerinden SONRA (model yolu belliyken) ama
     # model sureci baslatilmadan ONCE calismali; ComfyUI kapatma da olcumden once.
@@ -30,18 +31,29 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     assert idx_comfy < idx_check < idx_start
 
 
-def test_comfy_keep_alive_setting_defaults_to_open():
-    """settings/api.json -> comfyKeepAlive. Varsayilan true: ComfyUI acik tutulur; medya
-    isleri arasinda yeniden acilma (~15-20 sn) olmaz. Sohbet ~%11 yavaslar (olculdu
-    49,7 -> 44,2 tok/s) ama TASMA OLMAZ: GPU tampon yerlesimi iki durumda da birebir ayni
-    (CPU_Mapped 644 MiB, CUDA0 model 13945 MiB; graph splits 2). false ile tam hiz."""
+def test_idle_comfy_is_kept_open_but_leaks_are_cleaned():
+    """ComfyUI medya isleri arasinda ACIK tutulur (varsayilan), ama dil modeli yuklenmeden
+    once MUKERRER/kacak ComfyUI temizlenir. Gercek makinede olculdu: tek (taze) ComfyUI ile
+    MAX 32K birlikte 61 tok/s calisti (192 MiB bos); IKI ComfyUI sureci (biri smoke testinden
+    kalan bir kopya) varken 27B paylasilan bellege tasip 0,89 tok/s'ye dustu. ComfyUI bir
+    surec CIFTI'dir (venv baslatici + base python cocugu); eski kod `Select-Object -First 1`
+    ile yalnizca birini kapatiyordu, kalan baglami tutuyordu. Bu yuzden temizlik TUM eslesen
+    surecleri kapatir."""
     manager = read_text("scripts/manage-qwen.ps1")
+    # Ayar geri geldi ve varsayilan acik (medya isleri arasinda reopen ~27 sn onlenir).
     assert "$comfyKeepAlive = $true" in manager
     assert "$settings.comfyKeepAlive" in manager
-    # Kapali tutma yalnizca ayar kapaliyken kosulsuz uygulanir.
-    assert "if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }" in manager
-    # Ayar acikken yer yetmezse guvenlik icin yine de kapatilip tekrar olculur.
-    assert "if ($comfyKeepAlive -and (Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector }" in manager
+    # Mukerrer tespiti: birden fazla surec varsa hepsi kapatilir.
+    assert "@(Get-ComfyProcesses).Count -gt 1" in manager
+    # Tek-surec varsayimi yerine TUM surecleri hedefleyen temizlik.
+    assert "function Get-ComfyProcesses" in manager
+    stop = manager.split("function Stop-IdleComfy")[1].split("function Get-ManagedServers")[0]
+    assert "Select-Object -First 1" not in stop
+    assert "foreach ($comfy in $procs)" in stop
+    # Kuyruk bossa kapatilir ilkesi korunur; calisan medya isine dokunulmaz.
+    assert "queue_running" in stop
+    # Butce yetmezse kapatip tekrar dene (fallback korunur).
+    assert "if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }" in manager
 
 
 def test_idle_comfy_is_only_stopped_when_its_queue_is_empty():

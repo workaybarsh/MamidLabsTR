@@ -29,11 +29,32 @@ function Get-RunningComfy {
     try { return [Diagnostics.Process]::GetProcessById([int]$found.ProcessId) } catch { return $null }
 }
 
+# ComfyUI bir surec CIFTI'dir (venv baslatici + base python cocugu) ve eski bir kopya
+# kalabilir. Birden fazla eslesen surec varsa hepsi kapatilir: aksi halde ikinci kopya
+# bos VRAM tutar ve dil modeliyle birlikte 27B'yi tasirir (gercek makinede 0,89 tok/s).
+function Get-ComfyLeakProcesses {
+    @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' })
+}
+function Clear-ComfyLeaks {
+    $all = @(Get-ComfyLeakProcesses)
+    if ($all.Count -le 1) { return }
+    foreach ($p in $all) {
+        try { $proc = [Diagnostics.Process]::GetProcessById([int]$p.ProcessId); $proc.Kill($true); $proc.WaitForExit(20000) | Out-Null } catch { }
+    }
+    foreach ($p in $all) {
+        if (Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue) { Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue }
+    }
+    Start-Sleep -Milliseconds 1500
+}
+
 function Start-OrReuseComfy([string]$python, [string]$comfyDir, [string]$comfyOut, [string]$comfyIn,
                             [string]$logs, [string]$comfyUrl, [bool]$lite, [int]$timeoutSec, [hashtable]$Shared) {
     # Harici model klasorleri (kopyalanmadan yerinde kullanilan dosyalar); bkz. media-paths.ps1.
     $extraPaths = Join-Path (Split-Path -Parent $comfyDir) 'settings\comfy-extra-models.yaml'
     $hasExtra = Test-Path -LiteralPath $extraPaths -PathType Leaf
+    # Kaçak/mukerrer kopyalari temizle (tek örnek ilkesi).
+    Clear-ComfyLeaks
     $existing = Get-RunningComfy
     if ($existing) {
         # Acik surec harici klasor listesi degismeden once basladiysa yeni klasoru goremez.

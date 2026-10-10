@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('start', 'stop', 'switch')][string]$Action = 'switch',
+    [ValidateSet('start', 'stop', 'switch', 'closecomfy')][string]$Action = 'switch',
     [ValidateSet('max', 'flash', 'lite')][string]$Profile = 'max',
     [string]$ModelId,
     # Bellek kontrolunu atla (sorun giderme icin). Normal kullanimda gerekmez.
@@ -21,7 +21,7 @@ $logs = Join-Path $root 'logs'
 # Ayarlar profil secimi icin gerekli oldugundan model yolu belirlenmeden once okunur.
 $settings = $null
 $settingsPath = Join-Path $root 'settings\api.json'
-if ($Action -ne 'stop' -and (Test-Path -LiteralPath $settingsPath)) {
+if ($Action -notin @('stop', 'closecomfy') -and (Test-Path -LiteralPath $settingsPath)) {
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 }
 
@@ -140,27 +140,43 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     }
 }
 
-# Bizim actigimiz tek buyuk CUDA baglami ComfyUI'nin. Modeller bosaltilmis olsa da
-# baglam (surucu tarafi rezervasyonla) ~300 MiB ve daha onemlisi parcali VRAM tutar
-# (RTX 5060 Ti'de olculdu). Dil modeli yuklenmeden once kuyrugu bossa HER ZAMAN
-# kapatilir; boylece bos VRAM olcumu guvenilir olur ve 27B model paylasilan bellege
-# tasmaz. Bir sonraki gorsel/video onu yeniden acar (~15-20 sn). Calisan is varsa
-# dokunulmaz.
+# ComfyUI sureci TEK surec degildir: venv baslatici (python.exe) + onun gercek alt
+# sureci (base python.exe) olmak uzere bir CIFT olusur. Eski kod `Select-Object -First 1`
+# ile yalnizca BIRINI hedefliyordu; kalan eslesme (ya da eski bir kacak kopya) CUDA
+# baglamini tutup dil modelini tasiriyordu. Gercek makinede: iki ComfyUI sureci varken
+# MAX 32K paylasilan bellege tasip 0,89 tok/s oldu; TEK ComfyUI ile ayni model 61 tok/s.
+# Bu yuzden her temizlik TUM eslesen surecleri kapatir; cift/kaçak varsa hepsi gider.
+function Get-ComfyProcesses {
+    @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' })
+}
+
+# Kuyrugu bos olan TUM ComfyUI sureclerini kapatir. En az biri kapatildiysa $true.
 function Stop-IdleComfy {
-    $comfy = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' } | Select-Object -First 1
-    if (!$comfy) { return $false }
+    $procs = @(Get-ComfyProcesses)
+    if ($procs.Count -eq 0) { return $false }
     try {
         $queue = Invoke-RestMethod 'http://127.0.0.1:8188/queue' -TimeoutSec 3 -ErrorAction Stop
         if (@($queue.queue_running).Count -gt 0 -or @($queue.queue_pending).Count -gt 0) { return $false }
     } catch { }  # Yanit vermeyen surec zaten kullanilamaz; kapatilabilir.
-    try {
-        $process = [Diagnostics.Process]::GetProcessById([int]$comfy.ProcessId)
-        $process.Kill($true)
-        $process.WaitForExit(20000) | Out-Null
-    } catch { return $false }
+    $killed = $false
+    foreach ($comfy in $procs) {
+        try {
+            $process = [Diagnostics.Process]::GetProcessById([int]$comfy.ProcessId)
+            $process.Kill($true)
+            $process.WaitForExit(20000) | Out-Null
+            $killed = $true
+        } catch { }
+    }
+    # Hemen olmeyen kalirsa zorla (cift/kaçak gecikmeli kapanabiliyor).
+    foreach ($comfy in $procs) {
+        if (Get-Process -Id ([int]$comfy.ProcessId) -ErrorAction SilentlyContinue) {
+            Stop-Process -Id ([int]$comfy.ProcessId) -Force -ErrorAction SilentlyContinue
+            $killed = $true
+        }
+    }
     Start-Sleep -Milliseconds 1500  # Surucu VRAM'i biraz gecikmeyle serbest birakir.
-    return $true
+    return $killed
 }
 
 function Get-ManagedServers {
@@ -175,6 +191,12 @@ try {
     try { $ownsGate = $gate.WaitOne(30000) }
     catch [System.Threading.AbandonedMutexException] { $ownsGate = $true }
     if (!$ownsGate) { throw 'Model kontrolü başka bir işlem tarafından kullanılıyor.' }
+
+    # Kaynak hijyeni: bosta kalan ComfyUI'yi kapat. Uygulama coktu/gorev sonlandirildi
+    # ya da smoke testinin arayuz adimi uygulamayi zorla oldurdu ise ComfyUI artik
+    # kalmis olabilir; dil modeli onun uzerine yuklenirse VRAM tasar. Cagiranlar
+    # (uninstall, smoke-test, Shutdown-All) bunu acikca tetikler.
+    if ($Action -eq 'closecomfy') { [void](Stop-IdleComfy); 'ComfyUI kapatildi (kuyruk bossa).'; return }
 
     $running = @(Get-ManagedServers)
     if ($Action -ne 'stop' -and $running.Count -eq 1 -and $running[0].CommandLine -match ('--alias\s+' + [regex]::Escape($desiredAlias) + '(?:\s|$)')) {
@@ -200,23 +222,25 @@ try {
     if (!(Test-Path -LiteralPath $model -PathType Leaf)) { throw "Model bulunamadı: $model" }
     # Lite profili gorsel projektoru olmadan da calisir; digerlerinde mmproj zorunludur.
     if (!$custom -and $Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector -PathType Leaf)) { throw "Görsel projektörü bulunamadı: $projector" }
-    # ComfyUI yasam dongusu. Varsayilan (comfyKeepAlive=true): ComfyUI acik tutulur; medya
-    # isleri arasinda yeniden acilma (~15-20 sn) olmaz. Sohbet ~%11 yavaslar (olculdu
-    # 49,7 -> 44,2 tok/s) ama TASMA OLMAZ: iki durumda da GPU tampon yerlesimi birebir ayni
-    # (CPU_Mapped 644 MiB, CUDA0 model 13945 MiB, KV 576 MiB; graph splits 2). comfyKeepAlive
-    # =false ile ComfyUI yukleme oncesi kapatilir ve sohbet tam hizda kalir. Yer yetmezse
-    # (kuyruk bossa da VRAM darsa) guvenlik icin kapatilip tekrar olculur.
+    # ComfyUI yasam dongusu. Varsayilan: medya isleri arasinda ACIK tutulur (~27 sn'lik
+    # yeniden acilma olmaz). Gercek makinede TEK (taze) ComfyUI ile MAX 32K birlikte
+    # sorunsuz calisir: 61 tok/s, 192 MiB bos. Sohbet de "medya sonrasi gecis" adiminda
+    # 0,92 oraninda kaldi. TASMA yalnizca MUKERRER/kacak ComfyUI sureci varsa olur
+    # (ComfyUI bir cift surec; eski kopya kalirsa VRAM asar -> 0,89 tok/s olculdu).
+    # Bu yuzden yukleme ONCESI once kaçak/mukerrer temizlenir, sonra butce olculur;
+    # yer yetmezse kuyrugu bos ComfyUI kapatilip yeniden olculur.
     $comfyKeepAlive = $true
     if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
+    # Kacak/mukerrer ComfyUI tespiti: birden fazla surec varsa hepsi kapatilir (tek ornek ilkesi).
+    if (@(Get-ComfyProcesses).Count -gt 1) { [void](Stop-IdleComfy) }
     if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
     if (!$SkipMemoryCheck) {
         try { Test-MemoryBudget $model $Profile $projector }
         catch {
-            # ComfyUI acik tutuluyordu ama yer yetmedi: kuyrugu bossa kapat, tekrar dene.
-            if ($comfyKeepAlive -and (Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector }
-            else { throw }
+            # Yer yetmedi (ComfyUI acik): kuyrugu bossa kapat, tekrar olc; yine yetmezse hata.
+            if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }
         }
     }
     New-Item -ItemType Directory -Path $logs -Force | Out-Null

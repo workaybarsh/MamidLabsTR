@@ -54,6 +54,17 @@ def test_ui_step_restores_settings_and_stops_the_server():
     assert "& $manage -Action stop" in script
 
 
+def test_smoke_test_closes_leftover_comfyui():
+    """Gorsel/video adimlari ComfyUI'yi acik birakir; arayuz adimi uygulamayi Force ile
+    oldurdugu icin Shutdown-All calismaz. Test sonunda (ve arayuz adiminin finally'sinde)
+    bosta kalan ComfyUI kapatilir; yoksa dil modeli onun uzerine yuklenip VRAM tasar
+    (gercek makinede olculdu: 0,89 tok/s)."""
+    script = read_text("scripts/smoke-test.ps1")
+    assert "& $manage -Action closecomfy" in script
+    # Belt-and-suspenders: kalan python ComfyUI sureci de oldurulur.
+    assert "ComfyUI\\main.py" in script
+
+
 def test_each_component_reports_pass_or_fail_independently():
     """Bir bilesen basarisiz olursa digerleri yine de denenmeli; erken cikis olmamali."""
     script = read_text("scripts/smoke-test.ps1")

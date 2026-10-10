@@ -3,6 +3,20 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [Unreleased]
+
+### Düzeltilen
+- **Mükerrer/kaçak ComfyUI süreci VRAM taşmasına yol açıyordu:** ComfyUI tek süreç değil, bir
+  **çifttir** (venv başlatıcı + base python çocuğu). `Stop-IdleComfy`/`Get-RunningComfy`
+  `Select-Object -First 1` kullandığı için yalnızca birini kapatıyor, kalan süreç (ya da smoke
+  testinden kalan bir kopya) CUDA bağlamını tutuyordu. Sonuç: 27B model paylaşılan belleğe taşıyor
+  ve üretim **0,89 tok/s**'ye düşüyordu; **tek (taze) ComfyUI** ile aynı model **61 tok/s** (192 MiB
+  boş) çalışıyor. Artık `Get-ComfyProcesses` + `Stop-IdleComfy` **tüm** eşleşen süreçleri kapatır,
+  mükerrer varsa yükleme öncesi temizlenir; `media-model-swap.ps1` `Clear-ComfyLeaks` kopyaları
+  temizler; smoke-test sonu, arayüz finally'si ve `install` comfyui aşaması boştaki ComfyUI'yi
+  kapatır. `comfyKeepAlive` (varsayılan `true`, ComfyUI açık kalır) korunur. Maliyet: ComfyUI
+  yeniden açma medya işi başına ~27 sn (ölçüldü: soğuk 55 sn, sıcak 28 sn).
+
 ## [1.1.0] - 2026-10-10
 
 ### Eklenen

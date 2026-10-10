@@ -727,7 +727,9 @@ if ($SkipUi) {
             try { Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue } catch { }
         }
         # Uygulamanin actigi sunucuyu ve varsa kalan surecleri kapat (sonraki adim yok, ama temizlik).
+        # Uygulama Force ile olduruldugu icin Shutdown-All calismaz; ComfyUI acik kalabilir.
         & $manage -Action stop | Out-Null
+        & $manage -Action closecomfy | Out-Null
         if (Test-Path -LiteralPath $settingsBackup) {
             Remove-Item -LiteralPath $settingsDir -Recurse -Force -ErrorAction SilentlyContinue
             Copy-Item -LiteralPath $settingsBackup -Destination $settingsDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -735,6 +737,16 @@ if ($SkipUi) {
         Remove-Item -LiteralPath $settingsBackup -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+# -------------------------------------------------------------------- kaynak hijyeni
+# Gorsel/video adimlari ComfyUI'yi acik birakir (ayni oturumda ardisik medya isleri onu
+# yeniden kullansin diye). Dil modeli onun uzerine yuklenirse VRAM tasar; bu yuzden test
+# sonunda bosta kalan ComfyUI kapatilir (arayuz adimi atlanmis ya da cokmus olsa bile).
+& $manage -Action closecomfy | Out-Null
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*ComfyUI\main.py*' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Milliseconds 1500
 
 # -------------------------------------------------------------------- ozet
 Write-Section 'Ozet'

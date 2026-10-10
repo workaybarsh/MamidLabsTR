@@ -137,13 +137,19 @@ Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
 **VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
-(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`): varsayılan
-**true** ile ComfyUI açık tutulur (medya işleri arasında ~15–20 sn yeniden açılma olmaz). Bu
-**taşma yapmaz**: ölçüldü, iki durumda da GPU tampon yerleşimi birebir aynı (CPU_Mapped 644 MiB,
-CUDA0 model 13945 MiB, KV 576 MiB, graph splits 2) ve MTP kabulü aynı (82/131); yalnızca genel
-GPU etkisiyle sohbet ~%11 yavaşlar (49,7 → 44,2 tok/s). `comfyKeepAlive=false` ile ComfyUI yükleme
-öncesi kapatılır ve sohbet tam hızda kalır. Her iki durumda da yer yetmezse (kuyruk boşsa) ComfyUI
-kapatılıp yeniden ölçülür. Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
+(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü:** ComfyUI medya işleri arasında **açık tutulur**
+(varsayılan; `comfyKeepAlive` ile kapatılabilir), medya işi başına ~27 sn yeniden açılma olmaz.
+**Tek (taze) ComfyUI ile MAX 32K birlikte sorunsuz çalışır:** ölçüldü, 61 tok/s ve 192 MiB boş VRAM;
+smoke testinin "medya sonrası geçiş" adımı da 0,92 oranında kaldı. Taşma yalnızca **mükerrer/kaçak
+ComfyUI süreci** varsa olur: ComfyUI tek süreç değil, bir **çifttir** (venv başlatıcı + base python
+çocuğu); eski kod `Select-Object -First 1` ile yalnızca birini kapatıp diğerini (ya da kalan bir
+kopyayı) bırakıyordu. Ölçüm (RTX 5060 Ti 16 GB, MAX): iki ComfyUI süreci varken 27B paylaşılan
+belleğe taşıp üretim **0,89 tok/s**'ye düştü; tek ComfyUI ile **61 tok/s**. Bu yüzden yükleme
+öncesi mükerrer/kaçak süreçler kapatılır (`Get-ComfyProcesses` + `Stop-IdleComfy`, tümünü kapatır)
+ve bütçe yetmezse ComfyUI kapatılıp yeniden ölçülür. Dış temizlik için `manage-qwen.ps1`
+`-Action closecomfy`. ComfyUI'yi yeniden açmanın maliyeti medya işi başına ~27 sn
+(ölçüldü: soğuk 55 sn, sıcak 28 sn).
+Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
 ile çalıştı (dosya 14.600 MiB → gerçek pay ~600 MiB). 1.0.4–1.0.7'deki 800/1000 MiB paylar (eşik
 15400/15600) bu çalışan durumu yanlış reddedip jenerik "Model işlemi başarısız" hatası veriyordu.
 Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
@@ -317,7 +323,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
-  - Medya: `comfyKeepAlive` (varsayılan `true`; ComfyUI'yi açık tutar, bkz. bölüm 5).
+  - Medya: `comfyKeepAlive` (varsayılan `true`; ComfyUI medya işleri arasında açık kalır, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
 
@@ -387,9 +393,10 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
 7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
-   kartta MAX'ı hiç açtırmaz. **ComfyUI** varsayılan olarak açık tutulur (`comfyKeepAlive=true`);
-   bu taşma yapmaz (tampon yerleşimi birebir aynı, bölüm 5) ama sohbeti ~%11 yavaşlatır. Yer
-   yetmezse (kuyruk boşsa) kapatılıp yeniden ölçülür. MAX/FLASH'ta mmproj CPU'da
+   kartta MAX'ı hiç açtırmaz. **ComfyUI** medya işleri arasında açık tutulur; tek (taze) süreçle
+   MAX 32K birlikte çalışır (61 tok/s). Taşma yalnızca **mükerrer/kaçak ComfyUI süreci** varsa olur
+   (ComfyUI bir süreç çiftidir); bu yüzden yükleme öncesi tüm eşleşen süreçler kapatılır (bölüm 5).
+   Kaçak süreç varken 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
    19 tok/s'ye düşer.
 8. **Tek görsel kuralı:** Sohbete aynı anda yalnızca bir görsel gider (çoklu görsel yalnızca
@@ -467,7 +474,8 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-10 | 1.1.0 tam doğrulandı: `python -m pytest -q` **317 geçti** (4 beklenen atlama) ve tam smoke testi **13/13** (sohbet 44,3 tok/s, MTP kabul 82/87, grafik bar/pie/function, görsel 88 sn, düzenleme 69 sn, medya sonrası geçiş 0,92, video 133 sn, arayüz turu MTP 23/23). Kurulu kök repoyla **47/47 program dosyası birebir aynı**. | AGENTS.md |
+| 2026-10-10 | ComfyUI mükerrer/kaçak süreç kusuru bulundu ve düzeltildi: ComfyUI tek süreç değil bir **çifttir** (venv başlatıcı + base python çocuğu); eski `Select-Object -First 1` yalnızca birini kapatıp kalan bağlamı bırakıyordu. Kaçak/mükerrer ComfyUI varken MAX 32K taşıp 0,89 tok/s; tek (taze) ComfyUI ile aynı model 61 tok/s (192 MiB boş) — yani ComfyUI açık kalabilir. `Get-ComfyProcesses` + `Stop-IdleComfy` artık TÜM eşleşen süreçleri kapatır; `media-model-swap.ps1` `Clear-ComfyLeaks` mükerrer kopyaları temizler; smoke-test sonu, arayüz finally'si ve install comfyui aşaması boştaki ComfyUI'yi kapatır. `comfyKeepAlive` varsayılan `true` (açık) korunur. | scripts/manage-qwen.ps1, agent/media-model-swap.ps1, scripts/smoke-test.ps1, scripts/install-mamidlabs.ps1, tests/test_memory_admission.py, tests/test_smoke_test_script.py |
+| 2026-10-10 | 1.1.0 tam doğrulandı: `python -m pytest -q` **318 geçti** (4 beklenen atlama) ve tam smoke testi **13/13** (sohbet 44 tok/s, MTP kabul 82/87, grafik bar/pie/function, görsel 56 sn, düzenleme 96 sn, medya sonrası geçiş oran 0,97, video 161 sn, arayüz turu MTP 23/23). Kurulu kök repoyla **program dosyaları birebir aynı**. | AGENTS.md |
 | 2026-10-10 | Bağımsız grafik üretimi eklendi (1.1.0): sohbet aracı `generate_chart` + `agent/chart-run.ps1` (gömülü pwsh + System.Drawing; bar/line/pie/scatter/function; güvenli ifade çözümleyici, `Invoke-Expression` yok). Sonuç sohbette satır içi gösterilir ve `outputs\grafikler`'e kaydedilir. Smoke testine `grafik` adımı eklendi (`-SkipChart`). ENG sürümüne de uygulandı. | qwen-desktop.ps1, agent/qwen-inference.ps1, agent/chart-run.ps1, scripts/smoke-test.ps1, tests/test_chart_run.py |
 | 2026-10-10 | Matematik (LaTeX) yanıtları için `Convert-MathText` eklendi (1.1.0): ham `$$`/`\frac`/`\int` yerine okunur Unicode (∫, ∞, π, √, ∑, →, ≠, Yunan harfleri), kesir → a/b, üs/alt simge → Unicode (x², ∫₀). Para birimi `$` korunur. | qwen-desktop.ps1, tests/test_math_render.py |
 | 2026-10-09 | `comfyKeepAlive` ayarı eklendi (1.0.9, varsayılan `true`): ComfyUI medya işleri arasında açık kalır (yeniden açılma yok). Ölçüm: taşma yok (tampon yerleşimi aynı, graph splits 2), sohbet ~%11 yavaş (49,7→44,2 tok/s). `false` ile tam hız. Ayrıca iki flaky test deterministik yapıldı (run_command çıktı kodlaması UTF-8; boş-dosya testi tmp_path). | scripts/manage-qwen.ps1, tests/test_memory_admission.py, tests/test_bound_path_and_run_command.py, tests/test_binary_file_detection.py |

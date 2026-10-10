@@ -509,6 +509,11 @@ function Invoke-ComfyUI {
     if ($SkipMedia) { Write-Skip 'ComfyUI (-SkipMedia)'; return }
     $target = Join-Path $Root 'ComfyUI'
     $main = Join-Path $target 'main.py'
+    # Calisan bir ComfyUI (onceki oturumdan/acik uygulamadan) dosyalari kilitler ve git
+    # islemleri takilir; asama basinda bu koke ait surec durdurulur.
+    Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($Root, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine -like '*ComfyUI\main.py*' } |
+        ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Write-Note ('Durduruldu: ComfyUI (' + $_.ProcessId + ')') } catch { } }
     if ((Test-Path -LiteralPath $main -PathType Leaf) -and !$Force) {
         Sync-PinnedCheckout $target $script:ComfyRepo $script:ComfyCommit 'ComfyUI'
     } else {
