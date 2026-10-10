@@ -325,7 +325,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~250 test, ~90 sn; ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~320 test, ~115 sn; ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -467,6 +467,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-10 | 1.1.0 tam doğrulandı: `python -m pytest -q` **317 geçti** (4 beklenen atlama) ve tam smoke testi **13/13** (sohbet 44,3 tok/s, MTP kabul 82/87, grafik bar/pie/function, görsel 88 sn, düzenleme 69 sn, medya sonrası geçiş 0,92, video 133 sn, arayüz turu MTP 23/23). Kurulu kök repoyla **47/47 program dosyası birebir aynı**. | AGENTS.md |
 | 2026-10-10 | Bağımsız grafik üretimi eklendi (1.1.0): sohbet aracı `generate_chart` + `agent/chart-run.ps1` (gömülü pwsh + System.Drawing; bar/line/pie/scatter/function; güvenli ifade çözümleyici, `Invoke-Expression` yok). Sonuç sohbette satır içi gösterilir ve `outputs\grafikler`'e kaydedilir. Smoke testine `grafik` adımı eklendi (`-SkipChart`). ENG sürümüne de uygulandı. | qwen-desktop.ps1, agent/qwen-inference.ps1, agent/chart-run.ps1, scripts/smoke-test.ps1, tests/test_chart_run.py |
 | 2026-10-10 | Matematik (LaTeX) yanıtları için `Convert-MathText` eklendi (1.1.0): ham `$$`/`\frac`/`\int` yerine okunur Unicode (∫, ∞, π, √, ∑, →, ≠, Yunan harfleri), kesir → a/b, üs/alt simge → Unicode (x², ∫₀). Para birimi `$` korunur. | qwen-desktop.ps1, tests/test_math_render.py |
 | 2026-10-09 | `comfyKeepAlive` ayarı eklendi (1.0.9, varsayılan `true`): ComfyUI medya işleri arasında açık kalır (yeniden açılma yok). Ölçüm: taşma yok (tampon yerleşimi aynı, graph splits 2), sohbet ~%11 yavaş (49,7→44,2 tok/s). `false` ile tam hız. Ayrıca iki flaky test deterministik yapıldı (run_command çıktı kodlaması UTF-8; boş-dosya testi tmp_path). | scripts/manage-qwen.ps1, tests/test_memory_admission.py, tests/test_bound_path_and_run_command.py, tests/test_binary_file_detection.py |
