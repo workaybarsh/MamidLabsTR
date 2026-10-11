@@ -58,6 +58,11 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Sessiz/boş ses kaydında döküm sarmalayıcısı sızıyordu:** Qwen3-ASR çıktısını ayrıştıran
+  `_extract_text`, konuşma algılanmayan (sessiz) kısa kayıtlarda ham `language None<asr_text>`
+  metnini transkript olarak modele gönderiyordu; model de "transkript boş" diye yanıt veriyordu.
+  Artık `<asr_text>` etiketi ve `language ...` sarmalayıcısı **her zaman** temizlenir; sessiz sonuçta
+  metin **boş** döner (arayüz testinde yakalandı, gerçek sessiz kayıt ve konuşma kaydıyla doğrulandı).
 - **"Durdur" artık o an yapılan HER işi anında keser:** yanıt üretimi, **ASR/OCR/arama gibi uzun
   süren alt süreçler** (Python alt süreçleri anında öldürülür) ve medya üretimi beklemeden durur;
   ardından dil modeli arka planda yüklenir ve sohbet bir sonraki mesajla devam eder. **Tek istisna:**

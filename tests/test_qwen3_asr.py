@@ -106,6 +106,21 @@ def test_microphone_capture_uses_default_device_via_mci():
     assert "$micBtn.Add_MouseUp({" in desktop  # sag tik: kayit surerken de iptal menusu
 
 
+def test_extract_text_strips_wrapper_and_handles_silence():
+    """'<asr_text>' etiketi ve 'language ...' sarmalayicisi her zaman temizlenir; sessiz/kisa
+    kayitta metin BOS doner. Sessiz bir mikrofonda ham 'language None<asr_text>' modele
+    siziyordu (arayuz testinde yakalandi)."""
+    module = load_worker()
+    assert module._extract_text(None, 'language Turkish<asr_text>Merhaba dünya') == ('Merhaba dünya', 'Turkish')
+    assert module._extract_text(None, 'language English<asr_text>Hello.') == ('Hello.', 'English')
+    # Sessizlik: kuyruk bos -> metin bos, dil 'None' temizlenir.
+    assert module._extract_text(None, 'language None<asr_text>') == ('', '')
+    assert module._extract_text(None, 'language None<asr_text>   ') == ('', '')
+    # Sarmalayici asla metne sizmaz.
+    text, _ = module._extract_text(None, 'language Turkish<asr_text>Merhaba')
+    assert '<asr_text>' not in text and 'language' not in text
+
+
 def test_transcription_uses_model_swap_for_local_provider():
     """OCR ile ayni desen: yerel saglayicida dil modeli bosaltilir (GPU ses modeline kalir),
     dökum alinir, model geri yuklenir."""

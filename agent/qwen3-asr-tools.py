@@ -101,12 +101,26 @@ def _load_model(model_dir: str, device: str):
 
 
 def _extract_text(processor, raw: str) -> tuple[str, str]:
-    """Qwen3-ASR cikisi 'language <LANG><asr_text>metin' bicimindedir. (metin, dil) doner."""
-    text, lang = raw, ''
+    """Qwen3-ASR cikisi 'language <LANG><asr_text>metin' bicimindedir. (metin, dil) doner.
+
+    '<asr_text>' etiketi ve 'language ...' sarmalayicisi HER ZAMAN temizlenir. Sessiz ya da
+    ayristirilamayan sonucta metin BOS doner - ham sarmalayici transkripte sizmamali (sessiz bir
+    kayit bir kez modele 'language None<asr_text>' gonderdi)."""
+    text, lang = '', ''
+    # Belgelenen Qwen3-ASR bicimi esas alinir: '<asr_text>' sonrasi transkript, 'language' ile
+    # etiket arasi dildir. Sessizlik durumunu da dogru kapsar (kuyruk = '').
+    if '<asr_text>' in raw:
+        head, _, tail = raw.partition('<asr_text>')
+        text = tail.strip()
+        lang = head.replace('language', '').strip()
+        if lang.lower() in ('none', 'null', 'n/a'):
+            lang = ''
+        return text, lang
+    # Diger/eski cikti bicimleri icin yedek yol.
     try:
         parsed = processor.extract_transcription(raw)
         if isinstance(parsed, list):
-            parsed = parsed[0] if parsed else raw
+            parsed = parsed[0] if parsed else ''
         if isinstance(parsed, str) and parsed.strip():
             text = parsed
     except Exception:
@@ -115,16 +129,13 @@ def _extract_text(processor, raw: str) -> tuple[str, str]:
             if isinstance(parsed, list) and parsed:
                 parsed = parsed[0]
             if isinstance(parsed, dict):
-                text = parsed.get('transcription') or parsed.get('text') or text
+                text = parsed.get('transcription') or parsed.get('text') or ''
                 lang = parsed.get('language') or ''
         except Exception:
             pass
-    if not lang and 'language ' in raw:
-        try:
-            head = raw.split('<asr_text>')[0]
-            lang = head.replace('language', '').strip()
-        except Exception:
-            pass
+    # Yedek yol ne uretirse uretsin sarmalayici gecmesin.
+    if '<asr_text>' in text:
+        text = text.partition('<asr_text>')[2]
     return text.strip(), lang.strip()
 
 
