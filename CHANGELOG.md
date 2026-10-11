@@ -24,8 +24,8 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
 - **Ses dökümü (whisper.cpp):** sohbete eklenen ses dosyası otomatik yazıya çevrilir ve bulgular dil
   modeline verilir (OCR/mmproj mantığı). Model **large-v3-turbo-q5_0 + Silero VAD** (halüsinasyon
   bastırılır). Ölçüm: 2 dk ses CPU ~53 sn, GPU (CUDA) ~2,5 sn. Yerel sağlayıcıda dil modeli VRAM'den
-  boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu ve ek (+)
-  menüsünde **Ses ekle**.
+  boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu (**Windows
+  varsayılan kayıt cihazından canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde **Ses ekle**.
 - **Sağlayıcı maksimum bağlam otomatik algılama:** API anahtarı doğrulanınca modelin bağlam penceresi
   uçtan okunup otomatik uygulanır (ör. commandcode 1.000.000).
 - **Bağımsız grafik üretimi:** `generate_chart` sohbet aracı + `agent/chart-run.ps1` (gömülü pwsh +

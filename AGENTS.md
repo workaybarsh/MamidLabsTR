@@ -486,6 +486,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-11 | Mikrofon kaydı eklendi (bağımlılıksız): winmm `mciSendString` ile Windows **varsayılan** kayıt cihazına (WAVE_MAPPER) kaydeder; mikrofon tuşu toggle (başlat/dur). Kayıt ses eki olarak eklenir ve otomatik gönderilir (dökum + yanıt). | qwen-desktop.ps1, tests/test_whisper_tools.py |
 | 2026-10-11 | ComfyUI yaşam döngüsü **profile duyarlı** yapıldı: MAX/FLASH (27B, 16 GB'ta kartın sınırında) yükleme öncesi boş ComfyUI **her zaman kapatılır** — aksi halde MTP draft bağlamı CPU'ya taşıp sohbet **aralıklı ~6-7 tok/s**'ye düşüyor (ölçüldü: medya sonrası geçiş adımı bir kez oran 0,18 verdi). LITE (9B) ComfyUI ile birlikte çalışır (oran 1,04) ve **açık tutulur**. Böylece "ComfyUI açık + 27B" belirsizliği (aralıklı taşma) ortadan kalktı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
 | 2026-10-11 | Smoke testine `arayuz_sohbet` adımı eklendi (gerçek pencereyi kullanıcı gibi sürer: yazı yaz + Gönder, yanıt alınmalı); `$pid` otomatik değişken çakışması düzeltildi. | scripts/smoke-test.ps1, tests/test_smoke_test_script.py |
 | 2026-10-11 | Matematik gösterimine **kimya/genel bilimsel** karakterler eklendi (`Convert-MathText`): denge oku ⇌ ile ⇋ ⇄ ⇆ ↔ ⟷ ⟹ ↪ ↑ ↓ ↕ ve **mhchem `\ce{...}`/`\pu{...}`** desteği (içerik okunur: element sayıları alt simge `H2O`→H₂O, oklar `->`/`<=>`→→/⇌). `->`/`<-` dönüşümü yalnızca `\ce` içinde yapılır; kod bloklarındaki `->` bozulmaz. | qwen-desktop.ps1, tests/test_math_render.py |
