@@ -33,6 +33,8 @@ function Get-OfficePyPath { Join-Path (Get-InstallRoot) 'agent\office-tools.py' 
 function Get-OcrPyPath { Join-Path (Get-InstallRoot) 'agent\ocr-tools.py' }
 function Get-OcrPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr\Scripts\python.exe' }
 function Get-OcrCpuPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr-cpu\Scripts\python.exe' }
+function Get-WhisperPyPath { Join-Path (Get-InstallRoot) 'agent\whisper-tools.py' }
+function Get-MediaPythonExe { Join-Path (Get-InstallRoot) 'venv\imagegen\Scripts\python.exe' }
 function Get-ManageQwenPath { Join-Path (Get-InstallRoot) 'scripts\manage-qwen.ps1' }
 function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
 
@@ -77,6 +79,15 @@ function Write-AuditLog([string]$tool, [string]$approval, [string]$result, [stri
 }
 $endpoint = 'http://127.0.0.1:8080/v1/chat/completions'
 . (Join-Path $root 'agent\api-providers.ps1')
+# Ayarlar masaustunden gelir (isci settings dosyasini okumaz; $PSScriptRoot bos).
+# 'custom' taban adresi $JobData.baseUrl uzerinden gecer; yoksa Get-CustomBaseUrl
+# bos doner ve custom saglayici sohbet akisinda calismaz (yalnizca ayar penceresinde
+# dogrulama calisirdi).
+$script:apiSettings = if ($JobData.apiSettings) { $JobData.apiSettings } else { @{ providers = @{} } }
+if ($JobData.baseUrl) {
+    if (!$script:apiSettings.providers) { $script:apiSettings.providers = @{} }
+    $script:apiSettings.providers['custom'] = @{ baseUrl = [string]$JobData.baseUrl }
+}
 $provider = if ($JobData.provider) { [string]$JobData.provider } else { 'local' }
 if ($provider -ne 'local') { $endpoint = Get-ProviderEndpoint $provider }
 $handler = [Net.Http.HttpClientHandler]::new()
@@ -372,6 +383,50 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
     }
     if ($ocrError) { throw $ocrError }
     return $ocrResponse
+}
+
+# Ses transkripsiyonu (whisper.cpp). OCR ile ayni desen: yerel saglayicida dil modeli
+# VRAM'den bosaltilir (GPU whisper'a kalir), dökum alinir, model geri yuklenir. Olculdu:
+# turbo-q5_0 GPU'da ~1-3 sn (2 dk ses), CPU'da ~53 sn. GPU denemesi basarisiz olursa
+# (surucu/VRAM) CPU'ya duser; transkript her durumda kullaniciya ulasir.
+function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $true) {
+    $swapModel = ($provider -eq 'local')
+    $resp = $null
+    $err = $null
+    if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Ses dosyasi bulunamadi.' }
+    if ($swapModel) {
+        Emit 'status' 'Dil modeli RAM''e aliniyor; transkripsiyon icin VRAM bosaltiliyor…' | Out-Null
+        try { & (Get-ManageQwenPath) -Action stop | Out-Null; Wait-LocalModelStopped } catch { $err = $_ }
+    }
+    if (!$err) {
+        $whisperPy = Get-WhisperPyPath; $mediaPy = Get-MediaPythonExe
+        $payloadBase = @{ action = 'transcribe'; path = $path; language = 'auto' }
+        foreach ($device in @('gpu', 'cpu')) {
+            try {
+                Emit 'status' ("Ses whisper.cpp ile yaziya cevriliyor (" + $device + ")…") | Out-Null
+                $candidate = Invoke-PythonTool ($payloadBase + @{ device = $device }) $whisperPy $mediaPy
+                $parsed = $null
+                try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
+                if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null; break }
+                if ($parsed -and $parsed.error) { $err = [Exception]::new([string]$parsed.error) } else { $err = [Exception]::new([string]$candidate) }
+            } catch { $err = $_ }
+            if ($device -eq 'gpu') { Emit 'status' 'GPU ile transkripsiyon basarisiz; CPU ile deneniyor…' | Out-Null }
+        }
+    }
+    if ($swapModel) {
+        try {
+            Emit 'status' 'Transkripsiyon tamamlandı; dil modeli arka planda geri yükleniyor…' | Out-Null
+            Start-LocalModelRestore ([string]$JobData.profile)
+            if ($waitForRestore) {
+                Wait-LocalModelReady
+                Emit 'status' 'Dil modeli geri yüklendi; yanıt hazırlanıyor...' | Out-Null
+            }
+        } catch {
+            Emit 'status' "Transkripsiyon tamamlandı; dil modeli geri başlatılamadı: $($_.Exception.Message)" | Out-Null
+        }
+    }
+    if ($err) { throw $err }
+    return $resp
 }
 
 # Bir web aracinin sonucu basarisiz mi? Arac katmani hatayi {"error": "..."} JSON'u
@@ -1204,6 +1259,26 @@ function Replace-CurrentImagesWithOcr([Collections.ArrayList]$items, [string]$oc
     return $false
 }
 
+# Transkript metnini son kullanici mesajina ekler: OCR'nin goruntu->metin donusumunun
+# ses karsiligi. Boylece dil modeli dökum uzerinden akil yurutur.
+function Add-TranscriptToMessages([Collections.ArrayList]$items, [string]$transcript, [string]$fileName) {
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        $message = $items[$i]
+        if ([string]$message.role -ne 'user') { continue }
+        $note = "[Ses dökümü ($fileName)]`n$transcript"
+        if ($message.content -is [string]) {
+            $message.content = [string]$message.content + "`n`n" + $note
+        } else {
+            $parts = New-Object System.Collections.Generic.List[object]
+            foreach ($part in @($message.content)) { [void]$parts.Add($part) }
+            [void]$parts.Add(@{ type = 'text'; text = $note })
+            $message.content = @($parts.ToArray())
+        }
+        return $true
+    }
+    return $false
+}
+
 function Replace-CurrentImagesWithOcrToolNotice([Collections.ArrayList]$items) {
     for ($i = $items.Count - 1; $i -ge 0; $i--) {
         $message = $items[$i]
@@ -1277,6 +1352,31 @@ try {
             }
         } else {
             Emit 'status' 'Görsel anlama isteği; Qwen mmproj görseli doğrudan inceliyor…'
+        }
+    }
+    # Eklenen ses dosyalari (varsa) otomatik dökumlenir ve bulgular dil modeline verilir.
+    # OCR'den farkli olarak niyet aranmaz: ses eklenince her zaman tetiklenir.
+    $currentAudioPaths = @($JobData.currentAudioPaths | Where-Object { $_ })
+    if ($currentAudioPaths.Count -gt 0) {
+        $audioPath = [string]$currentAudioPaths[0]
+        try {
+            Emit 'status' 'Eklenen ses dökumleniyor (whisper.cpp)…'
+            $trResponse = Invoke-TranscribeWithModelSwap $audioPath
+            $tr = $null
+            try { $tr = $trResponse | ConvertFrom-Json -ErrorAction Stop } catch { }
+            if ($tr -and !$tr.error -and ![string]::IsNullOrWhiteSpace([string]$tr.text)) {
+                [void](Add-TranscriptToMessages $messages ([string]$tr.text) ([IO.Path]::GetFileName($audioPath)))
+                Emit 'transcript' ([string]$tr.text) $null @{
+                    model = [string]$tr.model
+                    vad = [string]$tr.vad
+                    charCount = [int]$tr.chars
+                }
+            } else {
+                $reason = if ($tr -and $tr.error) { [string]$tr.error } else { 'Ses tanıma metin üretmedi.' }
+                Emit 'status' "Ses dökumlenemedi; istek dökumsuz sürüyor. $reason"
+            }
+        } catch {
+            Emit 'status' ("Ses dökumlenemedi; istek dökumsuz sürüyor. " + $_.Exception.Message)
         }
     }
     # Otomatik baglam sikistirma: ozeti her zaman dusuk cabayla (hizli mod) uretiriz.

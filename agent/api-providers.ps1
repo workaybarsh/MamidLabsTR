@@ -97,6 +97,37 @@ function Get-ProviderModels([string]$provider, [string]$key, [string]$baseUrlOve
     return @($ids | Sort-Object -Unique)
 }
 
+# Model listesi ucundan baglam penceresini (context_length vb.) okur. Anahtar
+# girilince otomatik MAKSIMUM baglam icin kullanilir: model kimligi -> token.
+# Uc alani dondurmuyorsa bos sozluk doner (yapilandirilmis varsayilan korunur).
+function Get-ProviderModelContexts([string]$provider, [string]$key, [string]$baseUrlOverride = '') {
+    $entry = Get-ChatProvider $provider
+    if (!$entry) { return @{} }
+    if (!$key -and $provider -ne 'custom') { return @{} }
+    $modelsUrl = if ($provider -eq 'custom') {
+        $base = if ($baseUrlOverride) { $baseUrlOverride.TrimEnd('/') } else { Get-CustomBaseUrl }
+        if (!$base) { return @{} }
+        "$base/models"
+    } else { [string]$entry.models }
+    $headers = if (!$key) { @{} }
+               elseif ($provider -eq 'claude') { @{ 'x-api-key' = $key; 'anthropic-version' = '2023-06-01' } }
+               else { @{ Authorization = "Bearer $key" } }
+    try { $response = Invoke-RestMethod -Uri $modelsUrl -Headers $headers -TimeoutSec 20 -ErrorAction Stop }
+    catch { return @{} }
+    $map = @{}
+    foreach ($m in @($response.data)) {
+        $id = ([string]$m.id) -replace '^models/', ''
+        if (!$id) { continue }
+        $ctx = 0
+        foreach ($field in @('context_length', 'context_window', 'max_context_length', 'max_input_tokens', 'max_context_tokens')) {
+            if ($null -ne $m.$field -and [int]$m.$field -gt 0) { $ctx = [int]$m.$field; break }
+        }
+        if ($ctx -le 0 -and $m.top_provider -and $null -ne $m.top_provider.context_length) { $ctx = [int]$m.top_provider.context_length }
+        if ($ctx -gt 0) { $map[$id] = $ctx }
+    }
+    return $map
+}
+
 # Gorsel kabul etmeyen saglayicilar (DeepSeek) image_url parcasi gorunce istegi
 # 400 ile reddeder. Parcalar metne indirilir; gorselin yerine kisa bir not kalir ki
 # model kullanicinin bir gorsel ekledigini bilsin.

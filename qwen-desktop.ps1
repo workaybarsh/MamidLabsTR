@@ -109,11 +109,14 @@ $script:lastUserImage = $null
 $script:previousUserImage = $null
 $script:currentTurnHasImage = $false
 $script:currentTurnImagePaths = @()
+$script:currentTurnAudioPaths = @()
 $script:currentTurnMultiImageOcr = $false
 $script:multiImageOcrMode = $false
 $script:selectedVideos = New-Object System.Collections.Generic.List[string]
 $script:lastUserVideo = $null
 $script:selectedDocuments = New-Object System.Collections.Generic.List[string]
+# Ses dosyalari (whisper.cpp ile dökumlenir; OCR'in gorsel/mesaj esdegeri).
+$script:selectedAudio = New-Object System.Collections.Generic.List[string]
 $script:attachedDocuments = New-Object System.Collections.Generic.List[string]
 $script:videoJob = $null
 $script:boundFolder = $null
@@ -845,7 +848,7 @@ function New-Bubble([string]$role) {
     $panel.Controls.Add($body)
 
     $b = @{ role = $role; panel = $panel; body = $body; thinkToggle = $null; thinkBox = $null; pic = $null
-            thinkOpen = $false; seconds = $null; contentHeight = 18; hasRich = $false; rawText = ''; ocrText = ''
+            thinkOpen = $false; seconds = $null; contentHeight = 18; hasRich = $false; rawText = ''; ocrText = ''; transcriptText = ''
             answerStarted = $false; answerStartLength = 0; deniedNote = ''
             artifacts = [Collections.ArrayList]::new(); copyText = $null; copyFile = $null; openFile = $null }
     $body.Tag = $b
@@ -1127,6 +1130,28 @@ $send.ForeColor = [System.Drawing.Color]::White
 $send.FlatAppearance.BorderSize = 0
 $composer.Controls.Add($send)
 
+# Mikrofon dugmesi: Gönder'in hemen solunda. Tiklaninca bir menü acar:
+# "Ses dosyası yükle" / "Mikrofonu kullan" / "İptal". Ses eklenince (whisper.cpp ile)
+# otomatik dökumlenir ve bulgular dil modeline verilir (OCR'in ses esdegeri).
+# GDI renkli emoji cizemiyor; Segoe MDL2 Assets mikrofon glifi (U+E720) kullanilir.
+$micBtn = New-Object System.Windows.Forms.Button
+$micBtn.Text = [string][char]0xE720
+$micBtn.Font = New-Object System.Drawing.Font('Segoe MDL2 Assets', 12)
+$micBtn.FlatStyle = 'Flat'
+$micBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 64, 76)
+$micBtn.ForeColor = [System.Drawing.Color]::White
+$micBtn.FlatAppearance.BorderSize = 0
+$micBtn.AccessibleName = 'Ses ekle'
+$composer.Controls.Add($micBtn)
+
+$micMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$micUse = $micMenu.Items.Add('Mikrofonu kullan')
+[void]$micMenu.Items.Add('-')
+$micCancel = $micMenu.Items.Add('İptal')
+$micBtn.Add_Click({ $micMenu.Show($micBtn, 0, $micBtn.Height) })
+$micUse.Add_Click({ Start-MicrophoneCapture })
+$micCancel.Add_Click({ $micMenu.Close() })
+
 function New-Chip([string]$text, [bool]$isChecked) {
     $c = New-Object System.Windows.Forms.CheckBox
     $c.Appearance = 'Button'
@@ -1264,6 +1289,8 @@ function Update-ComposerLayout {
     $fullAccessChip.Size = New-Object System.Drawing.Size(110, 30)
     $send.Location = New-Object System.Drawing.Point(($cw - 118), 178)
     $send.Size = New-Object System.Drawing.Size(104, 30)
+    $micBtn.Location = New-Object System.Drawing.Point(($cw - 152), 178)
+    $micBtn.Size = New-Object System.Drawing.Size(30, 30)
     $metric.Location = New-Object System.Drawing.Point(278, 148)
     $metric.Size = New-Object System.Drawing.Size(140, 22)
     $modelChoice.Location = New-Object System.Drawing.Point(426, 142)
@@ -1291,12 +1318,12 @@ function Reset-CurrentTurnImageState {
 }
 
 function Update-AttachmentBadge {
-    $count = $script:selectedImages.Count + $script:selectedVideos.Count + $script:selectedDocuments.Count
+    $count = $script:selectedImages.Count + $script:selectedVideos.Count + $script:selectedDocuments.Count + $script:selectedAudio.Count
     if ($count -eq 0) { $clearImage.Visible = $false; return }
     $clearImage.Visible = $true
     if ($count -eq 1) {
-        $only = @($script:selectedImages) + @($script:selectedVideos) + @($script:selectedDocuments)
-        $icon = if ($script:selectedImages.Count) { 'Görsel:' } elseif ($script:selectedVideos.Count) { 'Video:' } else { 'Belge:' }
+        $only = @($script:selectedImages) + @($script:selectedVideos) + @($script:selectedDocuments) + @($script:selectedAudio)
+        $icon = if ($script:selectedImages.Count) { 'Görsel:' } elseif ($script:selectedVideos.Count) { 'Video:' } elseif ($script:selectedDocuments.Count) { 'Belge:' } else { 'Ses:' }
         # Rozet 136 px ve tek satira ~17 karakter sigar; uzun dosya adi iki satira tasip
         # alttan kesiliyordu. Adin yalnizca sonu (uzanti dahil) gosterilir, tam ad ipucunda.
         $name = [System.IO.Path]::GetFileName($only[0])
@@ -1313,6 +1340,7 @@ function Update-AttachmentBadge {
         if ($script:selectedImages.Count) { $kinds += 'görsel' }
         if ($script:selectedVideos.Count) { $kinds += 'video' }
         if ($script:selectedDocuments.Count) { $kinds += 'belge' }
+        if ($script:selectedAudio.Count) { $kinds += 'ses' }
         $clearImage.Text = "$count dosya eklendi (" + ($kinds -join ', ') + ")"
     }
 }
@@ -1338,6 +1366,29 @@ function Add-SelectedDocument([string]$path) {
     [void]$script:selectedDocuments.Add($path)
     Update-AttachmentBadge
 }
+function Add-SelectedAudio([string]$path) {
+    if (!$path) { return }
+    if (@($script:selectedAudio) -contains $path) { return }
+    [void]$script:selectedAudio.Add($path)
+    Update-AttachmentBadge
+}
+# Mikrofon dugmesi / "Ses dosyasi yukle" icin dosya secici.
+function Pick-AudioFile {
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    try {
+        $dlg.Title = 'Ses dosyası seç'
+        $dlg.Filter = 'Ses dosyaları|*.wav;*.mp3;*.m4a;*.ogg;*.flac;*.opus;*.aac;*.wma|Tüm dosyalar|*.*'
+        $dlg.Multiselect = $true
+        if ($dlg.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+            foreach ($f in $dlg.FileNames) { [void](Add-SelectedFile $f) }
+        }
+    } catch { $metric.Text = 'Ses dosyası eklenemedi: ' + $_.Exception.Message }
+    finally { $dlg.Dispose() }
+}
+# Mikrofonla kayit (whisper.cpp stream) sonraki adimda; simdilik kullaniciya yol gosterilir.
+function Start-MicrophoneCapture {
+    $metric.Text = 'Mikrofon kaydı yakında (whisper.cpp). Şimdilik soldaki "+" menüsünden "Ses ekle" ile dosya seçin.'
+}
 function Add-SelectedFile([string]$path) {
     if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
     $extension = [IO.Path]::GetExtension($path).ToLowerInvariant()
@@ -1345,6 +1396,7 @@ function Add-SelectedFile([string]$path) {
         '^\.(png|jpe?g|webp|bmp|gif)$' { 100MB; break }
         '^\.(mp4|mov|mkv|webm|avi|m4v)$' { 512MB; break }
         '^\.(pdf|docx|xlsx|xlsm|pptx|zip|rar)$' { 256MB; break }
+        '^\.(wav|mp3|m4a|ogg|flac|opus|aac|wma)$' { 512MB; break }
         default { 0 }
     }
     if (!$limit) { return $false }
@@ -1355,6 +1407,7 @@ function Add-SelectedFile([string]$path) {
     if ($extension -match '^\.(png|jpe?g|webp|bmp|gif)$') { Add-SelectedImage $path; return $true }
     if ($extension -match '^\.(mp4|mov|mkv|webm|avi|m4v)$') { Add-SelectedVideo $path; return $true }
     if ($extension -match '^\.(pdf|docx|xlsx|xlsm|pptx|zip|rar)$') { Add-SelectedDocument $path; return $true }
+    if ($extension -match '^\.(wav|mp3|m4a|ogg|flac|opus|aac|wma)$') { Add-SelectedAudio $path; return $true }
     return $false
 }
 function Save-ClipboardImage {
@@ -1397,7 +1450,7 @@ function Paste-ClipboardAttachments {
     return $false
 }
 $clearImage.Add_Click({
-    $script:selectedImages.Clear(); $script:selectedVideos.Clear(); $script:selectedDocuments.Clear()
+    $script:selectedImages.Clear(); $script:selectedVideos.Clear(); $script:selectedDocuments.Clear(); $script:selectedAudio.Clear()
     $clearImage.Visible = $false
 })
 
@@ -1414,10 +1467,12 @@ $attachMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $attachImage = New-Object System.Windows.Forms.ToolStripMenuItem('Görsel ekle')
 $attachVideo = New-Object System.Windows.Forms.ToolStripMenuItem('Video ekle')
 $attachDocument = New-Object System.Windows.Forms.ToolStripMenuItem('Belge ekle')
+$attachAudio = New-Object System.Windows.Forms.ToolStripMenuItem('Ses ekle')
 $attachFolder = New-Object System.Windows.Forms.ToolStripMenuItem('Klasör seç')
 $attachMenu.Items.Add($attachImage) | Out-Null
 $attachMenu.Items.Add($attachVideo) | Out-Null
 $attachMenu.Items.Add($attachDocument) | Out-Null
+$attachMenu.Items.Add($attachAudio) | Out-Null
 $attachMenu.Items.Add($attachFolder) | Out-Null
 $drop.Add_Click({ $attachMenu.Show($drop, 0, $drop.Height) })
 $attachImage.Add_Click({
@@ -1438,6 +1493,7 @@ $attachDocument.Add_Click({
     $dlg.Multiselect = $true
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { foreach ($f in $dlg.FileNames) { Add-SelectedFile $f | Out-Null } }
 })
+$attachAudio.Add_Click({ Pick-AudioFile })
 $attachFolder.Add_Click({ $folder.PerformClick() })
 
 $folder.Add_Click({
@@ -1693,6 +1749,7 @@ function Clear-ChatView {
     $script:selectedVideos.Clear()
     $script:lastUserVideo = $null
     $script:selectedDocuments.Clear()
+    $script:selectedAudio.Clear()
     $script:attachedDocuments.Clear()
     $clearImage.Visible = $false
 }
@@ -2089,6 +2146,9 @@ function Start-BackgroundCompaction {
         contextLimit = $script:ctxLimit
         maxTokens = 1200
         consultProviders = @{}
+        # 'custom' taban adresi ve saglayici ayarlari isciye acikca gecirilir.
+        apiSettings = $script:apiSettings
+        baseUrl = (Get-CustomBaseUrl)
     }
     if ($script:providerId -ne 'local') {
         $jobData.model = if ($modelChoice.SelectedIndex -ge 0) { [string]$script:modelEntries[$modelChoice.SelectedIndex].model } else { '' }
@@ -2158,6 +2218,7 @@ function Begin-Generation {
         hasCurrentImage = $turnHasImage
         currentImagePath = $(if ($script:currentTurnImagePaths.Count -gt 0) { [string]$script:currentTurnImagePaths[0] } else { '' })
         currentImagePaths = @($script:currentTurnImagePaths)
+        currentAudioPaths = @($script:currentTurnAudioPaths)
         multiImageOcr = [bool]$script:currentTurnMultiImageOcr
         multiImageOcrMode = [bool]$script:multiImageOcrMode
         profile = $profile
@@ -2171,6 +2232,9 @@ function Begin-Generation {
         compact = ($script:contextTokens -gt $script:compactAt)
         contextLimit = $script:ctxLimit
         effort = $null
+        # 'custom' taban adresi ve saglayici ayarlari isciye acikca gecirilir.
+        apiSettings = $script:apiSettings
+        baseUrl = (Get-CustomBaseUrl)
     }
     if ($script:providerId -ne 'local') {
         try {
@@ -2421,6 +2485,17 @@ function Render-JobEvent($jobEvent) {
             } else { 'bilinmiyor' }
             $metric.Text = "OCR tamamlandı ($confidence güven)"
         }
+        'transcript' {
+            # Eklenen ses dökumlendi (whisper.cpp). Dökum baloncukta gösterilir ve dil
+            # modeli bulgular uzerinden yanit uretir (OCR gibi).
+            if ($b) {
+                $b.transcriptText = [string]$jobEvent.text
+                if (![string]::IsNullOrWhiteSpace($b.transcriptText)) { $b.body.Text = $b.transcriptText }
+                $script:dirty = $true
+            }
+            $modelLabel = if ($jobEvent.data -and $jobEvent.data.model) { [string]$jobEvent.data.model } else { 'whisper' }
+            $metric.Text = "Ses dökümü hazır ($modelLabel)"
+        }
         'thinking' {
             $script:prefillWatch = $false
             if (!$b) { return }
@@ -2513,7 +2588,9 @@ function Render-JobEvent($jobEvent) {
             if ($b) {
                 $final = [string]$jobEvent.text
                 if (!$final) { $final = $b.body.Text }
-                $displayFinal = if ($b.ocrText -and $final -ne $b.ocrText) { "OCR sonucu:`r`n$($b.ocrText)`r`n`r`n$final" } else { $final }
+                $displayFinal = if ($b.ocrText -and $final -ne $b.ocrText) { "OCR sonucu:`r`n$($b.ocrText)`r`n`r`n$final" }
+        elseif ($b.transcriptText -and $final -ne $b.transcriptText) { "Ses dökümü:`r`n$($b.transcriptText)`r`n`r`n$final" }
+        else { $final }
                 # Yalnizca ekranda: $chatMessages'a modelin gercek metni gider ki KV onbellek eslesmesi bozulmasin.
                 if ($b.deniedNote) { $displayFinal = "$displayFinal`r`n`r`n$($b.deniedNote)".TrimStart() }
                 if ($displayFinal) {
@@ -2590,7 +2667,7 @@ $send.Add_Click({
     if ($script:imageBusy) { if($script:sharedMedia){Cancel-Generation}; return }
     if ($script:busy -or $script:pendingSend) { Cancel-Generation; return }
     $text = Get-PromptText
-    $allPaths = @($script:selectedImages) + @($script:selectedVideos) + @($script:selectedDocuments)
+    $allPaths = @($script:selectedImages) + @($script:selectedVideos) + @($script:selectedDocuments) + @($script:selectedAudio)
     if (!$text -and $allPaths.Count -eq 0) { return }
     $activationIntent = Test-MultiImageOcrActivationIntent $text
     $activatingMode = $activationIntent -and !$script:multiImageOcrMode
@@ -2614,6 +2691,7 @@ $send.Add_Click({
     }
     $script:currentTurnHasImage = $script:selectedImages.Count -gt 0
     $script:currentTurnImagePaths = @($script:selectedImages.ToArray())
+    $script:currentTurnAudioPaths = @($script:selectedAudio.ToArray())
     $script:currentTurnMultiImageOcr = $multiImageRequested
     if ($script:currentTurnMultiImageOcr) {
         $metric.Text = 'Çoklu görsel okuma aktif — birden fazla görsel yükleyebilirsiniz.'
@@ -2631,6 +2709,10 @@ $send.Add_Click({
     foreach ($doc in $script:selectedDocuments) {
         $content += @{ type = 'text'; text = "[Kullanici bir belge ekledi: $doc]" }
     }
+    foreach ($aud in $script:selectedAudio) {
+        # Ses, whisper.cpp ile dökumlenip metne cevrilecek (OCR/mmproj esdegeri).
+        $content += @{ type = 'text'; text = "[Kullanici bir ses dosyasi ekledi: $([IO.Path]::GetFileName($aud))]" }
+    }
     if ($activatingMode) {
         $script:multiImageOcrMode = $true
         $script:currentTurnMultiImageOcr = $script:selectedImages.Count -gt 1
@@ -2641,6 +2723,9 @@ $send.Add_Click({
     $bubbleText = $text
     if (!$text -and $allPaths.Count -eq 1 -and $script:selectedDocuments.Count -eq 1) {
         $bubbleText = 'Belge: ' + [IO.Path]::GetFileName($script:selectedDocuments[0])
+    }
+    if (!$text -and $allPaths.Count -eq 1 -and $script:selectedAudio.Count -eq 1) {
+        $bubbleText = 'Ses: ' + [IO.Path]::GetFileName($script:selectedAudio[0])
     }
     $bubble.body.Text = $bubbleText
     # Birden fazla dosya varsa tiklanabilir isim listesi (ust uste binmeyi onler); tek dosyaysa
@@ -2653,6 +2738,8 @@ $send.Add_Click({
         Set-BubbleVideo $bubble $script:selectedVideos[0] $null
     } elseif ($script:selectedDocuments.Count -eq 1) {
         Add-BubbleArtifact $bubble $script:selectedDocuments[0]
+    } elseif ($script:selectedAudio.Count -eq 1) {
+        Add-BubbleArtifact $bubble $script:selectedAudio[0]
     }
     if ($script:selectedImages.Count -gt 0) { Set-LastUserImage $script:selectedImages[$script:selectedImages.Count - 1] }
     if ($script:selectedVideos.Count -gt 0) { $script:lastUserVideo = $script:selectedVideos[$script:selectedVideos.Count - 1] }
@@ -2670,6 +2757,7 @@ $send.Add_Click({
     $script:selectedImages.Clear()
     $script:selectedVideos.Clear()
     $script:selectedDocuments.Clear()
+    $script:selectedAudio.Clear()
     $clearImage.Visible = $false
     $script:pendingSend = $true
     $send.Text = 'Durdur'
@@ -2691,6 +2779,30 @@ $promptBox.Add_KeyDown({
         if (!$script:busy -and !$script:pendingSend -and !$script:imageBusy) { $send.PerformClick() }
     }
 })
+
+# Yazı kutusuna sağ tık menüsü: pano içeriğini medya olarak (görsel/belge/ses/video)
+# ya da düz metin olarak yapıştır; metin kes/kopyala/seç/temizle.
+$promptMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$pmPasteMedia = New-Object System.Windows.Forms.ToolStripMenuItem('Yapıştır (görsel/belge/ses)')
+$pmPasteText = New-Object System.Windows.Forms.ToolStripMenuItem('Metni yapıştır')
+[void]$promptMenu.Items.Add($pmPasteMedia)
+[void]$promptMenu.Items.Add($pmPasteText)
+[void]$promptMenu.Items.Add('-')
+$pmCut = New-Object System.Windows.Forms.ToolStripMenuItem('Kes')
+$pmCopy = New-Object System.Windows.Forms.ToolStripMenuItem('Kopyala')
+$pmSelectAll = New-Object System.Windows.Forms.ToolStripMenuItem('Tümünü seç')
+$pmClear = New-Object System.Windows.Forms.ToolStripMenuItem('Temizle')
+[void]$promptMenu.Items.Add($pmCut)
+[void]$promptMenu.Items.Add($pmCopy)
+[void]$promptMenu.Items.Add($pmSelectAll)
+[void]$promptMenu.Items.Add($pmClear)
+$pmPasteMedia.Add_Click({ [void](Paste-ClipboardAttachments) })
+$pmPasteText.Add_Click({ if ([Windows.Forms.Clipboard]::ContainsText()) { $promptBox.SelectedText = [Windows.Forms.Clipboard]::GetText() } })
+$pmCut.Add_Click({ $promptBox.Cut() })
+$pmCopy.Add_Click({ $promptBox.Copy() })
+$pmSelectAll.Add_Click({ $promptBox.SelectAll() })
+$pmClear.Add_Click({ $promptBox.Clear() })
+$promptBox.ContextMenuStrip = $promptMenu
 
 $newChat = New-Object System.Windows.Forms.ToolStripMenuItem('Yeni sohbet')
 $fileMenu.DropDownItems.Add($newChat) | Out-Null

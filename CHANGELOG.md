@@ -21,6 +21,13 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   birlikte çalışır (ölçüldü 61-62 tok/s); kaçak/mükerrer örnek yükleme öncesi temizlenir.
 - **Belge ve OCR:** PDF/Word/Excel/PowerPoint/ZIP/RAR okuma, PDF/DOCX/PPTX üretimi; PaddleOCR ile
   görsel ve PDF OCR.
+- **Ses dökümü (whisper.cpp):** sohbete eklenen ses dosyası otomatik yazıya çevrilir ve bulgular dil
+  modeline verilir (OCR/mmproj mantığı). Model **large-v3-turbo-q5_0 + Silero VAD** (halüsinasyon
+  bastırılır). Ölçüm: 2 dk ses CPU ~53 sn, GPU (CUDA) ~2,5 sn. Yerel sağlayıcıda dil modeli VRAM'den
+  boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu ve ek (+)
+  menüsünde **Ses ekle**.
+- **Sağlayıcı maksimum bağlam otomatik algılama:** API anahtarı doğrulanınca modelin bağlam penceresi
+  uçtan okunup otomatik uygulanır (ör. commandcode 1.000.000).
 - **Bağımsız grafik üretimi:** `generate_chart` sohbet aracı + `agent/chart-run.ps1` (gömülü pwsh +
   System.Drawing; çubuk/çizgi/pasta/saçılım/fonksiyon grafikleri; güvenli ifade çözümleyici,
   `Invoke-Expression` yok). Sonuç sohbette satır içi gösterilir ve `outputs\grafikler`'e kaydedilir.
@@ -30,3 +37,9 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   sunucusu (yalnızca localhost, şifre korumalı oturum).
 - **Kurulum ve güncelleme:** Inno Setup sihirbazı; sabit sürümlü altyapı (PowerShell 7.6.6, llama.cpp
   b10998 CUDA 13.4, ComfyUI b0f4b7b); uygulama içinden güncelleme denetimi; tam kaldırma.
+
+### Düzeltilen
+- **`custom` (OpenAI uyumlu özel uç) sohbette çalışmıyordu:** taban adres yalnızca arayüz ayarında
+  tutuluyordu; işçi ayarları okumadığı için `custom` istekleri "taban adresi gir" ile duruyordu
+  (yalnızca ayar penceresindeki doğrulama çalışıyordu). Masaüstü artık `baseUrl` + ayarları işçiye
+  geçirir; commandcode ile metin+görsel uçtan uca doğrulandı.

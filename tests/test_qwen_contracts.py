@@ -14,6 +14,25 @@ def read_text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8-sig")
 
 
+def test_custom_provider_base_url_is_passed_to_the_worker():
+    """'custom' taban adresi yalnizca ayar penceresinde (apiSettings) yasar; isci
+    (Start-ThreadJob) ayarlari okumaz ve $PSScriptRoot bostur. Bu yuzden masaustu
+    jobData'ya apiSettings + baseUrl gecirmeli, isci de gercek istekte bunlari
+    kullanmali; aksi halde custom saglayici sohbette 'taban adresi gir' hatasi verir
+    (yalnizca dogrulama calisir). Gercek uctan uca testte bulundu."""
+    desktop = read_text("qwen-desktop.ps1")
+    worker = read_text("agent/qwen-inference.ps1")
+    # Masaustu iki jobData blogunda (sohbet + sikistirma) gecirir.
+    assert desktop.count("apiSettings = $script:apiSettings") >= 2
+    assert desktop.count("baseUrl = (Get-CustomBaseUrl)") >= 2
+    # Isci ayarlari ve taban adresini uygular; ucu bundan sonra hesaplar.
+    assert "$script:apiSettings = if ($JobData.apiSettings)" in worker
+    assert "$JobData.baseUrl" in worker
+    idx_apply = worker.index("$script:apiSettings.providers['custom'] = @{ baseUrl")
+    idx_endpoint = worker.index("$endpoint = Get-ProviderEndpoint $provider")
+    assert idx_apply < idx_endpoint
+
+
 def test_model_profiles_use_max_flash_and_lite_names():
     registry = read_text("agent/model-registry.ps1")
     manager = read_text("scripts/manage-qwen.ps1")

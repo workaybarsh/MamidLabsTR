@@ -52,7 +52,7 @@ function Show-ApiSettings {
     $model=[Windows.Forms.ComboBox]::new();$model.DropDownStyle='DropDown';$model.SetBounds(20,274,510,28)
     $context=[Windows.Forms.NumericUpDown]::new();$context.SetBounds(20,340,190,28);$context.Minimum=4096;$context.Maximum=2000000;$context.Increment=1024
     $hesapLabel=$null;$keyLabel=$null
-    foreach ($item in @(@('Sağlayıcı',20),@('Hesap bağlantısı',86),@('API anahtarı — boş bırakırsan kayıtlı anahtar korunur',152),@('Model kimliği (listeden seç ya da tam API model adını yaz)',252),@('Kullanılacak bağlam sınırı (token)',318))) {
+    foreach ($item in @(@('Sağlayıcı',20),@('Hesap bağlantısı',86),@('API anahtarı — boş bırakırsan kayıtlı anahtar korunur',152),@('Model kimliği (listeden seç ya da tam API model adını yaz)',252),@('Kullanılacak bağlam sınırı (token — anahtar doğrulanınca otomatik algılanır)',318))) {
         $label=[Windows.Forms.Label]::new();$label.Text=$item[0];$label.SetBounds(20,[int]$item[1],510,22);$dlg.Controls.Add($label)
         if ([int]$item[1] -eq 86) { $hesapLabel = $label }
         if ([int]$item[1] -eq 152) { $keyLabel = $label }
@@ -62,8 +62,14 @@ function Show-ApiSettings {
     $save=[Windows.Forms.Button]::new();$save.Text='Kaydet';$save.SetBounds(420,430,110,32)
     $status=[Windows.Forms.Label]::new();$status.SetBounds(20,430,390,40)
     $dlg.Controls.AddRange(@($provider,$openPage,$baseUrl,$key,$verify,$model,$context,$note,$save,$status))
-    $fields=@{provider=$provider;model=$model;key=$key;baseUrl=$baseUrl;context=$context;status=$status;providers=$providers;dialog=$dlg;openPage=$openPage;hesapLabel=$hesapLabel;keyLabel=$keyLabel}
-    $provider.Tag=$fields;$save.Tag=$fields;$openPage.Tag=$fields;$verify.Tag=$fields
+    $fields=@{provider=$provider;model=$model;key=$key;baseUrl=$baseUrl;context=$context;status=$status;providers=$providers;dialog=$dlg;openPage=$openPage;hesapLabel=$hesapLabel;keyLabel=$keyLabel;contexts=@{}}
+    $provider.Tag=$fields;$save.Tag=$fields;$openPage.Tag=$fields;$verify.Tag=$fields;$model.Tag=$fields
+    # Model secildiginde/yazildiginda baglam pencereyi uctan algilanan degerden uygula
+    # (anahtar dogrulaninca $f.contexts dolar).
+    $model.Add_TextChanged({
+        $f=$this.Tag;$name=$this.Text.Trim()
+        if($f.contexts -and $f.contexts.ContainsKey($name)){$f.context.Value=[Math]::Min([int]$f.contexts[$name],[int]$f.context.Maximum)}
+    })
     $provider.Add_SelectedIndexChanged({
         $f=$this.Tag;$id=[string]$f.providers[$this.SelectedIndex].id;$p=$script:apiSettings.providers[$id]
         $f.model.Items.Clear()
@@ -103,7 +109,17 @@ function Show-ApiSettings {
             $current=$f.model.Text
             $f.model.Items.Clear();foreach($name in $names){[void]$f.model.Items.Add($name)}
             $f.model.Text=if($current -and $names -contains $current){$current}elseif($names){$names[0]}else{$current}
-            $f.status.Text="Bağlantı doğrulandı: $($names.Count) model bulundu. Model seçip Kaydet'e bas."
+            # Baglam penceresini uctan otomatik algila (anahtar girildiginde). Uc
+            # context_length dondurmuyorsa mevcut deger korunur.
+            $f.contexts = if($id -eq 'custom'){ Get-ProviderModelContexts $id $candidate $f.baseUrl.Text.Trim() } else { Get-ProviderModelContexts $id $candidate }
+            if(@($f.contexts.Keys).Count){
+                $sel=$f.model.Text.Trim()
+                $val = if($f.contexts.ContainsKey($sel)){[int]$f.contexts[$sel]}else{([int[]]@($f.contexts.Values)|Measure-Object -Maximum).Maximum}
+                if($val -gt 0){ $f.context.Value=[Math]::Min($val,[int]$f.context.Maximum) }
+                $f.status.Text="Bağlantı doğrulandı: $($names.Count) model. Bağlam otomatik algılandı: $([int]$f.context.Value) token."
+            } else {
+                $f.status.Text="Bağlantı doğrulandı: $($names.Count) model bulundu. Model seçip Kaydet'e bas."
+            }
         } catch { $f.status.Text=$_.Exception.Message }
         finally { $f.dialog.Cursor=[Windows.Forms.Cursors]::Default }
     })
