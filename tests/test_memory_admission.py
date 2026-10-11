@@ -32,14 +32,14 @@ def test_memory_budget_function_exists_and_is_called_before_start():
 
 
 def test_idle_comfy_policy_is_profile_aware():
-    """ComfyUI yasam dongusu profile duyarli: MAX/FLASH (27B, 16 GB'ta kartin sinirinda)
-    ComfyUI ile birlikte guvenilir calismaz — kalan pay ComfyUI baglami + masaustu ile
-    birlesince MTP draft baglami CPU'ya tasip sohbet aralikli ~6-7 tok/s'ye duser (olculdu:
-    medya sonrasi gecis bir kez oran 0,18). Bu yuzden 27B profillerinde bos ComfyUI yukleme
-    oncesi HER ZAMAN kapatilir; LITE (9B) ComfyUI ile birlikte calisir (olculdu oran 1,04)
-    ve orada acik kalir. Kaçak/mukerrer ComfyUI her profilde once temizlenir."""
+    """ComfyUI yasam dongusu. VARSAYILAN KAPALI: ComfyUI yalnizca medya uretiminde calisir,
+    is bitince ve dil modeli yuklenmeden once kapatilir — bosta VRAM/RAM tutmaz. Gerekce:
+    LITE hedef makinesi 8 GB VRAM / 16 GB RAM; 9B model kartin sinirinda, ComfyUI baglami
+    tasirir. 16 GB'ta LITE isteyen `comfyKeepAlive=true` ile acik tutabilir; MAX/FLASH her
+    durumda kapatir. API modunda betik cagrilmaz, ComfyUI acik kalir. Kaçak/mukerrer once temizlenir."""
     manager = read_text("scripts/manage-qwen.ps1")
-    assert "$comfyKeepAlive = $true" in manager
+    # Varsayilan KAPALI: ComfyUI yalnizca medya uretiminde calisir; bosta VRAM/RAM tutmaz.
+    assert "$comfyKeepAlive = $false" in manager
     assert "$settings.comfyKeepAlive" in manager
     # Kacak temizligi korunur (tek saglikli ornek korunur).
     assert "function Get-ComfyInstanceRoots" in manager

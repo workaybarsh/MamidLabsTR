@@ -137,12 +137,18 @@ Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
 **VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
-(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü (profile duyarlı):** **MAX/FLASH (27B)** profillerinde
-dil modeli yüklenmeden önce boş ComfyUI **her zaman kapatılır** — 27B 16 GB'ta kartın sınırında
-olduğundan ComfyUI bağlamı + masaüstü ile birleşince MTP draft bağlamı CPU'ya taşar ve sohbet
-**aralıklı olarak ~6-7 tok/s**'ye düşer (ölçüldü: "medya sonrası geçiş" adımı bir kez oran 0,18).
-**LITE (9B)** ise ComfyUI ile birlikte çalışır (ölçüldü oran 1,04) ve ComfyUI **açık tutulur**
-(medya işi başına ~27 sn yeniden açılma olmaz). `comfyKeepAlive=false` ile LITE'ta da kapatılır.
+(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
+**yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil modeli yüklenmeden önce
+kapatılır — böylece **boşta ne VRAM ne de RAM tutar** (boşta ComfyUI ~300 MiB CUDA bağlamı + süreç
+RAM'i tutuyordu; `comfyKeepAlive` varsayılanı `false`). Medya gerektiğinde yeniden açılır (~27 sn).
+- **Yerel mod (MAX/FLASH):** 27B kartın sınırında olduğundan dil modeli yüklenmeden önce ComfyUI
+  **her zaman** kapatılır (aksi halde MTP draft bağlamı CPU'ya taşıp sohbet aralıklı ~6-7 tok/s'ye
+  düşer; ölçüldü: "medya sonrası geçiş" bir kez oran 0,18).
+- **Yerel mod (LITE):** 9B ComfyUI ile birlikte çalışabilir (ölçüldü oran 1,04); medya işleri
+  arasında açık tutmak isteyen `settings/api.json` → `comfyKeepAlive=true` yazar (o zaman boşta
+  ~300 MiB VRAM + RAM tutar, karşılığında ~27 sn yeniden açılma olmaz).
+- **API modu:** Yerel model çalışmadığı için (GPU boş) medya işi bitince ComfyUI **açık kalır**
+  (VRAM çakışması yok, yeniden açılma olmaz).
 Bir **kaçak/mükerrer** ComfyUI örneği her profilde önce temizlenir: ComfyUI bir süreç **çiftidir**
 (venv başlatıcı + base python çocuğu), bu yüzden süreç **sayısı** ile kaçak kararı verilemez — tek
 sağlıklı örnek zaten 2 süreçtir. Örnekler, parent'i ComfyUI eşleşmeyen **kök** süreçlerle sayılır
@@ -325,7 +331,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
-  - Medya: `comfyKeepAlive` (varsayılan `true`; LITE'ta ComfyUI medya işleri arasında açık kalır; MAX/FLASH'ta 27B nedeniyle yükleme öncesi kapatılır, bkz. bölüm 5).
+  - Medya: `comfyKeepAlive` (varsayılan `false`; ComfyUI yalnızca medya üretiminde çalışır, boşta VRAM/RAM tutmaz; `true` ile LITE'ta medya işleri arasında açık kalır, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
 
@@ -398,7 +404,7 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
 7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
-   kartta MAX'ı hiç açtırmaz. **ComfyUI** yaşam döngüsü profile duyarlıdır: MAX/FLASH'ta (27B kartın sınırında) yükleme öncesi **her zaman** kapatılır (yoksa MTP draft bağlamı CPU'ya taşıp sohbet aralıklı ~6-7 tok/s'ye düşer); LITE'ta açık kalır (9B ComfyUI ile birlikte çalışır). Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
+   kartta MAX'ı hiç açtırmaz. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
    Kaçak örnek 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
    19 tok/s'ye düşer.

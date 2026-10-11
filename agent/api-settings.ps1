@@ -130,7 +130,9 @@ function Show-ApiSettings {
             if (!$p) {$p=@{}}
             $updated=$p.Clone()
             $updated.model=$fields.model.Text.Trim();$updated.contextLimit=[int]$fields.context.Value
-            $updated.models=@(@($p.models)+@($updated.model) | Where-Object {$_} | Select-Object -Unique)
+            # Dogrulaninca ucdan gelen TUM modelleri sakla; boylece model secme listesinde
+            # apimizin getirdigi modeller de gorunur (yalnizca secileni degil).
+            $updated.models=@(@($fields.model.Items | Where-Object {$_})+@($p.models)+@($updated.model) | Where-Object {$_} | Select-Object -Unique)
             if ($id -eq 'custom') {
                 $trimmed=$fields.baseUrl.Text.Trim().TrimEnd('/')
                 if (!$trimmed) { throw 'Önce taban adresi gir (ör. http://127.0.0.1:1234/v1).' }

@@ -275,14 +275,15 @@ try {
     if (!(Test-Path -LiteralPath $model -PathType Leaf)) { throw "Model bulunamadı: $model" }
     # Lite profili gorsel projektoru olmadan da calisir; digerlerinde mmproj zorunludur.
     if (!$custom -and $Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector -PathType Leaf)) { throw "Görsel projektörü bulunamadı: $projector" }
-    # ComfyUI yasam dongusu. MAX/FLASH (27B, 16 GB'ta kartin sinirinda) ComfyUI ile
-    # birlikte GUVENILIR calismaz: kalan pay ComfyUI baglami + masaustu ile birlikte MTP
-    # draft baglaminin CPU'ya tasmasina yol acar ve sohbet aralikli olarak ~6-7 tok/s'ye
-    # duser (olculdu: ayni makinede medya sonrasi gecis bir kez 0,18 oran). Bu yuzden
-    # 27B profillerinde bos ComfyUI yukleme ONCESI HER ZAMAN kapatilir; medya gerektiginde
-    # yeniden acilir (~27 sn). LITE (9B) 8 GB'ta bile ComfyUI ile birlikte calisir (olculdu
-    # oran 1,04), orada acik kalir. Kaçak/mukerrer ComfyUI her profilde once temizlenir.
-    $comfyKeepAlive = $true
+    # ComfyUI yasam dongusu. VARSAYILAN KAPALI: ComfyUI yalnizca gorsel/video uretimi
+    # sirasinda calisir, is bitince ve dil modeli yuklenmeden once kapatilir — bosta ne VRAM
+    # ne de RAM tutar. Gerekce: LITE hedef makinesi 8 GB VRAM / 16 GB RAM'dir; 9B model zaten
+    # kartin sinirinda (~7,5 GB), ComfyUI baglami (~300 MiB) + masaustu eklenince tasar. 16 GB'lik
+    # bir kartta LITE ile medya isleri arasinda acik tutmak isteyen `settings/api.json` ->
+    # `comfyKeepAlive=true` yazar (o zaman ~27 sn yeniden acilma olmaz). MAX/FLASH (27B) her
+    # durumda kapatir. API modunda bu betik cagrilmaz; ComfyUI medya sonrasi acik kalir.
+    # Kaçak/mukerrer ComfyUI her profilde once temizlenir.
+    $comfyKeepAlive = $false
     if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
     [void](Stop-ComfyLeaks)
     if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }
