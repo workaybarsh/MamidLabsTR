@@ -10,4 +10,10 @@
 # ComfyUI'nin kendi requirements.txt'i ayrica ComfyUI klasorunden kurulur.
 #
 # Surum Windows 11 uzerinde dogrulanmis venv\imagegen ortamindan kilitlenmistir.
+#
+# transformers: Qwen3-ASR (ses dokumu) icin >=5.13 gerekir (qwen3_asr modulu /
+# AutoModelForMultimodalLM). ComfyUI'nin kendi gereksinimi yalnizca >=4.50.3 oldugundan
+# burada kesin sabitlenir; aksi halde taze kurulumda daha eski bir surum gelip ses
+# dokumu calismayabilir. (ComfyUI (b0f4b7b) + Qwen3-ASR ile dogrulanmis surum: 5.17.0.)
+transformers==5.17.0
 av==18.1.0
