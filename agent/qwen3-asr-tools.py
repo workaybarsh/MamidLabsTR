@@ -91,7 +91,8 @@ def _load_model(model_dir: str, device: str):
     if device == 'cpu':
         model = _ModelCls.from_pretrained(model_dir)
     else:
-        # device_map/accelerate gerektirmez; dogrudan GPU'ya tasi.
+        # bf16 (sikistirilmamis). int8 olculdu: ayni metin ama uzun seste ~2x yavas ->
+        # kullanilmiyor. device_map/accelerate gerektirmez; dogrudan GPU'ya tasi.
         model = _ModelCls.from_pretrained(model_dir, dtype=torch.bfloat16)
         model = model.to(device)
     model.eval()
