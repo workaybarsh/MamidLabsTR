@@ -77,6 +77,19 @@ mahkemeleri ve icra daireleri yetkilidir.
 Bu Sözleşme'nin herhangi bir hükmünün geçersiz sayılması, diğer hükümlerin geçerliliğini
 etkilemez. Sözleşme'nin bir hakkın kullanılmaması, o haktan feragat anlamına gelmez.
 
-11) KABUL
+11) SANSÜRSÜZ / AÇIK KAYNAK YAPAY ZEKÂ MODELLERİ VE ÜÇÜNCÜ TARAF BİLEŞENLER
+Yazılım; kullanıcıların bilimsel araştırma, eğitim ve kişisel geliştirme amacıyla kullanabilmesi
+için, hâlihazırda açık kaynak olarak yayımlanmış ve filtresiz (sansürsüz) olabilen yapay zekâ
+modellerine erişimi ve bunların çalıştırılmasını kolaylaştırır. Bu modeller Hak Sahibine ait
+değildir; Hak Sahibi bu modelleri üretmez, eğitmez, sahiplenmez ve dağıtıma sunmaz; yalnızca
+kamuya açık kaynaklara erişimi kolaylaştırır. Söz konusu modellerin çıktıları; doğruluk,
+yasallık, etik uygunluk ve belirli bir amaca uygunluk bakımından garanti edilmez.
+Bu modellerin kötü niyetli, yasa dışı, zararlı veya üçüncü kişilerin haklarını ihlal eden
+amaçlarla kullanılmasından münhasıran Kullanıcı sorumludur. Kullanıcı, bu modelleri yürürlükteki
+mevzuata ve üçüncü kişilerin haklarına uygun şekilde kullanmayı kabul eder. Hak Sahibi; bu
+modellerin kullanımından doğan veya doğabilecek doğrudan ya da dolaylı hiçbir zarardan ve hiçbir
+hukuki/cezai sorumluluktan sorumlu tutulamaz.
+
+12) KABUL
 Yazılımı kurmanız, kopyalamanız veya kullanmanız; bu Sözleşme'nin tüm hükümlerini okuduğunuzu
 ve kabul ettiğinizi gösterir. Kabul etmiyorsanız Yazılımı kullanmayınız.
