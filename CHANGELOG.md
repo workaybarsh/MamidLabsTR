@@ -3,22 +3,6 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
-## [1.0.1] - 2026-10-11
-
-### Düzeltilen
-- **Ses kaydı (mikrofon) akışı düzeltildi:** kayıt sürerken **kırmızı mikrofon tuşuna** basmak kaydı
-  **bitirip gönderir** (eskiden yalnızca menü açılıyordu ve gönderilmiyordu). **"İptal"** artık kaydı
-  gerçekten iptal eder (dosya silinir, gönderilmez); kayıt sürerken de erişilebilmesi için mikrofon
-  tuşunda **sağ tık** menüyü açar. Kayıt sürerken **Gönder**'e basmak da kaydı bitirip gönderir.
-- **Ses atıldıktan sonra "Durdur" düzgün çalışıyor:** transkripsiyon ve dil modelini geri yükleme
-  beklemesi artık iptal isteğine uyar; arayüz uzun süre "Durduruluyor" durumunda kalmaz.
-
-### Eklenen
-- **ASR, dil modeli yüklemesini geçersiz kılar:** ses eki olan bir mesaj gönderildiğinde dil modeli
-  hazır olmasa bile işlem hemen başlar; süren model yüklemesinden vazgeçilir, ses Qwen3-ASR ile
-  yazıya çevrilir, ardından dil modeli (seçili profile göre) geri yüklenir. Böylece ses göndermek için
-  modelin yüklenmesini beklemek gerekmez.
-
 ## [1.0.0] - 2026-10-10
 
 İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms
@@ -43,6 +27,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   VRAM'den boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu
   (**Windows varsayılan kayıt cihazından canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde
   **Ses ekle**. Model kurulumda `models\qwen3-asr` altına indirilir.
+- **ASR, dil modeli yüklemesini geçersiz kılar:** ses eki olan bir mesaj gönderildiğinde dil modeli
+  hazır olmasa bile işlem hemen başlar; süren model yüklemesinden vazgeçilir, ses Qwen3-ASR ile
+  yazıya çevrilir, ardından dil modeli (seçili profile göre) geri yüklenir. Böylece ses göndermek için
+  modelin yüklenmesini beklemek gerekmez.
 - **Sağlayıcı maksimum bağlam otomatik algılama:** API anahtarı doğrulanınca modelin bağlam penceresi
   uçtan okunup otomatik uygulanır (ör. commandcode 1.000.000).
 - **Bağımsız grafik üretimi:** `generate_chart` sohbet aracı + `agent/chart-run.ps1` (gömülü pwsh +
@@ -64,7 +52,26 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   değiştirme, kırma (crack) veya ticari amaçla pazarlama yasaktır. İzinsiz kullanım hukuki ve cezai
   sorumluluk doğurabilir; sorumluluk reddi ve sınırlandırılması, fesih ile hukuk/mahkeme hükümleri yer alır.
 
+### Değişen
+- **LITE artık düşünme bütçesi kullanmaz (sınırsız):** `--reasoning-budget` hiç verilmez; düşünme
+  açık kalır ve model gerektiği kadar uzun düşünür. Sistem istemi modele derin düşünmesini ve
+  düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
+
 ### Düzeltilen
+- **"Durdur" artık o an yapılan HER işi anında keser:** yanıt üretimi, **ASR/OCR/arama gibi uzun
+  süren alt süreçler** (Python alt süreçleri anında öldürülür) ve medya üretimi beklemeden durur;
+  ardından dil modeli arka planda yüklenir ve sohbet bir sonraki mesajla devam eder. **Tek istisna:**
+  o sırada dil modeli **yükleniyorsa** yükleme kesilmez (arka planda tamamlanır).
+- **Ses/OCR sonrası model geri yükleme yarışı (8 GB LITE):** transkripsiyon/PaddleOCR alt süreci
+  çıktıktan sonra WDDM VRAM'i geciktirerek serbest bırakabildiği için hemen başlayan dil modeli
+  "yer yetmiyor" ile reddedilip kapalı kalabiliyordu. Bellek kontrolü artık kısa aralıklarla sınırlı
+  kez yeniden denenir (~5 sn), tek bir gecikmede model düşmez.
+- **Ses kaydı (mikrofon) akışı düzeltildi:** kayıt sürerken **kırmızı mikrofon tuşuna** basmak kaydı
+  **bitirip gönderir** (eskiden yalnızca menü açılıyordu ve gönderilmiyordu). **"İptal"** artık kaydı
+  gerçekten iptal eder (dosya silinir, gönderilmez); kayıt sürerken de erişilebilmesi için mikrofon
+  tuşunda **sağ tık** menüyü açar. Kayıt sürerken **Gönder**'e basmak da kaydı bitirip gönderir.
+- **Ses atıldıktan sonra "Durdur" düzgün çalışıyor:** transkripsiyon ve dil modelini geri yükleme
+  beklemesi artık iptal isteğine uyar; arayüz uzun süre "Durduruluyor" durumunda kalmaz.
 - **ComfyUI yaşam döngüsü profile duyarlı yapıldı:** MAX/FLASH (27B) profillerinde dil modeli yüklenmeden
   önce ComfyUI her zaman kapatılır (aksi halde 16 GB kartta MTP draft taşıp sohbet aralıklı ~6-7 tok/s'ye
   düşüyordu); LITE'ta ComfyUI açık kalır ve medya işleri arasında yeniden açılmaz.

@@ -47,8 +47,11 @@ def test_idle_comfy_policy_is_profile_aware():
     assert "[void](Stop-ComfyLeaks)" in manager
     # Profil duyarli kapatma: MAX/FLASH her zaman, LITE ayara birakilir.
     assert "if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }" in manager
-    # Butce yetmezse kapatip tekrar dene (guvenlik agi korunur).
-    assert "if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }" in manager
+    # Butce yetmezse kapatip tekrar dene (guvenlik agi korunur); ASR/OCR sonrasi WDDM
+    # VRAM'i gec birakabildigi icin kontrol sinirli kez yeniden denenir (yalnizca son
+    # denemede hata verilir).
+    assert "if ($attempt -eq 1 -and (Stop-IdleComfy)) { continue }" in manager
+    assert "if (!$budgetOk) { throw $lastBudgetError }" in manager
 
 
 def test_idle_comfy_is_only_stopped_when_its_queue_is_empty():

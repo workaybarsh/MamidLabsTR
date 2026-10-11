@@ -51,7 +51,7 @@ Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-qwen-desktop.vbs`
 |---|---|---|---|---|---|
 | MAX (derin) | Qwen3.8 27B IQ4_XS | 32K | `xhigh` | 8192 | ~42–58 token/s |
 | FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 4096 | ~42–58 token/s |
-| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 3072 | ~97 token/s (16 GB'ta) |
+| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 8192 | ~97 token/s (16 GB'ta) |
 
 MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, flash-attn açık,
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta
@@ -97,7 +97,7 @@ medya hattını küçültür:
 | Görsel okuma (mmproj) | F16, CPU'da | Q8_0, GPU'da |
 | Görsel üretimi | Krea-2 Turbo (fp8, ~13,1 GB) | Krea-2 Turbo GGUF Q4_K_M (~7,5 GB, `ComfyUI-GGUF` custom node ile) |
 | Stil referansı / gerçekçilik | LoRA ile | LoRA ile (MAX/FLASH ile aynı dosyalar) |
-| Düşünme bütçesi | sınırsız | **300 token** (düşünme açık, kısa) |
+| Düşünme | sınırsız | sınırsız (düşünme açık, bütçe yok) |
 | Video | 832×480, 5 sn'ye kadar | 832×480 tavan, 3 sn tavan |
 | ComfyUI | normal | `--lowvram` (ağırlıklar RAM'den katman katman akar) |
 
@@ -108,11 +108,10 @@ elle zorlandığı için yine de yükler), üretim **~35 tok/s**, ön işleme ~2
 bir pay istersen aşağıdaki `liteModel` ayarıyla Q4_K_M'e dönebilirsin (~40 tok/s, ~1,7 GB boş
 VRAM kalır).
 
-**Düşünme bütçesi.** Qwen3.5 şablonu `--reasoning-effort` değerini yok sayar; düşünmenin
-uzunluğu yalnızca llama.cpp'nin zorladığı `--reasoning-budget` ile ayarlanabilir. Aynı basit
-istek için ölçüm: sınırsızken 1451–2391 token ve ~50 sn, **300 token bütçeyle 408–429 token
-ve ~10 sn** (yanıt kalitesi korunur). Lite bu yüzden 300 ile gelir. `settings/api.json`
-içindeki `liteReasoningBudget` ile değiştirilebilir: `-1` sınırsız, `0` düşünmeyi kapatır. Daha
+**Düşünme (sınırsız).** Qwen3.5 şablonu `--reasoning-effort` değerini yok sayar; düşünme açık
+(`--reasoning on`, `--reasoning-format deepseek`) kalır ve **düşünme bütçesi konmaz** — LITE
+lazım olduğu kadar (gerektiği kadar uzun) düşünür, ölçülen sınırsız durumda 1451–2391 token (~50 sn).
+Sistem istemi de modele derin düşünmesini ve düşünme süresini kısıtlamamasını söyler. Daha
 rahat bir VRAM payı istersen `%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine `liteModel:
 "Huihui-Qwen3.5-9B-abliterated.i1-Q4_K_M.gguf"` yazıp dosyayı aynı Hugging Face deposundan
 (`mradermacher/Huihui-Qwen3.5-9B-abliterated-i1-GGUF`) elle indirip modeller klasörüne
@@ -266,7 +265,8 @@ Yorumu:
 | üretim < ~12 token/s | VRAM taşması (Windows paylaşılan bellek) kuvvetle muhtemel |
 | VRAM %95+ | `--ctx-size` düşür veya `--image-min-tokens` küçült |
 
-Düşünme bütçesi dolup yanıt boş kalırsa tek bir düşük çaba denemesi yapılır.
+Yanıt boş kalırsa (düşünme tek başına yanıt için ayrılan tokenları tüketmiş olabilir) tek bir
+düşük çaba denemesi yapılır.
 Önceki araç sonuçları ve son turun çalışma notları bu denemeye aktarılır; uzun
 notların başı ve sonu, bağlamda yanıt için yer kalacak şekilde korunur. Tekrar boş
 kalırsa sessizce tamamlanmak yerine açıklama gösterilir.

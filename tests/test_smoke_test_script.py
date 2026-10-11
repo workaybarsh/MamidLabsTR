@@ -149,9 +149,9 @@ def test_image_and_video_jobdata_pass_root():
 def test_chat_check_matches_production_request_shape():
     """Gercek makinede yakalandi: chat testi ham /v1/chat/completions'i
     reasoning_effort='low' olmadan ve max_tokens=200 ile cagiriyordu. Lite'in
-    sunucu tarafinda zorlanan dusunme butcesi (300 token, bkz. manage-qwen.ps1
-    $liteThinkBudget) bu limiti tek basina tuketip gercek icerik uretmeden
-    kesiyordu - "Model bos yanit dondurdu" hatasi. Gercek uretim istegi
+    dusunmesi artik sinirsizdir (butce yok); model kucuk limitin tamamini
+    dusunerek tuketip gercek icerik uretmeden kesiyordu - "Model bos yanit
+    dondurdu" hatasi. Gercek uretim istegi
     (qwen-inference.ps1 icindeki Set-LowEffortRequest) reasoning_effort'u
     her zaman gonderir; smoke test de ayni sekli kullanmali."""
     script = read_text("scripts/smoke-test.ps1")
@@ -160,7 +160,7 @@ def test_chat_check_matches_production_request_shape():
     chat_block = script.split("function Invoke-ChatProbe")[1].split("\n}\n")[0]
     assert "reasoning_effort = 'low'" in chat_block
     assert "chat_template_kwargs = @{ reasoning_effort = 'low' }" in chat_block
-    # 200 token dusunme butcesinin (300) tamamini tuketebilir; gercekci bir pay birakilmali.
+    # 200 token sinirsiz dusunmede butun limiti tuketebilir; gercekci bir pay birakilmali.
     assert "max_tokens = 200" not in chat_block
 
 

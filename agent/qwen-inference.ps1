@@ -174,9 +174,19 @@ function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [st
     try {
         $p.StandardInput.Write(($payload | ConvertTo-Json -Compress -Depth 10))
         $p.StandardInput.Close()
-        $output = $p.StandardOutput.ReadToEnd()
-        $errorText = $p.StandardError.ReadToEnd()
-        $p.WaitForExit()
+        # "Durdur" istegi geldiginde alt surec ANINDA oldurulsun diye cikti ASENKRON toplanir;
+        # bekleme sirasinda iptal yoklanir. Boylece uzun suren ses/OCR/arama isleri bloklamaz.
+        $outTask = $p.StandardOutput.ReadToEndAsync()
+        $errTask = $p.StandardError.ReadToEndAsync()
+        while (!$p.HasExited) {
+            if ($Shared -and $Shared.Cancel) {
+                try { $p.Kill($true) } catch { }
+                throw [OperationCanceledException]::new()
+            }
+            Start-Sleep -Milliseconds 150
+        }
+        $output = $outTask.GetAwaiter().GetResult()
+        $errorText = $errTask.GetAwaiter().GetResult()
         if ($p.ExitCode -ne 0) { return "Arac hatasi: $errorText" }
         return $output
     } finally { $p.Dispose() }
@@ -307,8 +317,8 @@ function Wait-LocalModelStopped {
 #
 # MAX/FLASH'taki Qwen3.8 27B sablonu reasoning_effort anahtarini anlar. Lite'taki
 # Qwen3.5 9B sablonu onu yok sayar (olculdu: low caba ile token sayisi degismedi);
-# orada dusunmenin uzunlugu sunucu seviyesindeki --reasoning-budget ile sinirlanir,
-# bkz. scripts/manage-qwen.ps1 icindeki $liteThinkBudget.
+# orada dusunme ACIK ve SINIRSIZDIR (sunucuda --reasoning-budget verilmez; bkz.
+# scripts/manage-qwen.ps1). Baglam sikistirma/bos yanit tekrari yine dusuk caba ister.
 function Set-LowEffortRequest([hashtable]$body) {
     $body.reasoning_effort = 'low'
     $body.chat_template_kwargs = @{ reasoning_effort = 'low' }
@@ -415,6 +425,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null; break }
                 if ($parsed -and $parsed.error) { $err = [Exception]::new([string]$parsed.error) } else { $err = [Exception]::new([string]$candidate) }
             } catch { $err = $_ }
+            # Durdurulduysa CPU yedegine gecmeye gerek yok; cikip modeli geri yukle.
+            if ($Shared.Cancel) { break }
             if ($device -eq 'cuda') { Emit 'status' 'GPU ile transkripsiyon basarisiz; CPU ile deneniyor…' | Out-Null }
         }
     }
@@ -1389,6 +1401,9 @@ try {
             Emit 'status' ("Ses dökumlenemedi; istek dökumsuz sürüyor. " + $_.Exception.Message)
         }
     }
+    # Ses/OCR islemi sirasinda kullanici DURDURDUYSA dil modeli turuna hic girme. Model
+    # arka planda geri yuklenir; sohbet kullanici bir sonraki mesajinda devam eder.
+    if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
     # Otomatik baglam sikistirma: ozeti her zaman dusuk cabayla (hizli mod) uretiriz.
     # compactOnly modunda bu is tur bittikten sonra arka planda calisir; kullanici
     # bir sonraki mesajini yazdiginda sikistirma coktan bitmis olur.
@@ -1706,6 +1721,8 @@ try {
                     return
                 }
             } catch {
+                # Durdurma sirasinda olusan iptal, arac hatasi degildir: dogrudan iptale gec.
+                if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
                 $result = "Arac hatasi: $($_.Exception.Message)"
                 Write-AuditLog $name (if ($script:lastApprovalOutcome) { $script:lastApprovalOutcome } else { 'not_required' }) 'error' $auditDetail ''
             }

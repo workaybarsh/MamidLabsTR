@@ -168,21 +168,22 @@ def test_desktop_resolves_profile_through_alias_helper():
     assert "'builtin-lite' { 'lite'; break }" in desktop
 
 
-def test_lite_bounds_thinking_with_a_server_enforced_budget():
-    """Qwen3.5 sablonu --reasoning-effort'u yok sayar, bu yuzden caba ancak
-    sunucunun zorladigi token butcesiyle ayarlanabilir.
-
-    RTX 4060 uzerinde olculdu, ayni istek:
-      sinirsiz    -> 1451-2391 token, ~50 sn
-      butce 300   ->  408-429 token, ~10 sn (yanit kalitesi korundu)
-      butce 0     ->  175 token, ~4 sn (dusunme tamamen kapali)
-    """
+def test_lite_thinks_without_a_reasoning_budget():
+    """Qwen3.5 sablonu --reasoning-effort'u yok sayar; LITE'a artik dusunme BUTCESI konmaz
+    (kullanici istegi): sunucuya `--reasoning-budget` verilmez, model lazim oldugu kadar
+    (gerektigi kadar uzun) dusunur. Dusunme acik kalir (--reasoning on, deepseek formati) ve
+    sistem istemi modele derin dusunmesini, suresini kisitlamamasini soyler."""
     manager = read_text("scripts/manage-qwen.ps1")
+    desktop = read_text("qwen-desktop.ps1")
 
-    assert "$liteThinkBudget = '300'" in manager
-    assert "'--reasoning-budget', $liteThinkBudget," in manager
-    # Ayarlardan degistirilebilmeli.
-    assert "$settings.liteReasoningBudget" in manager
+    assert "--reasoning-budget" not in manager
+    assert "$liteThinkBudget" not in manager
+    assert "$settings.liteReasoningBudget" not in manager
+    # Dusunme yine acik ve deepseek formatiyla.
+    assert "'--reasoning', 'on'" in manager
+    assert "'--reasoning-format', 'deepseek'" in manager
+    # Derin dusunme talimati ve sureyi kisitlamama vurgusu.
+    assert "Düşünme suresini KISITLAMA" in desktop
 
 
 def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
@@ -205,7 +206,7 @@ def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
 
 
 def test_thinking_is_never_switched_off_in_requests():
-    """Dusunme urun kararidir: butce uzunlugu sinirlar, ozelligi kapatmaz."""
+    """Dusunme urun kararidir: istekler yalnizca cabayi ayarlar (reasoning_effort), ozelligi kapatmaz."""
     inference = read_text("agent/qwen-inference.ps1")
 
     assert "enable_thinking" not in inference
@@ -218,7 +219,7 @@ def test_thinking_is_never_switched_off_in_requests():
 def test_lite_system_prompt_encourages_deep_reasoning():
     """LITE icin sistem istemine derin/adim adim akil yurutme talimati eklenir; bu
     satir yalnizca lite profilinde bulunur (onek profile gore sabit oldugu icin KV
-    onbellegi bozulmaz) ve dusunme butcesi icinde daha dogru sonuca yonlendirir."""
+    onbellegi bozulmaz) ve sinirsiz dusunme suresinde daha dogru sonuca yonlendirir."""
     desktop = read_text("qwen-desktop.ps1")
 
     assert "Derin ve dikkatli dusun" in desktop

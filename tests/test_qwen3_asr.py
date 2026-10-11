@@ -144,6 +144,29 @@ def test_audio_turn_preempts_language_model_loading():
     assert "currentTurnAudioPaths.Count -gt 0" in send
 
 
+def test_python_tool_subprocess_is_killed_instantly_on_stop():
+    """'Durdur' her seyi ANINDA kessin: ASR/OCR/arama gibi uzun suren Python alt surecleri
+    bloklamaz. Cikti asenkron toplanir; bekleme sirasinda iptal yoklanir ve surec agacla oldurulur."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("function Invoke-PythonTool")[1].split("function ")[0]
+    assert "ReadToEndAsync" in block
+    assert "$Shared.Cancel" in block
+    assert "$p.Kill($true)" in block
+    # ASR cihaz dongusu iptalde CPU yedegine gecmeden kirilir; arac dongusu iptali hata saymaz.
+    asr = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "if ($Shared.Cancel) { break }" in asr
+    assert "if ($Shared.Cancel) { Emit 'cancelled'" in worker
+
+
+def test_stop_cancels_work_but_never_kills_an_in_flight_model_load():
+    """'Durdur' calisan isi keser AMA dil modeli YUKLENIYORSA dokunmaz: switchProcess korunur,
+    yukleme arka planda tamamlanir. (Surusturma: Cancel-Generation switchProcess'e dokunmaz.)"""
+    desktop = read_text("qwen-desktop.ps1")
+    cancel = desktop.split("function Cancel-Generation {")[1].split("function Stop-LocalQwen")[0]
+    assert "switchProcess" not in cancel
+    assert "pendingModelChange" not in cancel
+
+
 @pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")
 def test_worker_rejects_missing_file():
     module = load_worker()

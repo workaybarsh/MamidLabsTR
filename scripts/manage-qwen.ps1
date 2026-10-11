@@ -37,17 +37,15 @@ if ($Profile -eq 'lite') {
     # Q6_K (~7,4 GB) 8 GB kartta hic sigmaz (dosyanin kendisi bos VRAM'i asar).
     $liteFile = 'Huihui-Qwen3.5-9B-abliterated.i1-Q5_K_M.gguf'
     $liteCtx = '32768'
-    # Dusunme acik kalir; bu yalnizca kac token dusunulecegini sinirlar.
-    # -1 sinirsiz, 0 dusunmeyi hemen bitirir, N>0 token butcesi.
-    #
-    # Neden gerekli: Qwen3.5 sablonu --reasoning-effort'u yok sayar, bu yuzden
-    # caba yalnizca sunucunun zorladigi bu butce ile ayarlanabilir. RTX 4060
-    # uzerinde ayni basit istek, sinirsizken 1451-2391 token ve ~50 sn; 300
-    # token butce ile 408-429 token ve ~10 sn surdu, yanit kalitesi korundu.
-    $liteThinkBudget = '300'
+    # Dusunme ACIK ve SINIRSIZDIR: LITE'a düşünme bütçesi konmaz, isi bitene kadar
+    # (lazim oldugu kadar) düşünsün diye sunucuya bir dusunme butcesi bayragi HIC
+    # verilmez. Eskiden
+    # 300 token'lik bir butce vardi (hizli ama bazi sorularda erken kesiyordu);
+    # kullanici isteğiyle kaldirildi. Qwen3.5 sablonu --reasoning-effort'u yok sayar
+    # ama deepseek reasoning formati ile aciк kalir; arayuz isteği `reasoning_effort`
+    # gonderir (LITE sablonu yok sayar).
     if ($settings -and $settings.liteModel) { $liteFile = [string]$settings.liteModel }
     if ($settings -and $settings.liteContext) { $liteCtx = [string][int]$settings.liteContext }
-    if ($settings -and $null -ne $settings.liteReasoningBudget) { $liteThinkBudget = [string][int]$settings.liteReasoningBudget }
     $model = Join-Path $liteDir $liteFile
     # Lite'in gorsel projektoru (mmproj Q8_0) katalogdan ayri bir dosya olarak iner;
     # klasorde yoksa Lite metin-only calisir ve gorseller yalnizca OCR ile okunur.
@@ -289,16 +287,34 @@ try {
     if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
+    #
+    # ASR/OCR sonrasi geri yuklemede (ozellikle 8 GB LITE'ta) kelimenin tam anlamiyla
+    # bir YARIS vardir: transkripsiyon/PaddleOCR alt sureci cikar ama WDDM VRAM'i aninda
+    # serbest birakmaz; hemen baslayan dil modeli "yer yetmiyor" ile reddedilir ve model
+    # kapali kalir. Bu yuzden yer kontrolu sinirli kez (kisa araliklarla) yeniden denenir.
     if (!$SkipMemoryCheck) {
-        try { Test-MemoryBudget $model $Profile $projector }
-        catch {
-            # Yer yetmedi (ComfyUI acik): kuyrugu bossa kapat, tekrar olc; yine yetmezse hata.
-            if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }
+        $budgetOk = $false
+        $lastBudgetError = $null
+        $attempts = 6
+        for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+            try { Test-MemoryBudget $model $Profile $projector; $budgetOk = $true; break }
+            catch {
+                $lastBudgetError = $_
+                # Ilk denemede ComfyUI acik olabilir: kuyruk bossa kapat ve hemen tekrar dene.
+                if ($attempt -eq 1 -and (Stop-IdleComfy)) { continue }
+                # ASR/OCR alt surecinin VRAM'i birakmasi icin kisa bekleme (toplam ~5 sn).
+                if ($attempt -lt $attempts) { Start-Sleep -Milliseconds 1000 }
+            }
         }
+        if (!$budgetOk) { throw $lastBudgetError }
     }
     New-Item -ItemType Directory -Path $logs -Force | Out-Null
 
-    $predict = switch ($Profile) { 'lite' { '3072' } 'flash' { '4096' } default { '8192' } }
+    # LITE cikti siniri 8192: dusunme ACIK ve SINIRSIZ oldugu icin (sunucu tarafinda dusunme
+    # butcesi yok) dusunme tokenlari bu cikti butcesini paylasir; 3072 kucuk kaliyordu ve basit
+    # bir istekte bile model tamamen dusunup GORUNUR YANIT URETMEDEN kesilebiliyordu ("bos yanit").
+    # Arayuz istegi de LITE icin max_tokens=8192 gonderir; sunucu da bunu karsilamali.
+    $predict = switch ($Profile) { 'lite' { '8192' } 'flash' { '4096' } default { '8192' } }
     # Model adları max/flash/lite'tir; llama.cpp şablonu için karşılık gelen reasoning
     # değerleri hâlâ low/xhigh olarak gönderilir.
     $reasoningEffort = if ($Profile -eq 'max') { 'xhigh' } else { 'low' }
@@ -315,7 +331,6 @@ try {
             '--cache-type-v', 'q4_0', '--cache-reuse', '256', '--batch-size', '256', '--ubatch-size', '128',
             '--threads', '4', '--threads-batch', '8', '--jinja', '--reasoning', 'on',
             '--reasoning-effort', $reasoningEffort, '--reasoning-format', 'deepseek',
-            '--reasoning-budget', $liteThinkBudget,
             '--metrics', '--no-context-shift'
         )
         # Projektor yalnizca klasorde varsa eklenir; yoksa Lite metin-only calisir.

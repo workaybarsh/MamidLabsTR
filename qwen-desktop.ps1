@@ -1743,6 +1743,9 @@ function Stop-ModelSwitchForAudio {
     $script:activeModel = $null
 }
 
+# "Durdur": o an NE calisiyorsa (dil modeli yaniti, ASR/OCR/arac alt surecleri, medya uretimi)
+# ANINDA durdurur. TEK istisna: dil modelinin YUKLENMESI kesilmez (switchProcess'e dokunulmaz);
+# yukleme arka planda tamamlanir ve sohbet bir sonraki mesajla devam eder.
 function Cancel-Generation {
     Stop-BackgroundCompaction
     if ($script:sharedMedia) {
@@ -2141,12 +2144,12 @@ function Get-SystemPrompt {
     $lines = @()
     $lines += 'Sen MamidLabs asistanisin. Turkce, dogrudan ve net konus. Sohbet modeli yerel veya API olabilir; araclar kullanicinin bilgisayarinda calisir.'
     $lines += "Bugunun tarihi: $(Get-Date -Format 'yyyy-MM-dd')."
-    # LITE (kucuk 9B model): dusunme acik ama butceli. Modeli hizli/kisa cevap yerine
-    # derin ve adim adim akil yurutmeye tesvik ederek ayni butce icinde daha dogru sonuca
-    # ulasmasi hedeflenir. Bu satir profile gore sabittir; onek degismedigi icin KV
-    # onbellegi bozulmaz (yalnizca LITE profilinde eklenir).
+    # LITE (kucuk 9B model): dusunme acik ve SINIRSIZ (sunucuda butce yok). Modeli derin ve
+    # adim adim akil yurutmeye tesvik ederiz; düşünme suresini kisitlamasi istenmez, isi
+    # bitene kadar (lazim oldugu kadar) dusunsun. Bu satir profile gore sabittir; onek
+    # degismedigi icin KV onbellegi bozulmaz (yalnizca LITE profilinde eklenir).
     if ([string]$script:apiSettings.localProfile -eq 'lite') {
-        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle; gerekirse birden fazla yaklasim deneyip sonucu kontrol et. Dusunme adimlarini kisaca ortaya koy, sonra net ve eksiksiz yaniti ver.'
+        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle. Düşünme suresini KISITLAMA: gerektigi kadar uzun ve derin dusun; gerekirse birden fazla yaklasim dene, ara sonuclari ve varsayimlari kontrol et, hatayi bulursan geri don ve duzelt. Yeterince emin oldugunda dusunme adimlarini kisaca ortaya koy ve net, eksiksiz, dogru yaniti ver.'
     }
     if ($netChip.Checked) { $lines += 'Internet erisimin var: guncel bilgi gerektiginde search_web ve fetch_page araclarini kullan.' }
     else { $lines += 'Internet erisimin KAPALI; web aramasi yapamazsin.' }

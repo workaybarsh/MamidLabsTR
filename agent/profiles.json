@@ -101,7 +101,7 @@
       "id": "flash",
       "label": "Qwen3.8 27B",
       "hardware": "16 GB VRAM / 32 GB RAM",
-      "summary": "MAX ile aynı dosyalar, daha kısa düşünme bütçesi. Ölçülen hız ~23-24 tok/s.",
+      "summary": "MAX ile aynı dosyalar, daha kısa düşünme çabası. Ölçülen hız ~23-24 tok/s.",
       "files": [
         {
           "label": "Dil modeli (Qwen3.8 27B IQ4_XS)",

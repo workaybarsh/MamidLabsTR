@@ -127,21 +127,22 @@ function Invoke-ChatProbe {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     # reasoning_effort='low' + chat_template_kwargs, gercek uretim istegiyle
     # (qwen-inference.ps1 icindeki Set-LowEffortRequest) ayni sekle getirir.
-    # Bu olmadan Lite'in sunucu tarafinda zorlanan dusunme butcesi (300 token)
-    # max_tokens'i tek basina tuketip gercek icerik uretmeden kesilebilir -
-    # bu tam olarak gercek makinede yakalandi: max_tokens=200 ile model
-    # 200 tokenin tamamini dusunerek harcadi, "bos yanit" hatasi verdi.
+    # Lite artik bir dusunme butcesi kullanmaz (dusunme acik ve sinirsizdir); dusunme
+    # tokenlari CIKTI butcesini paylasir. Bu yuzden yanit icin LITE sunucusunun cikti
+    # siniri kadar pay birakilir (8192, manage-qwen.ps1 $predict); aksi halde model butun
+    # limiti dusunerek harcayip gercek icerik uretmeden kesilebilir. Ayni hata gercek
+    # makinede kucuk max_tokens ile yakalandi ("bos yanit").
     $body = @{
         model = "smoke-$Profile"
         messages = @(@{ role = 'user'; content = 'Bir cumleyle kendini tanit.' })
-        max_tokens = 600
+        max_tokens = 8192
         reasoning_effort = 'low'
         chat_template_kwargs = @{ reasoning_effort = 'low' }
     } | ConvertTo-Json -Depth 5
     $response = Invoke-RestMethod 'http://127.0.0.1:8080/v1/chat/completions' -Method Post `
         -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 180
     $content = [string]$response.choices[0].message.content
-    if ([string]::IsNullOrWhiteSpace($content)) { throw 'Model bos yanit dondurdu (dusunme butcesi tukenmis olabilir).' }
+    if ([string]::IsNullOrWhiteSpace($content)) { throw 'Model bos yanit dondurdu (yanit icin ayrilan tokenlar dusunmede tukenmis olabilir).' }
     $tokens = [int]$response.usage.completion_tokens
     $tps = if ($response.timings -and $response.timings.predicted_per_second) { [double]$response.timings.predicted_per_second }
            elseif ($sw.Elapsed.TotalSeconds -gt 0) { $tokens / $sw.Elapsed.TotalSeconds } else { 0 }

@@ -62,7 +62,7 @@ API sağlayıcıları için kullanılır.
 |---|---|---|---|
 | Hedef donanım | 16 GB VRAM · 32 GB RAM | 16 GB VRAM · 32 GB RAM | 8 GB VRAM · 16 GB RAM |
 | Dil modeli | Qwen3.8 27B IQ4_XS | Qwen3.8 27B IQ4_XS | Qwen3.5 9B Q5_K_M |
-| Düşünme | Derin | Kısa | Kısa, 300 token bütçe |
+| Düşünme | Derin | Kısa | Derin, sınırsız (bütçe yok) |
 | Görsel modeli | Krea-2 Turbo fp8 | Krea-2 Turbo fp8 | Krea-2 Turbo GGUF Q4_K_M |
 | Model indirmesi | ~52 GB (FLASH ile ortak) | ~52 GB | ~36 GB |
 | Ölçülen sohbet hızı | ~42–58 tok/s | ~42–58 tok/s | ~97 tok/s (16 GB'ta) |
