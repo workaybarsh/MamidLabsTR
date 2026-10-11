@@ -2272,6 +2272,15 @@ function Begin-Generation {
     $turnHasImage = [bool]$script:currentTurnHasImage
     $profile = Get-ProfileFromAlias $script:activeModel
     $jobMessages = Build-JobMessages
+    # Bilesen kurulu mu? Gorsel/video uretimi ve coklu-gorsel OCR yalnizca ilgili bilesen
+    # kuruluysa (ya da gorsel/video bir API saglayicisindan geliyorsa) sunulur. Aksi halde
+    # model var olmayan araci cagirip "sapitan"/hatali davranis sergiliyordu.
+    $hasMedia = Test-Path -LiteralPath (Join-Path $root 'ComfyUI\main.py') -PathType Leaf
+    $hasOcr = (Test-Path -LiteralPath (Join-Path $root 'venv\ocr\Scripts\python.exe')) -or (Test-Path -LiteralPath (Join-Path $root 'venv\ocr-cpu\Scripts\python.exe'))
+    $imgProv = [string]$script:apiSettings.imageProvider
+    $vidProv = [string]$script:apiSettings.videoProvider
+    $imageApiOk = [bool]($imgProv -and $imgProv -ne 'local')
+    $videoApiOk = [bool]($vidProv -and $vidProv -ne 'local')
     $jobData = @{
         # Start-ThreadJob -FilePath, hedef dosyayi metin olarak okuyup calistirir;
         # $PSScriptRoot o baglamda hep bostur (dogrulandi). Kok bu yuzden burada
@@ -2282,8 +2291,9 @@ function Begin-Generation {
         agent = [bool]$agentChip.Checked
         internet = [bool]$netChip.Checked
         # Üretim/office araçları çiplerle değil, mesaj niyeti ve sistem talimatıyla seçilir.
-        imagegen = $true
-        videogen = $true
+        # Görsel/video yalnızca bilesen kuruluysa (yerel) ya da API saglayicisi seciliyse sunulur.
+        imagegen = ($hasMedia -or $imageApiOk)
+        videogen = ($hasMedia -or $videoApiOk)
         office = $true
         documentCreate = $true
         chartgen = $true
@@ -2294,7 +2304,7 @@ function Begin-Generation {
         currentImagePath = $(if ($script:currentTurnImagePaths.Count -gt 0) { [string]$script:currentTurnImagePaths[0] } else { '' })
         currentImagePaths = @($script:currentTurnImagePaths)
         currentAudioPaths = @($script:currentTurnAudioPaths)
-        multiImageOcr = [bool]$script:currentTurnMultiImageOcr
+        multiImageOcr = [bool]($script:currentTurnMultiImageOcr -and $hasOcr)
         multiImageOcrMode = [bool]$script:multiImageOcrMode
         profile = $profile
         # Gorsel hatti sohbet saglayicisindan bagimsizdir; kimlik_duzenle modunun
