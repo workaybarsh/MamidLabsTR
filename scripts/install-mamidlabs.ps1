@@ -622,11 +622,18 @@ function Invoke-Verify {
     if (!$SkipMedia) {
         $checks += @{ label = 'imagegen ortami'; path = 'venv\imagegen\Scripts\python.exe' }
         $checks += @{ label = 'ComfyUI';         path = 'ComfyUI\main.py' }
-    $checks += @{ label = 'whisper.cpp (ses dökum)'; path = ('whisper.cpp\' + $script:WhisperBuild + '\whisper-cli.exe') }
+    $checks += @{ label = 'whisper.cpp (ses dökum)'; path = ('whisper.cpp\' + $script:WhisperBuild); glob = 'whisper-cli.exe' }
         $checks += @{ label = 'ComfyUI-GGUF';    path = 'ComfyUI\custom_nodes\ComfyUI-GGUF\__init__.py' }
         $checks += @{ label = 'Fotograf duzenleme dugumleri'; path = 'ComfyUI\custom_nodes\comfyui-krea2edit\__init__.py' }
     }
     foreach ($check in $checks) {
+        # Zip icindeki yuva (ornegin 'Release\') surume gore degisebilir; glob varsa
+        # dosyayi klasor altinda ozyinelemeli ara.
+        if ($check.glob) {
+            $hit = @(Get-ChildItem -LiteralPath (Join-Path $Root $check.path) -Recurse -Filter $check.glob -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if ($hit.Count) { Write-Ok $check.label } else { Write-Warn ($check.label + ' eksik: ' + $check.path + '\' + $check.glob) }
+            continue
+        }
         $full = Join-Path $Root $check.path
         if (Test-Path -LiteralPath $full -PathType Leaf) { Write-Ok ($check.label + ' -> ' + $check.path) }
         else { Write-Warn ($check.label + ' eksik: ' + $check.path) }
