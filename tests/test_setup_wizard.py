@@ -1,4 +1,4 @@
-"""Tek tikla kurulum paketi: sihirbaz betigi, profil raporu, model ayarlari.
+﻿"""Tek tikla kurulum paketi: sihirbaz betigi, profil raporu, model ayarlari.
 
 Inno Setup derlemesi Windows'ta GitHub Actions ile yapilir (kurulum-paketi.yml);
 burada sihirbazin cagirdigi PowerShell betikleri gercekten calistirilir ve .iss
@@ -201,7 +201,7 @@ def test_wizard_offers_every_profile_later_and_own_model_choices():
     for text in ("LITE", "FLASH", "MAX", "daha sonra kuracağım", "Kendi modelimi ya da API hesabımı"):
         assert text in iss
     assert 'MessagesFile: "compiler:Languages\\Turkish.isl"' in iss
-    assert "LicenseFile=..\\..\\LICENSE" in iss
+    assert "LicenseFile=..\\..\\EULA.txt" in iss
     assert "PrivilegesRequired=lowest" in iss
     # Kendi modelleri kopyalanmaz; dosya yolu setup-run'a gecer.
     assert "-LlmPath" in iss and "-ImageModelPath" in iss and "-VideoModelPath" in iss
@@ -220,6 +220,13 @@ def test_installer_workflow_builds_the_setup():
     assert "innosetup" in workflow
     assert "packaging\\windows\\mamidlabs.iss" in workflow
     assert "MamidLabs_Setup.exe" in workflow
+
+
+def test_eula_exists_and_covers_ownership():
+    eula = read_text(ROOT / "EULA.txt")
+    assert "Altunta" in eula
+    assert "2026" in eula
+    assert len(eula) > 1500
 
 
 def test_repository_is_proprietary_licensed():

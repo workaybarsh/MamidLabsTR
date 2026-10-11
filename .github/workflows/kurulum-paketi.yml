@@ -1,4 +1,4 @@
-name: Kurulum paketi
+﻿name: Kurulum paketi
 
 # Tek tikla kurulum sihirbazini (dist\MamidLabs_Setup.exe) Inno Setup 6 ile derler.
 # Surumun tek kaynagi packaging\windows\mamidlabs.iss icindeki MyAppVersion'dir.
@@ -21,6 +21,7 @@ on:
       - 'docs/kurulum.md'
       - 'README.md'
       - 'LICENSE'
+      - 'EULA.txt'
       - '.github/workflows/kurulum-paketi.yml'
   pull_request:
     paths:
@@ -34,6 +35,7 @@ on:
       - 'docs/kurulum.md'
       - 'README.md'
       - 'LICENSE'
+      - 'EULA.txt'
       - '.github/workflows/kurulum-paketi.yml'
 
 jobs:

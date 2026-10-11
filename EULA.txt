@@ -1,0 +1,82 @@
+﻿MAMIDLABS — SON KULLANICI LİSANS SÖZLEŞMESİ (EULA)
+
+Sürüm 1.0 — Yürürlük tarihi: 2026
+Telif Hakkı (c) 2026 Aybars Haydar Altuntaş. Tüm hakları saklıdır.
+
+Bu Son Kullanıcı Lisans Sözleşmesi ("Sözleşme"), MamidLabs yazılımı ile birlikte sunulan tüm
+kaynak kodu, derlenmiş dosyalar, varlıklar, belgeler, güncellemeler ve ilgili dosyalar
+("Yazılım") için geçerlidir. Yazılımı kurarak, kopyalayarak veya kullanarak bu Sözleşme'nin tüm
+koşullarını okuduğunuzu ve kabul ettiğinizi beyan edersiniz. Koşulları kabul etmiyorsanız
+Yazılımı kurmayınız ve kullanmayınız.
+
+1) TANIMLAR
+"Hak Sahibi", Yazılımın geliştiricisi ve hak sahibi Aybars Haydar Altuntaş'ı ifade eder.
+"Kullanıcı", Yazılımı kuran, kullanan veya erişen gerçek ya da tüzel kişiyi ifade eder.
+
+2) MÜLKİYET VE FİKRİ MÜLKİYET HAKLARI
+Yazılım Hak Sahibine aittir. Yazılım üzerindeki telif hakkı, marka, tasarım, patent ve diğer
+tüm fikri ve sınai mülkiyet hakları münhasıran Hak Sahibine aittir. Bu Sözleşme, Yazılım
+üzerinde Kullanıcıya mülkiyet hakkı DEVRETMEZ; yalnızca aşağıda tanımlanan sınırlı bir kullanım
+lisansı tanır. Yazılım bu Sözleşme ile lisanslanır, satılmaz.
+
+3) LİSANSIN KAPSAMI VE KULLANIM HAKKI
+Hak Sahibi, Kullanıcıya; Yazılımı yalnızca kişisel ve/veya Hak Sahibinin açıkça yetkilendirdiği
+amaçlarla, Kullanıcının sahip olduğu veya meşru şekilde kontrol ettiği kendi cihaz(lar)ı
+üzerinde kurma ve kullanma hakkını tanır. Kullanıcı, Yazılımı izin verilen cihazların dışına
+yayamaz ve lisansı devredemez. Tanınan lisans; devredilemez, münhasır olmayan ve geri
+alınabilir olup işbu Sözleşme'nin şartlarına tabidir.
+
+4) YASAKLANAN EYLEMLER
+Hak Sahibinin önceden yazılı izni olmaksızın Kullanıcı:
+  a) Yazılımı veya herhangi bir bölümünü kopyalayamaz, çoğaltamaz, dağıtamaz, yayımlamaz,
+     satamaz, kiralayamaz, ödünç veremez, alt lisanslayamaz veya devredemez;
+  b) Yazılımı ticari amaçla pazarlayamaz, satamaz, kiralayamaz ya da ücret/hizmet karşılığı
+     sunamaz;
+  c) Yazılımı değiştiremez, uyarlayamaz, üzerinde türev eser üretemez;
+  d) Yazılımı kendisine veya bir başkasına aitmiş gibi gösteremez; Hak Sahibinin adını ya da
+     telif/mülkiyet bildirimlerini kaldıramaz, değiştiremez veya gizleyemez;
+  e) Yazılımı tersine mühendislik, kaynak koda dönüştürme (decompile) veya parçalarına ayırma
+     (disassemble) yoluyla çözmeye çalışamaz; koruma/lisanslama mekanizmalarını devre dışı
+     bırakamaz, "crack" uygulayamaz (yürürlükteki hukukun açıkça izin verdiği ölçü hariç);
+  f) Yazılımı üçüncü kişilere "kendi ürünüymüş gibi" sunamaz veya ticari bir ürünün/hizmetin
+     parçası hâline getiremez.
+Yukarıdaki eylemler yasaktır.
+
+5) İZİNSİZ KULLANIMIN HUKUKİ SONUÇLARI
+Bu Sözleşme'deki yasaklara aykırı her türlü kullanım; başta telif hakkı, marka ve fikri/sınai
+mülkiyet mevzuatı olmak üzere ilgili mevzuatın ihlali anlamına gelir. Bu tür izinsiz kullanım
+hâlinde Hak Sahibi; yürürlükteki hukuk kapsamında ihlalin tespiti, durdurulması, giderilmesi,
+ihtiyati tedbir, tazminat ve sair hukuki ve cezai yollara başvurma haklarının tamamını saklı
+tutar. Yazılımı izinsiz kopyalayan, çoğaltan, çalan, dağıtan, değiştiren, kıran (crack) veya
+ticari amaçla pazarlayan kişi, doğabilecek hukuki ve cezai sorumluluğu peşinen kabul eder.
+
+6) SORUMLULUK REDDİ VE SORUMLULUĞUN SINIRLANDIRILMASI
+Yazılım "OLDUĞU GİBİ" ve "MEVCUT OLDUĞU ŞEKİLDE" sunulur. Hak Sahibi; zımni veya açık, ticarete
+elverişlilik, belirli bir amaca uygunluk ve ihlal etmeme dâhil hiçbir garanti vermez. Yazılımın
+kullanımından veya kullanılamamasından doğan; veri kaybı, veri bozulması, çökme, kesinti, iş
+kaybı, kâr kaybı dâhil ancak bunlarla sınırlı olmamak üzere doğrudan, dolaylı, özel, arızi veya
+sonuçsal hiçbir zarardan Hak Sahibi sorumlu tutulamaz. Yürürlükteki hukukun izin verdiği azami
+ölçüde, Hak Sahibinin toplam sorumluluğu, Kullanıcının Yazılım için ödediği bedelle (ödenmişse)
+sınırlıdır.
+
+7) FESİH
+Kullanıcı bu Sözleşme'nin herhangi bir hükmünü ihlal ederse, lisansın tanıdığı haklar
+kendiliğinden ve bildirimsiz olarak sona erer. Bu durumda Kullanıcı, Yazılımı kullanmayı
+derhâl bırakmak ve elindeki tüm kopyaları silmekle yükümlüdür. Lisansın sona ermesi, işbu
+Sözleşme'nin mülkiyet, sorumluluk ve hukuk seçimi hükümlerini etkilemez.
+
+8) GÜNCELLEMELER VE DEĞİŞİKLİKLER
+Yazılım güncellemeleri bu Sözleşme kapsamında sunulur. Hak Sahibi, Sözleşme'nin yeni
+sürümlerini yayımlama hakkını saklı tutar.
+
+9) YÜRÜRLÜKTEKİ HUKUK VE YETKİLİ MAHKEME
+Bu Sözleşme Türkiye Cumhuriyeti hukukuna tabidir. Uyuşmazlıklarda Türkiye Cumhuriyeti
+mahkemeleri ve icra daireleri yetkilidir.
+
+10) GENEL HÜKÜMLER
+Bu Sözleşme'nin herhangi bir hükmünün geçersiz sayılması, diğer hükümlerin geçerliliğini
+etkilemez. Sözleşme'nin bir hakkın kullanılmaması, o haktan feragat anlamına gelmez.
+
+11) KABUL
+Yazılımı kurmanız, kopyalamanız veya kullanmanız; bu Sözleşme'nin tüm hükümlerini okuduğunuzu
+ve kabul ettiğinizi gösterir. Kabul etmiyorsanız Yazılımı kullanmayınız.

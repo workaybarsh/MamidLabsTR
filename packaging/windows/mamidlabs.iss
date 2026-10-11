@@ -36,7 +36,7 @@ VersionInfoProductName={#MyAppName}
 DefaultDirName={autopf}\MamidLabs
 UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
-LicenseFile=..\..\LICENSE
+LicenseFile=..\..\EULA.txt
 
 OutputDir=..\..\dist
 OutputBaseFilename=MamidLabs_Setup
@@ -85,6 +85,7 @@ Source: "..\..\qwen-desktop.ps1"; DestDir: "{app}\kurulum-kaynak"; Flags: ignore
 Source: "..\..\launch-qwen-desktop.vbs"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
+Source: "..\..\EULA.txt"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\agent\*"; DestDir: "{app}\kurulum-kaynak\agent"; Excludes: "__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\scripts\*"; DestDir: "{app}\kurulum-kaynak\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\assets\*"; DestDir: "{app}\kurulum-kaynak\assets"; Excludes: "installer\*"; Flags: ignoreversion recursesubdirs createallsubdirs
