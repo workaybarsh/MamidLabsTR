@@ -357,3 +357,121 @@ Save-Chat
 Assert ([IO.File]::ReadAllText($path) -eq 'previous encrypted chat') 'Previous chat was overwritten on failed write'
 Assert ([TestMessageBox]::Last -like 'Sohbet kaydedilemedi*') 'Save failure was silent'
 """)
+
+
+def test_microphone_menu_cancel_and_red_mic_send_wiring(tmp_path):
+    """Kayit surerken KIRMIZI mikrofon tiklamasi kaydi bitirip gonderir; "Kaydi iptal et"
+    kaydi atar. Kayit yokken mikrofon menusu acilir ve "Mikrofonu kullan" kaydi baslatir.
+    Sag tik her durumda menuyu acar (kaydi iptal etme yolu kayit surerken de erisilebilir)."""
+    run_ps(tmp_path, r"""
+Add-Type -AssemblyName System.Windows.Forms
+$script:micRecording = $false
+$micBtn = [pscustomobject]@{Height=30; BackColor=$null}
+$micUse = [pscustomobject]@{Text=''}
+$micCancel = [pscustomobject]@{Text=''}
+$script:menuShown=$false; $script:menuClosed=$false
+$micMenu = [pscustomobject]@{}
+$micMenu | Add-Member ScriptMethod Show { param($c,$x,$y) $script:menuShown=$true }
+$micMenu | Add-Member ScriptMethod Close { $script:menuClosed=$true }
+$script:cancelled=$false; $script:completed=$false; $script:started=$false
+function Cancel-MicrophoneCapture { $script:cancelled=$true }
+function Complete-MicrophoneCapture { $script:completed=$true }
+function Start-MicrophoneCapture { $script:started=$true }
+
+# --- Kayit yokken ---
+& (Get-Handler '$micBtn' 'Add_Click')
+Assert ($script:menuShown) 'Idle mic click did not open the menu'
+& (Get-Handler '$micUse' 'Add_Click')
+Assert ($script:started -and !$script:completed) 'Idle use item did not start recording'
+& (Get-Handler '$micCancel' 'Add_Click')
+Assert (!$script:cancelled -and $script:menuClosed) 'Idle cancel cancelled a recording'
+
+# --- Kayit surerken ---
+$script:menuShown=$false; $script:menuClosed=$false
+$script:micRecording = $true
+Show-MicMenu
+Assert ($micUse.Text -eq 'Kaydı bitir ve gönder' -and $micCancel.Text -eq 'Kaydı iptal et') 'Recording menu labels wrong'
+$script:menuShown=$false
+& (Get-Handler '$micBtn' 'Add_Click')
+Assert ($script:completed -and !$script:menuShown) 'Red mic click did not finish+send'
+& (Get-Handler '$micCancel' 'Add_Click')
+Assert ($script:cancelled) 'Recording cancel item did not cancel'
+
+# Sag tik her durumda menuyu acar.
+$script:menuShown=$false
+$right = [pscustomobject]@{Button=[System.Windows.Forms.MouseButtons]::Right}
+& (Get-Handler '$micBtn' 'Add_MouseUp') $micBtn $right
+Assert ($script:menuShown) 'Right click did not open the recording menu'
+""")
+
+
+def test_complete_and_cancel_microphone_capture_attach_and_send(tmp_path):
+    """Complete-MicrophoneCapture kaydi eke ekleyip gonderir; Cancel-MicrophoneCapture
+    kaydi KAYDETMEDEN (discard) atar ve dosyayi siler, hicbir sey gondermez."""
+    wav = tmp_path / "mikrofon-test.wav"
+    wav.write_bytes(b"RIFF....WAVE")
+    run_ps(tmp_path, r"""
+$path = """ + ps_quote(wav) + r"""
+$script:selectedAudio = [Collections.Generic.List[string]]::new()
+$script:added=$null; $script:discard=$null
+function Add-SelectedAudio([string]$p) { $script:added=$p }
+$script:clicked=$false
+$send = [pscustomobject]@{Text='Gönder'}
+$send | Add-Member ScriptMethod PerformClick { $script:clicked=$true }
+$script:busy=$false; $script:pendingSend=$false; $script:imageBusy=$false
+function Stop-MicrophoneCapture([switch]$discard) { $script:discard=$discard; return $path }
+
+Complete-MicrophoneCapture
+Assert ($script:added -eq $path) 'Complete did not attach the recording'
+Assert ($script:clicked) 'Complete did not auto-send'
+Assert (!$script:discard) 'Complete discarded instead of saving'
+
+$script:clicked=$false
+Cancel-MicrophoneCapture
+Assert ($script:discard) 'Cancel did not discard the recording'
+Assert (!$script:clicked) 'Cancel sent something'
+Assert (!(Test-Path -LiteralPath $path)) 'Cancel did not delete the recording file'
+""")
+
+
+def test_audio_turn_preempts_model_load_and_gate_holds_without_audio(tmp_path):
+    """Ses turu, dil modeli hazir degilken bile Begin-Generation'i HEMEN baslatir ve sureen
+    model yuklemesinden vazgecer (Stop-ModelSwitchForAudio). Ses yoksa eski kapi korunur."""
+    run_ps(tmp_path, r"""
+$script:killed=$false
+$proc = [pscustomobject]@{HasExited=$false}
+$proc | Add-Member ScriptMethod Kill { param($tree) $script:killed=$true }
+$proc | Add-Member ScriptMethod WaitForExit { param($ms) return $true }
+$proc | Add-Member ScriptMethod Dispose {}
+$script:switchProcess=$proc
+$script:pendingModelChange=@{action='switch'}
+$script:modelReady=$true; $script:activeModel='qwen3.5-9b-lite'
+$script:modelSwitchError='old error'
+Stop-ModelSwitchForAudio
+Assert ($script:killed) 'In-flight model load was not killed'
+Assert (!$script:switchProcess -and !$script:pendingModelChange) 'Switch state was not cleared'
+Assert (!$script:modelReady -and !$script:activeModel) 'Model readiness was not reset for ASR'
+Assert (!$script:modelSwitchError) 'Preempt kept a stale switch error'
+
+# --- Ses YOK: kapi korunur (model hazir olana kadar bekle) ---
+$script:proceeded=$false; $script:preempted=$false
+function Stop-ModelSwitchForAudio { $script:preempted=$true }
+function Stop-BackgroundCompaction { $script:proceeded=$true }
+function Build-JobMessages { throw 'STOP' }
+$script:providerId='local'; $script:modelReady=$false; $script:busy=$false; $script:imageBusy=$false
+$script:pendingSend=$true; $script:currentTurnAudioPaths=@()
+Begin-Generation
+Assert (!$script:proceeded -and !$script:preempted) 'Audio-less turn bypassed the ready-model gate'
+Assert ($script:pendingSend) 'Gate dropped the queued message'
+
+# --- Ses VAR: hemen baslar ve yukleme gecersiz kilinir ---
+function Get-ProfileFromAlias([string]$a) { return 'lite' }
+function Get-SelectedLocalAlias { return 'qwen3.5-9b-lite' }
+$script:proceeded=$false; $script:preempted=$false
+$script:pendingSend=$true; $script:currentTurnAudioPaths=@('ses.wav')
+# Begin-Generation'in geri kalani (is kurulumu) kasitli olarak erken durdurulur.
+try { Begin-Generation } catch { }
+Assert ($script:preempted) 'Audio turn did not preempt the model load'
+Assert ($script:proceeded) 'Audio turn did not start immediately'
+Assert (!$script:pendingSend) 'Audio turn stayed queued'
+""")

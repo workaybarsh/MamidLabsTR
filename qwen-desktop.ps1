@@ -1159,9 +1159,12 @@ $send.ForeColor = [System.Drawing.Color]::White
 $send.FlatAppearance.BorderSize = 0
 $composer.Controls.Add($send)
 
-# Mikrofon dugmesi: Gönder'in hemen solunda. Tiklaninca bir menü acar:
-# "Mikrofonu kullan" / "İptal". Ses eklenince (Qwen3-ASR ile)
+# Mikrofon dugmesi: Gönder'in hemen solunda. Mikrofon KIRMIZI iken (kayit surerken)
+# dugmeye basmak kaydi bitirip GONDERIR; kayit yokken kucuk bir menu acar
+# ("Mikrofonu kullan" / "İptal"). Ses eklenince (Qwen3-ASR ile)
 # otomatik dökumlenir ve bulgular dil modeline verilir (OCR'in ses esdegeri).
+# Sag tik HER durumda menuyu acar; boylece kayit surerken bile "Kaydı iptal et"
+# secilip kayit atilabilir (dosya silinir, gonderilmez).
 # GDI renkli emoji cizemiyor; Segoe MDL2 Assets mikrofon glifi (U+E720) kullanilir.
 $micBtn = New-Object System.Windows.Forms.Button
 $micBtn.Text = [string][char]0xE720
@@ -1177,9 +1180,35 @@ $micMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $micUse = $micMenu.Items.Add('Mikrofonu kullan')
 [void]$micMenu.Items.Add('-')
 $micCancel = $micMenu.Items.Add('İptal')
-$micBtn.Add_Click({ $micMenu.Show($micBtn, 0, $micBtn.Height) })
-$micUse.Add_Click({ Start-MicrophoneCapture })
-$micCancel.Add_Click({ $micMenu.Close() })
+# Kayit surerken basliklar "Kaydı bitir ve gönder" / "Kaydı iptal et" olur.
+function Show-MicMenu {
+    if ($script:micRecording) {
+        $micUse.Text = 'Kaydı bitir ve gönder'
+        $micCancel.Text = 'Kaydı iptal et'
+    } else {
+        $micUse.Text = 'Mikrofonu kullan'
+        $micCancel.Text = 'İptal'
+    }
+    $micMenu.Show($micBtn, 0, $micBtn.Height)
+}
+# Sol tik: kayit surerken bitir+gonder; aksi halde menuyu ac.
+$micBtn.Add_Click({
+    if ($script:micRecording) { Complete-MicrophoneCapture }
+    else { Show-MicMenu }
+})
+# Sag tik: her durumda menu (kaydi iptal etme yolu kayit surerken de erisilebilir).
+$micBtn.Add_MouseUp({
+    param($sender, $mouseEvent)
+    if ($mouseEvent.Button -eq [System.Windows.Forms.MouseButtons]::Right) { Show-MicMenu }
+})
+$micUse.Add_Click({
+    if ($script:micRecording) { Complete-MicrophoneCapture }
+    else { Start-MicrophoneCapture }
+})
+$micCancel.Add_Click({
+    if ($script:micRecording) { Cancel-MicrophoneCapture }
+    else { $micMenu.Close() }
+})
 
 function New-Chip([string]$text, [bool]$isChecked) {
     $c = New-Object System.Windows.Forms.CheckBox
@@ -1344,6 +1373,7 @@ function Reset-CurrentTurnImageState {
     $script:currentTurnHasImage = $false
     $script:currentTurnImagePaths = @()
     $script:currentTurnMultiImageOcr = $false
+    $script:currentTurnAudioPaths = @()
 }
 
 function Update-AttachmentBadge {
@@ -1416,10 +1446,9 @@ function Pick-AudioFile {
 }
 # Mikrofon kaydi (bagimliliksiz): winmm mciSendString ile kaydeder. `open new type waveaudio`
 # Windows VARSAYILAN kayit cihazini (WAVE_MAPPER) kullanir — cihaz secimi gerekmez.
-# Toggle: ilk basista kayit baslar, ikinci basista durur; WAV ses eki olarak eklenir ve
-# otomatik gonderilir (dökum + dil modeli yaniti). Kayit formati cihazin varsayilanidir;
-# qwen3-asr-tools.py bunu 16 kHz mono WAV'a cevirip Qwen3-ASR ile dökumler.
-function Start-MicrophoneCapture {
+# Kayit formati cihazin varsayilanidir; qwen3-asr-tools.py bunu 16 kHz mono WAV'a cevirip
+# Qwen3-ASR ile dökumler. Kayit bitince WAV ses eki olarak eklenir ve otomatik gonderilir.
+function Add-MamidMciType {
     if (-not ([System.Management.Automation.PSTypeName]'MamidMci').Type) {
         Add-Type @'
 using System; using System.Text; using System.Runtime.InteropServices;
@@ -1428,28 +1457,11 @@ public static class MamidMci {
 }
 '@
     }
+}
+function Start-MicrophoneCapture {
+    if ($script:micRecording) { return }
+    Add-MamidMciType
     $alias = 'mamidmic'
-    if ($script:micRecording) {
-        try {
-            [void][MamidMci]::mciSendString("stop $alias", $null, 0, [IntPtr]::Zero)
-            $dir = Join-Path $root 'outputs\input'
-            if (!(Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-            $wav = Join-Path $dir ('mikrofon-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.wav')
-            [void][MamidMci]::mciSendString('save ' + $alias + ' "' + $wav + '"', $null, 0, [IntPtr]::Zero)
-            [void][MamidMci]::mciSendString("close $alias", $null, 0, [IntPtr]::Zero)
-        } finally {
-            $script:micRecording = $false
-            $micBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 64, 76)
-        }
-        if (Test-Path -LiteralPath $wav -PathType Leaf) {
-            Add-SelectedAudio $wav
-            $metric.Text = 'Mikrofon kaydı eklendi; dökumleniyor…'
-            if (!$script:busy -and !$script:pendingSend -and !$script:imageBusy) { $send.PerformClick() }
-        } else {
-            $metric.Text = 'Mikrofon kaydı oluşmadı (cihaz yok ya da erişilemedi).'
-        }
-        return
-    }
     try {
         [void][MamidMci]::mciSendString("close $alias", $null, 0, [IntPtr]::Zero)
         $openCode = [MamidMci]::mciSendString("open new type waveaudio alias $alias", $null, 0, [IntPtr]::Zero)
@@ -1458,11 +1470,48 @@ public static class MamidMci {
         if ($recCode -ne 0) { throw ('mci record: ' + $recCode) }
         $script:micRecording = $true
         $micBtn.BackColor = [System.Drawing.Color]::FromArgb(180, 60, 60)
-        $metric.Text = 'Kayıt başladı — bitirmek için mikrofon tuşuna tekrar bas.'
+        $metric.Text = 'Kayıt başladı — bitirip göndermek için mikrofon tuşuna bas.'
     } catch {
         $script:micRecording = $false
         $metric.Text = 'Mikrofon açılamadı: ' + $_.Exception.Message
     }
+}
+# Kaydi durdurur. $discard ise dosya KAYDEDILMEZ (iptal): cihaz kapatilir, durum sifirlanir.
+# Kayit yoksa $null doner; aksi halde olusturulacak WAV yolunu dondurur (dosya var olmayabilir).
+function Stop-MicrophoneCapture([switch]$discard) {
+    if (!$script:micRecording) { return $null }
+    Add-MamidMciType
+    $alias = 'mamidmic'
+    $wav = $null
+    try {
+        [void][MamidMci]::mciSendString("stop $alias", $null, 0, [IntPtr]::Zero)
+        $dir = Join-Path $root 'outputs\input'
+        if (!(Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $wav = Join-Path $dir ('mikrofon-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.wav')
+        if (!$discard) { [void][MamidMci]::mciSendString('save ' + $alias + ' "' + $wav + '"', $null, 0, [IntPtr]::Zero) }
+        [void][MamidMci]::mciSendString("close $alias", $null, 0, [IntPtr]::Zero)
+    } finally {
+        $script:micRecording = $false
+        $micBtn.BackColor = [System.Drawing.Color]::FromArgb(60, 64, 76)
+    }
+    return $wav
+}
+# Kaydi bitirir, ses eki olarak ekler ve (mesgul degilse) gonderir.
+function Complete-MicrophoneCapture {
+    $wav = Stop-MicrophoneCapture
+    if ($wav -and (Test-Path -LiteralPath $wav -PathType Leaf)) {
+        Add-SelectedAudio $wav
+        $metric.Text = 'Mikrofon kaydı eklendi; dökumleniyor…'
+        if (!$script:busy -and !$script:pendingSend -and !$script:imageBusy) { $send.PerformClick() }
+    } else {
+        $metric.Text = 'Mikrofon kaydı oluşmadı (cihaz yok ya da erişilemedi).'
+    }
+}
+# Kaydi iptal eder: durdurur, dosyayi siler; hicbir sey gonderilmez.
+function Cancel-MicrophoneCapture {
+    $wav = Stop-MicrophoneCapture -discard
+    if ($wav -and (Test-Path -LiteralPath $wav -PathType Leaf)) { Remove-Item -LiteralPath $wav -Force -ErrorAction SilentlyContinue }
+    $metric.Text = 'Mikrofon kaydı iptal edildi.'
 }
 function Add-SelectedFile([string]$path) {
     if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
@@ -1671,6 +1720,27 @@ function Update-ModelSwitch {
         try { $script:switchProcess = Invoke-Manage $change.action $change.profile $change.modelId }
         catch { $script:modelSwitchError = 'Model işlemi başlatılamadı: ' + $_.Exception.Message }
     }
+}
+
+# Ses eki olan bir tur, dil modeli hazir olmadan gonderilirse: sureen model yuklemesinden
+# VAZGECILIR (islem oldurulur, bekleyen secim temizlenir) ki isci ASR icin VRAM'i hemen
+# bosaltabilsin. Dökumden sonra dil modeli arka planda geri yuklenir (isci yapar). Oldurulen
+# surecin hata kodunu "Model islemi basarisiz" diye gostermemek icin once alanlar sifirlanir.
+function Stop-ModelSwitchForAudio {
+    if ($script:pendingModelChange) { $script:pendingModelChange = $null }
+    if ($script:switchProcess) {
+        try {
+            if (!$script:switchProcess.HasExited) {
+                $script:switchProcess.Kill($true)
+                $script:switchProcess.WaitForExit(5000) | Out-Null
+            }
+        } catch { }
+        try { $script:switchProcess.Dispose() } catch { }
+        $script:switchProcess = $null
+    }
+    $script:modelSwitchError = $null
+    $script:modelReady = $false
+    $script:activeModel = $null
 }
 
 function Cancel-Generation {
@@ -2266,11 +2336,22 @@ function Estimate-ContextTokens {
 }
 
 function Begin-Generation {
-    if ($script:busy -or $script:imageBusy -or !$script:pendingSend -or ($script:providerId -eq 'local' -and !$script:modelReady)) { return }
+    if ($script:busy -or $script:imageBusy -or !$script:pendingSend) { return }
+    # Ses eki olan tur, dil modeli hazir olmasa da HEMEN baslatilir: isci ASR icin modeli
+    # bosaltir, dökumu alir, sonra modeli geri yukler. Boylece sureen model yuklemesinden
+    # vazgecilir ve ses (ASR) oncelikli islenir. Ses yoksa eski davranis korunur: model
+    # hazir olana kadar beklenir.
+    $turnAudio = @($script:currentTurnAudioPaths | Where-Object { $_ })
+    if ($script:providerId -eq 'local' -and !$script:modelReady) {
+        if ($turnAudio.Count -eq 0) { return }
+        Stop-ModelSwitchForAudio
+    }
     $script:pendingSend = $false
     Stop-BackgroundCompaction
     $turnHasImage = [bool]$script:currentTurnHasImage
-    $profile = Get-ProfileFromAlias $script:activeModel
+    # Model yuklenirken aktif alias henuz yok olabilir (ses turu yuklemeyi gecersiz kildi);
+    # o durumda SECILI profile gore geri yukleme yap ki yanlis profil baslatilmasin.
+    $profile = Get-ProfileFromAlias $(if ($script:activeModel) { $script:activeModel } else { Get-SelectedLocalAlias })
     $jobMessages = Build-JobMessages
     # Bilesen kurulu mu? Gorsel/video uretimi ve coklu-gorsel OCR yalnizca ilgili bilesen
     # kuruluysa (ya da gorsel/video bir API saglayicisindan geliyorsa) sunulur. Aksi halde
@@ -2362,6 +2443,8 @@ function Begin-Generation {
         $script:currentTurnHasImage = $false
         $script:currentTurnImagePaths = @()
         $script:currentTurnMultiImageOcr = $false
+        # Ses yollari isciye tasindi; bir sonraki tur bunlari "yeni ses" sanmamali.
+        $script:currentTurnAudioPaths = @()
         $script:busy = $true
         $send.Text = 'Durdur'
         $metric.Text = 'Düşünüyor…'
@@ -2749,6 +2832,16 @@ function Show-MultiImageOcrNotice {
 }
 
 $send.Add_Click({
+    # Kayit surerken Gönder'e basmak kaydi bitirir; asagidaki normal akis sesi de gonderir.
+    if ($script:micRecording) {
+        $micWav = Stop-MicrophoneCapture
+        if ($micWav -and (Test-Path -LiteralPath $micWav -PathType Leaf)) {
+            Add-SelectedAudio $micWav
+            $metric.Text = 'Mikrofon kaydı eklendi; dökumleniyor…'
+        } else {
+            $metric.Text = 'Mikrofon kaydı oluşmadı (cihaz yok ya da erişilemedi).'
+        }
+    }
     if ($script:imageBusy) { if($script:sharedMedia){Cancel-Generation}; return }
     if ($script:busy -or $script:pendingSend) { Cancel-Generation; return }
     $text = Get-PromptText
@@ -2846,7 +2939,8 @@ $send.Add_Click({
     $clearImage.Visible = $false
     $script:pendingSend = $true
     $send.Text = 'Durdur'
-    if ($script:modelReady -or $script:providerId -ne 'local') { Begin-Generation }
+    # Ses eki varsa model hazir olmasa da hemen baslatilir (ASR model yuklemesini gecersiz kilar).
+    if ($script:modelReady -or $script:providerId -ne 'local' -or $script:currentTurnAudioPaths.Count -gt 0) { Begin-Generation }
     else { $metric.Text = 'Model yükleniyor… Mesaj hazır olunca gönderilecek.' }
 })
 

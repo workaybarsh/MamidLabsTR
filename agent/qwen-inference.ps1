@@ -331,6 +331,9 @@ function Start-LocalModelRestore([string]$profile) {
 function Wait-LocalModelReady {
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     while ([DateTime]::UtcNow -lt $deadline) {
+        # Kullanici durdurduysa model yuklemesini beklemeyi birak; model zaten arka planda
+        # (ayri surecte) yuklenir, arayuz hazir olunca gorur. Boylece "Durdur" gecikmez.
+        if ($Shared.Cancel) { return }
         try {
             $health = Invoke-RestMethod 'http://127.0.0.1:8080/health' -TimeoutSec 2 -ErrorAction Stop
             if ($health.status -eq 'ok') { return }
@@ -373,7 +376,7 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
             Start-LocalModelRestore ([string]$JobData.profile)
             if ($waitForRestore) {
                 Wait-LocalModelReady
-                Emit 'status' 'Dil modeli OCR sonrasinda yeniden yuklendi; yanit hazirlaniyor...' | Out-Null
+                if (!$Shared.Cancel) { Emit 'status' 'Dil modeli OCR sonrasinda yeniden yuklendi; yanit hazirlaniyor...' | Out-Null }
             }
         } catch {
             # OCR sonucu yine de kullaniciya ulassin; model hazirlik durumu
@@ -393,6 +396,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     $swapModel = ($provider -eq 'local')
     $resp = $null
     $err = $null
+    # Kullanici gonderimden hemen sonra durdurduysa hic baslamadan cik.
+    if ($Shared.Cancel) { throw [OperationCanceledException]::new() }
     if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Ses dosyasi bulunamadi.' }
     if ($swapModel) {
         Emit 'status' 'Dil modeli RAM''e aliniyor; transkripsiyon icin VRAM bosaltiliyor…' | Out-Null
@@ -419,12 +424,14 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
             Start-LocalModelRestore ([string]$JobData.profile)
             if ($waitForRestore) {
                 Wait-LocalModelReady
-                Emit 'status' 'Dil modeli geri yüklendi; yanıt hazırlanıyor...' | Out-Null
+                # Durdurulduysa modeli beklemeyi biraktik; "hazir" demek yaniltir.
+                if (!$Shared.Cancel) { Emit 'status' 'Dil modeli geri yüklendi; yanıt hazırlanıyor...' | Out-Null }
             }
         } catch {
             Emit 'status' "Transkripsiyon tamamlandı; dil modeli geri başlatılamadı: $($_.Exception.Message)" | Out-Null
         }
     }
+    if ($Shared.Cancel) { throw [OperationCanceledException]::new() }
     if ($err) { throw $err }
     return $resp
 }
@@ -1358,6 +1365,7 @@ try {
     # OCR'den farkli olarak niyet aranmaz: ses eklenince her zaman tetiklenir.
     $currentAudioPaths = @($JobData.currentAudioPaths | Where-Object { $_ })
     if ($currentAudioPaths.Count -gt 0) {
+        if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
         $audioPath = [string]$currentAudioPaths[0]
         try {
             Emit 'status' 'Eklenen ses dökumleniyor (Qwen3-ASR)…'
@@ -1376,6 +1384,8 @@ try {
                 Emit 'status' "Ses dökumlenemedi; istek dökumsuz sürüyor. $reason"
             }
         } catch {
+            # Durdurma sirasinda olusan istisna hata degil, iptaldir.
+            if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
             Emit 'status' ("Ses dökumlenemedi; istek dökumsuz sürüyor. " + $_.Exception.Message)
         }
     }

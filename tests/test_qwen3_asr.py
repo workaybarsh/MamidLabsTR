@@ -89,13 +89,21 @@ def test_desktop_pipes_audio_to_worker_and_shows_transcript():
 def test_microphone_capture_uses_default_device_via_mci():
     """Mikrofon kaydi bagimliliksiz: winmm mciSendString. `open new type waveaudio` Windows
     VARSAYILAN kayit cihazini (WAVE_MAPPER) kullanir - cihaz secimi/hardcode yok. Kayit
-    toggle ile baslar/durur ve ses eki olarak eklenip otomatik gonderilir."""
+    baslar; bitirince ses eki olarak eklenip otomatik gonderilir; iptal edilebilir."""
     desktop = read_text("qwen-desktop.ps1")
     assert "function Start-MicrophoneCapture" in desktop
     assert "mciSendString" in desktop
     assert "open new type waveaudio alias" in desktop  # WAVE_MAPPER = default device
     assert "Add-SelectedAudio" in desktop
     assert "script:micRecording" in desktop
+    # Durdur/iptal/gonder ayrimi.
+    assert "function Stop-MicrophoneCapture" in desktop
+    assert "function Complete-MicrophoneCapture" in desktop
+    assert "function Cancel-MicrophoneCapture" in desktop
+    # Kirmizi mikrofon (kayit surerken) tiklamasi bitir+gonder; menu "iptal et" kaydi atar.
+    assert "$micBtn.Add_Click({" in desktop and "Complete-MicrophoneCapture" in desktop
+    assert "$micCancel.Add_Click({" in desktop and "Cancel-MicrophoneCapture" in desktop
+    assert "$micBtn.Add_MouseUp({" in desktop  # sag tik: kayit surerken de iptal menusu
 
 
 def test_transcription_uses_model_swap_for_local_provider():
@@ -108,6 +116,32 @@ def test_transcription_uses_model_swap_for_local_provider():
     assert "Get-AsrPyPath" in block
     # CUDA once, sonra CPU yedegi.
     assert "@('cuda', 'cpu')" in block
+
+
+def test_transcription_honors_cancel_and_stop_does_not_wait_for_restore():
+    """Ses gonderildikten sonra 'Durdur' düzgün çalışmalı: transkripsiyon ve model geri yükleme
+    beklemesi iptal bayrağını dikkate alır; arayüz uzun süre 'Durduruluyor' da kalmaz."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "$Shared.Cancel" in block
+    wait = worker.split("function Wait-LocalModelReady")[1].split("function ")[0]
+    assert "if ($Shared.Cancel) { return }" in wait
+    # Iptal sirasinda "hazir" mesaji yaniltmaz.
+    assert "if (!$Shared.Cancel) { Emit 'status' 'Dil modeli geri yüklendi" in block
+    # Cagiran taraf iptali hata gibi gostermez.
+    caller = worker.split("$currentAudioPaths = @($JobData.currentAudioPaths")[1].split("Otomatik baglam")[0]
+    assert "Emit 'cancelled'" in caller
+
+
+def test_audio_turn_preempts_language_model_loading():
+    """Ses atildiginda dil modeli yukleniyorsa yuklemeden vazgecilir ve ASR oncelikli calisir;
+    dökumden sonra dil modeli geri gelir. Arayuz ses turunda hemen baslatir."""
+    desktop = read_text("qwen-desktop.ps1")
+    assert "function Stop-ModelSwitchForAudio" in desktop
+    begin = desktop.split("function Begin-Generation {")[1].split("function Set-LastUserImage")[0]
+    assert "$turnAudio" in begin and "Stop-ModelSwitchForAudio" in begin
+    send = desktop.split("$send.Add_Click({")[1].split("$promptBox.Add_KeyDown")[0]
+    assert "currentTurnAudioPaths.Count -gt 0" in send
 
 
 @pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")

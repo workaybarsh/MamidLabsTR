@@ -161,7 +161,10 @@ def test_desktop_resolves_profile_through_alias_helper():
 
     # Eski "-like '*-flash'" türetmesi üç yerde vardı; lite'ı max sanıyordu.
     assert "-like '*-flash'" not in desktop
-    assert desktop.count("Get-ProfileFromAlias $script:activeModel") == 3
+    assert desktop.count("Get-ProfileFromAlias") == 3
+    # Model yuklenirken (ornek: ses turu yuklemeyi gecersiz kildiginda) aktif alias henuz
+    # yok olabilir; o durumda SECILI profile dusulur (yanlis profil baslatilmaz).
+    assert "else { Get-SelectedLocalAlias }" in desktop
     assert "'builtin-lite' { 'lite'; break }" in desktop
 
 
