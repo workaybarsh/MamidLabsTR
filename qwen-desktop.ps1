@@ -377,6 +377,20 @@ function Convert-MathText([string]$text) {
         $s = $s -replace '\\sqrt\s*\{([^{}]*)\}', '√($1)'
         $s = $s -replace '\\boxed\s*\{([^{}]*)\}', '[ $1 ]'
     }
+    # Kimya (mhchem) ve fizik birimleri: \ce{...} / \pu{...} icerigini okunur hale getir.
+    # Oklar (<->, <=>, ->, <-) ve element sayilari (H2O -> H2O) yalnizca \ce icinde
+    # donusturulur; boylece kod bloklarindaki '->' gibi metinler bozulmaz.
+    $s = [regex]::Replace($s, '\\(?:ce|pu)\s*\{([^{}]*)\}', {
+        param($m)
+        $inner = $m.Groups[1].Value
+        $inner = $inner -replace '<=>', '⇌' -replace '<->', '↔' -replace '->', '→' -replace '<-', '←'
+        $inner = [regex]::Replace($inner, '(?<=[A-Za-z\)])(\d+)', {
+            param($d)
+            $r = Convert-ToSubscript $d.Groups[1].Value
+            if ($r) { $r } else { $d.Value }
+        })
+        return $inner
+    })
     # Metin sarmalayicilari icerigiyle degistir
     $s = $s -replace '\\(text|mathrm|mathbf|mathit|operatorname|mbox)\s*\{([^{}]*)\}', '$2'
     # Boyut/parantez komutlarini at
@@ -423,6 +437,20 @@ function Convert-MathText([string]$text) {
 \leftarrow=←
 \Rightarrow=⇒
 \Leftrightarrow=⇔
+\rightleftharpoons=⇌
+\leftrightharpoons=⇋
+\rightleftarrows=⇄
+\leftrightarrows=⇆
+\longleftrightarrow=⟷
+\Longleftrightarrow=⟺
+\Longrightarrow=⟹
+\implies=⟹
+\hookrightarrow=↪
+\hookleftarrow=↩
+\upharpoonright=↾
+\uparrow=↑
+\downarrow=↓
+\updownarrow=↕
 \mapsto=↦
 \notin=∉
 \in=∈

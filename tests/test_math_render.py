@@ -78,3 +78,25 @@ def test_plain_text_is_not_corrupted():
     out = run_convert(["Fiyat: 100 $ ve 200 $ (LaTeX yok)", "Merhaba dunya"])
     assert "Fiyat" in out
     assert "Merhaba dunya" in out
+
+
+def test_chemistry_symbols_and_mhchem_ce():
+    """Kimya: denge oku (\\rightleftharpoons -> ⇌) ve mhchem \\ce{...} icerigi okunur hale
+    gelir (element sayilari alt simge, oklar ok). Kod bloklarindaki '->' bozulmaz."""
+    out = run_convert([
+        r"A + B \rightleftharpoons C",
+        r"\ce{2H2 + O2 -> 2H2O}",
+        r"\ce{H2SO4}",
+    ])
+    assert "\u21cc" in out, "denge oku (⇌) yok"
+    assert "\u2082" in out and "\u2084" in out, "kimya alt simgeleri (₂, ₄) yok"
+    assert "\u2192" in out, "kimyasal ok (→) yok"
+    # \ce sarmalayicisi kalmamali
+    assert "\\ce" not in out
+
+
+def test_plain_arrow_outside_ce_is_not_converted():
+    """'->' yalnizca \\ce icinde oka cevrilir; kod/duz metin bozulmaz."""
+    out = run_convert(["sozluk a->b biciminde ve x <- y"])
+    assert "a->b" in out
+    assert "x <- y" in out
