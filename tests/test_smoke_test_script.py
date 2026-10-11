@@ -54,6 +54,17 @@ def test_ui_step_restores_settings_and_stops_the_server():
     assert "& $manage -Action stop" in script
 
 
+def test_smoke_test_has_ui_chat_step():
+    """Arayuzu KULLANICI gibi suren adim: yazi kutusuna yazar, Gonder'e basar ve yanit
+    geldigini dogrular (Gonder->Durdur->Gonder gecisi). Mevcut 'arayuz' adimi isciyi
+    dogrudan cagirir; bu adim arayuzun gercek kullanici yolunu sinar."""
+    script = read_text("scripts/smoke-test.ps1")
+    assert "Write-Section 'Arayuz sohbet" in script
+    assert "Report 'arayuz_sohbet'" in script
+    assert "ValuePattern" in script  # yazi kutusuna yazar
+    assert "0x00F5" in script        # BM_CLICK (Gonder)
+
+
 def test_smoke_test_closes_leftover_comfyui():
     """Gorsel/video adimlari ComfyUI'yi acik birakir; arayuz adimi uygulamayi Force ile
     oldurdugu icin Shutdown-All calismaz. Test sonunda (ve arayuz adiminin finally'sinde)

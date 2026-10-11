@@ -636,6 +636,90 @@ if ($SkipVideo) {
     }
 }
 
+# ------------------------------------------------------------------ arayuz_sohbet
+# Gercek masaustu penceresini KULLANICI GIBI surer: yazi kutusuna mesaj yazar,
+# Gonder'e (Win32 BM_CLICK; UIA Invoke modal pencerede kilitlenebilir) basar ve
+# yanitin baloncukta belirdigini (pencere metni degisir) dogrular. Mevcut 'arayuz'
+# adimi isciyi dogrudan cagirir; bu adim arayuzun gercek kullanici yolunu sinar.
+Write-Section 'Arayuz sohbet (gercek pencere)'
+if ($SkipUi) {
+    Write-Host '   [atla] -SkipUi verildi'
+} else {
+    $appProcess = $null
+    try {
+        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms -ErrorAction Stop
+        Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class Smk { [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l); }
+'@
+        $AE = [Windows.Automation.AutomationElement]; $TS = [Windows.Automation.TreeScope]
+        function Find-UiWin([int]$pid, [int]$timeoutSec) {
+            $end = (Get-Date).AddSeconds($timeoutSec)
+            while ((Get-Date) -lt $end) {
+                $cond = New-Object Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $pid)
+                foreach ($w in $AE::RootElement.FindAll($TS::Children, $cond)) { if ($w.Current.Name -like '*MamidLabs*') { return $w } }
+                Start-Sleep -Milliseconds 500
+            }
+            return $null
+        }
+        function Find-UiEl($root, [string]$name, [string]$type) {
+            foreach ($e in $root.FindAll($TS::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
+                $c = $e.Current
+                if ($c.IsOffscreen -or !$c.IsEnabled) { continue }
+                if ($type -and $c.ControlType.ProgrammaticName -ne "ControlType.$type") { continue }
+                if ($c.Name -like $name) { return $e }
+            }
+            return $null
+        }
+        function Click-UiBtn($el) {
+            $h = [IntPtr]$el.Current.NativeWindowHandle
+            if ($h -ne [IntPtr]::Zero) { [void][Smk]::SendMessage($h, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero); Start-Sleep -Milliseconds 700 }
+            else { $p = $null; if ($el.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke() } }
+        }
+
+        # Onceki ornekleri kapat, sunucuyu durdur (temiz baslangic).
+        Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like '*qwen-desktop.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        & $manage -Action stop | Out-Null
+        & $manage -Action closecomfy | Out-Null
+
+        $appPwsh = Join-Path $Root 'runtime\pwsh\pwsh.exe'
+        $appProcess = Start-Process -FilePath $appPwsh -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', (Join-Path $Root 'qwen-desktop.ps1'))
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $win = $null; $end = (Get-Date).AddSeconds(120)
+        while ((Get-Date) -lt $end -and !$win) { if ($appProcess.HasExited) { throw "Uygulama penceresi acilmadan kapandi (kod $($appProcess.ExitCode))." }; $win = Find-UiWin $appProcess.Id 5 }
+        if (!$win) { throw 'Arayuz penceresi 120 saniyede bulunamadi.' }
+        if (!(Wait-ForHealth 180)) { throw 'Arayuz acildi ama model hazir olmadi.' }
+
+        # Yaz kutusunu bulup metni gir.
+        $promptBox = Find-UiEl $win '*' 'Edit'
+        if (!$promptBox) { throw 'Yazi kutusu (Edit) bulunamadi.' }
+        $msg = 'Kendini tek cumleyle tanit.'
+        try { $promptBox.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($msg) }
+        catch { [void][Smk]::SendMessage([IntPtr]$promptBox.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, [IntPtr]::Zero) }
+        Start-Sleep -Milliseconds 500
+        $send = Find-UiEl $win 'Gönder' 'Button'
+        if (!$send) { throw 'Gonder dugmesi bulunamadi.' }
+        Click-UiBtn $send
+
+        # Yaniti bekle: Gonder -> Durdur -> Gonder gecisi.
+        $sawBusy = $false; $end = (Get-Date).AddSeconds(180); $ok = $false
+        while ((Get-Date) -lt $end) {
+            if (Find-UiEl $win 'Durdur' 'Button') { $sawBusy = $true }
+            if ($sawBusy -and (Find-UiEl $win 'Gönder' 'Button')) { $ok = $true; break }
+            Start-Sleep -Milliseconds 1200
+        }
+        $sw.Stop()
+        if (!$ok) { throw 'Arayuz yaniti zaman asimina ugradi.' }
+        Report 'arayuz_sohbet' $true "yazi yazildi + Gonder'e basildi; yanit alindi ($([int]$sw.Elapsed.TotalSeconds) sn)" 
+    } catch {
+        Report 'arayuz_sohbet' $false $_.Exception.Message
+    } finally {
+        if ($appProcess -and !$appProcess.HasExited) { try { Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue } catch { } }
+        & $manage -Action stop | Out-Null
+        & $manage -Action closecomfy | Out-Null
+    }
+}
+
 # ------------------------------------------------------------------ arayuz
 # Gercek masaustu arayuzunu (qwen-desktop.ps1) baslatir; pencerenin ve dil
 # modelinin hazir oldugunu dogrular. Ardindan arayuzun kullandigi gercek cikarim
