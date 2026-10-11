@@ -347,10 +347,13 @@ python -m pytest -q          # ~320 test, ~115 sn; ek ayar gerekmez (tests/conft
   (sohbeti kaydet → yeniden yükle → devam et; hata yok), `mtp` (sunucu `draft-mtp` ile başlatıldıysa
   `/completion` yanıtının `timings.draft_n_accepted` değeri >0 olmalı; 0 ise başlık işlevsizdir;
   `-SkipMtp` ile atlanır), `ocr`, `gorsel`, `duzenleme`,
-  `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`, `arayuz` (gerçek
+  `medya_sonrasi_gecis` (görselden sonra hız oranı ≥ 0,7 olmalı), `video`, `arayuz_sohbet` (gerçek
+  pencereyi kullanıcı gibi sürer: yazı kutusuna yazar + Gönder'e basar, yanıt gelmeli), `arayuz` (gerçek
   masaüstü uygulamasını başlatır; pencere + model hazır olmalı, arayüzün kullandığı gerçek işçiyle
   bir tur atıp "sunucu kapatıldı"/watchdog metni olmadan yanıt üretmeli ve MTP çalışmalı;
   `-SkipUi` ile atlanır). `arayuz` en sonda çalışır çünkü uygulama kapanınca sunucuyu durdurur.
+  Sesli giriş (ses dökümü) `/completion` ile değil, gerçek işçide `transcript` olayıyla ve
+  `tests/test_whisper_tools.py` ile doğrulanır.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
 
