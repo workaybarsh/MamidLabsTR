@@ -33,7 +33,7 @@ function Get-OfficePyPath { Join-Path (Get-InstallRoot) 'agent\office-tools.py' 
 function Get-OcrPyPath { Join-Path (Get-InstallRoot) 'agent\ocr-tools.py' }
 function Get-OcrPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr\Scripts\python.exe' }
 function Get-OcrCpuPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr-cpu\Scripts\python.exe' }
-function Get-WhisperPyPath { Join-Path (Get-InstallRoot) 'agent\whisper-tools.py' }
+function Get-AsrPyPath { Join-Path (Get-InstallRoot) 'agent\qwen3-asr-tools.py' }
 function Get-MediaPythonExe { Join-Path (Get-InstallRoot) 'venv\imagegen\Scripts\python.exe' }
 function Get-ManageQwenPath { Join-Path (Get-InstallRoot) 'scripts\manage-qwen.ps1' }
 function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
@@ -385,10 +385,10 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
     return $ocrResponse
 }
 
-# Ses transkripsiyonu (whisper.cpp). OCR ile ayni desen: yerel saglayicida dil modeli
-# VRAM'den bosaltilir (GPU whisper'a kalir), dökum alinir, model geri yuklenir. Olculdu:
-# turbo-q5_0 GPU'da ~1-3 sn (2 dk ses), CPU'da ~53 sn. GPU denemesi basarisiz olursa
-# (surucu/VRAM) CPU'ya duser; transkript her durumda kullaniciya ulasir.
+# Ses transkripsiyonu (Qwen3-ASR-1.7B). OCR ile ayni desen: yerel saglayicida dil modeli
+# VRAM'den bosaltilir (GPU ses modeline kalir), dökum alinir, model geri yuklenir. Tek motor:
+# Qwen3-ASR (cok dilli; 52 dil, Türkce dahil; konusma + sarki/BGM). GPU onerilir; GPU yoksa
+# CPU'ya duser (yavas). Transkript her durumda kullaniciya ulasir.
 function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $true) {
     $swapModel = ($provider -eq 'local')
     $resp = $null
@@ -399,23 +399,18 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         try { & (Get-ManageQwenPath) -Action stop | Out-Null; Wait-LocalModelStopped } catch { $err = $_ }
     }
     if (!$err) {
-        $whisperPy = Get-WhisperPyPath; $mediaPy = Get-MediaPythonExe
+        $asrPy = Get-AsrPyPath; $mediaPy = Get-MediaPythonExe
         $payloadBase = @{ action = 'transcribe'; path = $path; language = 'auto' }
-        # Kalite: 'high' ise large-v3 (en yuksek dogruluk, daha yavas); aksi halde turbo-q5_0.
-        if ([string]$JobData.audioQuality -eq 'high') {
-            $modelPath = Join-Path (Get-InstallRoot) 'models\whisper\ggml-large-v3.bin'
-            if (Test-Path -LiteralPath $modelPath -PathType Leaf) { $payloadBase.model = $modelPath }
-        }
-        foreach ($device in @('gpu', 'cpu')) {
+        foreach ($device in @('cuda', 'cpu')) {
             try {
-                Emit 'status' ("Ses whisper.cpp ile yaziya cevriliyor (" + $device + ")…") | Out-Null
-                $candidate = Invoke-PythonTool ($payloadBase + @{ device = $device }) $whisperPy $mediaPy
+                Emit 'status' ("Ses Qwen3-ASR ile yaziya cevriliyor (" + $device + ")…") | Out-Null
+                $candidate = Invoke-PythonTool ($payloadBase + @{ device = $device }) $asrPy $mediaPy
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null; break }
                 if ($parsed -and $parsed.error) { $err = [Exception]::new([string]$parsed.error) } else { $err = [Exception]::new([string]$candidate) }
             } catch { $err = $_ }
-            if ($device -eq 'gpu') { Emit 'status' 'GPU ile transkripsiyon basarisiz; CPU ile deneniyor…' | Out-Null }
+            if ($device -eq 'cuda') { Emit 'status' 'GPU ile transkripsiyon basarisiz; CPU ile deneniyor…' | Out-Null }
         }
     }
     if ($swapModel) {
@@ -1365,7 +1360,7 @@ try {
     if ($currentAudioPaths.Count -gt 0) {
         $audioPath = [string]$currentAudioPaths[0]
         try {
-            Emit 'status' 'Eklenen ses dökumleniyor (whisper.cpp)…'
+            Emit 'status' 'Eklenen ses dökumleniyor (Qwen3-ASR)…'
             $trResponse = Invoke-TranscribeWithModelSwap $audioPath
             $tr = $null
             try { $tr = $trResponse | ConvertFrom-Json -ErrorAction Stop } catch { }

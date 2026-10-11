@@ -331,8 +331,6 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
-  - Ses dökum kalitesi: `audioQuality` (`normal` = turbo-q5_0, hızlı; `high` = large-v3, en
-    yüksek doğruluk, ~2x yavaş; varsayılan `normal`). Mikrofon menüsündeki onay kutusu yönetir.
   - Medya: `comfyKeepAlive` (varsayılan `false`; ComfyUI yalnızca medya üretiminde çalışır, boşta VRAM/RAM tutmaz; `true` ile LITE'ta medya işleri arasında açık kalır, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
@@ -361,7 +359,8 @@ python -m pytest -q          # ~320 test, ~115 sn; ek ayar gerekmez (tests/conft
   bir tur atıp "sunucu kapatıldı"/watchdog metni olmadan yanıt üretmeli ve MTP çalışmalı;
   `-SkipUi` ile atlanır). `arayuz` en sonda çalışır çünkü uygulama kapanınca sunucuyu durdurur.
   Sesli giriş (ses dökümü) `/completion` ile değil, gerçek işçide `transcript` olayıyla ve
-  `tests/test_whisper_tools.py` ile doğrulanır.
+  `tests/test_qwen3_asr.py` ile doğrulanır. Motor **Qwen3-ASR-1.7B** (`agent/qwen3-asr-tools.py`,
+  `models\qwen3-asr`); LLM tabanlıdır, imagegen venv'inde (torch + transformers) çalışır.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
 
@@ -488,6 +487,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-11 | **Ses dökum motoru whisper.cpp'den Qwen3-ASR-1.7B'ye taşındı** (whisper tamamen kaldırıldı). Yeni işçi `agent/qwen3-asr-tools.py` (imagegen venv'i: torch cu130 + transformers 5.x; PyAV ile 16 kHz mono float32 numpy — librosa/soundfile gerekmez; `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE` ile çevrimdışı). 52 dil + **Türkçe**, konuşma + şarkı/BGM; gerçek sesle doğrulandı (LibriSpeech: birebir doğru, GPU). Kurulumda `whisper` aşaması → **`asr`** (model `models\qwen3-asr`'a HF'den boyut doğrulamalı iner); `verify` kontrolü ve arayüz metinleri güncellendi. `Invoke-TranscribeWithModelSwap` artık `cuda→cpu` deniyor; mikrofon menüsündeki kalite toggle'ı (audioQuality) kaldırıldı (tek motor). Test dosyası `tests/test_whisper_tools.py` → `tests/test_qwen3_asr.py`. | agent/qwen3-asr-tools.py, agent/qwen-inference.ps1, qwen-desktop.ps1, scripts/install-mamidlabs.ps1, tests/test_qwen3_asr.py, tests/test_installer_pinning.py |
 | 2026-10-11 | 1.0.0 yayın kapısı, ses/mikrofon değişikliklerinden **sonra** yeniden doğrulandı: **MAX smoke 14/14**, **LITE smoke 13/13** (+1 beklenen atlama: `duzenleme`, 8 GB'ta desteklenmiyor), pytest **TR 332 / ENG 331**, setup TR/ENG derlendi (`MamidLabs_Setup.exe`). Ölçüm: MAX 43,1→47,7 tok/s (medya sonrası oran 1,11), LITE 95,8→92,9 tok/s (oran 0,97), ikisinde de ComfyUI kapalı; arayüz turu MTP 23/23. | AGENTS.md |
 | 2026-10-11 | whisper.cpp kurulum kusuru düzeltildi: arşiv `Release` alt klasörüne açıldığından "whisper-cli.exe zaten kurulu" atlama koşulu hiç tutmuyordu ve her kurulumda **662 MB ikili yeniden iniyordu**; artık `whisper-cli.exe` özyinelemeli aranıyor. | scripts/install-mamidlabs.ps1, tests/test_installer_pinning.py |
 | 2026-10-11 | Ses yakalama kalitesi seçilebilir yapıldı: mikrofon menüsüne **"Yüksek kalite (large-v3)"** onay kutusu (toggle). İşaretsiz = normal (turbo-q5_0, hızlı), işaretli = yüksek (large-v3, en yüksek doğruluk, ~2x yavaş). Seçim `settings\api.json` → `audioQuality` olarak saklanır ve işçi dökumde açık model yolunu whisper'a geçirir. Kurulum artık **her iki modeli** de indirir (turbo-q5_0 + large-v3 + VAD); aksi halde yüksek kalite sıfırdan kurulumda sessizce turbo'ya düşüyordu. | qwen-desktop.ps1, agent/qwen-inference.ps1, scripts/install-mamidlabs.ps1, tests/test_whisper_tools.py |

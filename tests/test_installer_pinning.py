@@ -22,11 +22,14 @@ def test_runtime_packages_carry_source_and_verified_size():
     assert "Dosya silindi, tekrar calistir." in installer
 
 
-def test_whisper_binary_skip_detects_release_subfolder():
-    """whisper ikilileri arsivde 'Release' alt klasorune acilir. Skip kosulu ozyinelemeli
-    aramali; dogrudan yola bakarsa hic tutmaz ve her kurulumda 662 MB ikili yeniden iner."""
+def test_installer_downloads_qwen3_asr_model_files():
+    """Ses dökum motoru Qwen3-ASR'dir. Kurulum model dosyalarini HF'den boyutla dogrulayarak
+    indirir (whisper ikilileri/modeli kaldirildi)."""
     installer = read_text("scripts/install-mamidlabs.ps1")
-    assert "Get-ChildItem -LiteralPath $target -Recurse -Filter 'whisper-cli.exe'" in installer
+    assert "Qwen/Qwen3-ASR-1.7B-hf" in installer
+    assert "models\\qwen3-asr" in installer
+    assert "'model.safetensors'" in installer
+    assert "asr       = { Invoke-Asr }" in installer
 
 
 def test_comfyui_clone_is_pinned_to_a_specific_commit_not_a_floating_branch():

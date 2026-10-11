@@ -21,14 +21,12 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   birlikte çalışır (ölçüldü 61-62 tok/s); kaçak/mükerrer örnek yükleme öncesi temizlenir.
 - **Belge ve OCR:** PDF/Word/Excel/PowerPoint/ZIP/RAR okuma, PDF/DOCX/PPTX üretimi; PaddleOCR ile
   görsel ve PDF OCR.
-- **Ses dökümü (whisper.cpp):** sohbete eklenen ses dosyası otomatik yazıya çevrilir ve bulgular dil
-  modeline verilir (OCR/mmproj mantığı). Model **large-v3-turbo-q5_0 + Silero VAD** (halüsinasyon
-  bastırılır). Ölçüm: 2 dk ses CPU ~53 sn, GPU (CUDA) ~2,5 sn. Yerel sağlayıcıda dil modeli VRAM'den
-  boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu (**Windows
-  varsayılan kayıt cihazından canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde **Ses ekle**.
-  Mikrofon menüsünden **ses yakalama kalitesi** seçilir: **Normal** (turbo-q5_0, hızlı) /
-  **Yüksek kalite (large-v3)** (**en yüksek doğruluk**, ~2x yavaş). Kurulum iki modeli birlikte
-  indirir, böylece seçenek sıfırdan kurulumda da çalışır.
+- **Ses dökümü (Qwen3-ASR-1.7B):** sohbete eklenen ses dosyası otomatik yazıya çevrilir ve bulgular
+  dil modeline verilir (OCR/mmproj mantığı). Motor **Qwen3-ASR**: 52 dil + **Türkçe**; konuşma,
+  şarkı ve fon müzikli kayıtlar; GPU'da hızlı (yoksa CPU'ya düşer). Yerel sağlayıcıda dil modeli
+  VRAM'den boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu
+  (**Windows varsayılan kayıt cihazından canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde
+  **Ses ekle**. Model kurulumda `models\qwen3-asr` altına indirilir.
 - **Sağlayıcı maksimum bağlam otomatik algılama:** API anahtarı doğrulanınca modelin bağlam penceresi
   uçtan okunup otomatik uygulanır (ör. commandcode 1.000.000).
 - **Bağımsız grafik üretimi:** `generate_chart` sohbet aracı + `agent/chart-run.ps1` (gömülü pwsh +

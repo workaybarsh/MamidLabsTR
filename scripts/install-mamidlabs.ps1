@@ -46,7 +46,7 @@ if (!$Source) { $Source = Split-Path -Parent $PSScriptRoot }
 # yazilir; uninstall-mamidlabs.ps1 koku sildiginde geride iz kalmaz.
 $env:PIP_CACHE_DIR = Join-Path $Root 'tools\pip-cache'
 
-$script:KnownStages = @('all', 'preflight', 'layout', 'runtime', 'llama', 'whisper', 'python', 'comfyui', 'verify')
+$script:KnownStages = @('all', 'preflight', 'layout', 'runtime', 'llama', 'asr', 'python', 'comfyui', 'verify')
 $Stage = @($Stage | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 if (!$Stage) { $Stage = @('all') }
 $unknown = @($Stage | Where-Object { $script:KnownStages -notcontains $_ })
@@ -71,26 +71,19 @@ $script:Packages = @{
         url = 'https://github.com/ggml-org/llama.cpp/releases/download/b10998/cudart-llama-bin-win-cuda-13.4-x64.zip'
         file = 'cudart-llama-bin-win-cuda-13.4-x64.zip'; bytes = 423535356
     }
-    # whisper.cpp (ses dökum). CPU + CUDA ikilileri ayni klasore acilir; CUDA DLL'leri
-    # yaninda gelir. Ikili surumu bir GitHub etiketiyle sabitlenir.
-    whisperCuda = @{
-        url = 'https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cuda-12.4.0-x64.zip'
-        file = 'whisper-bin-win-cuda-12.4.0-x64.zip'; bytes = 684913404
-    }
-    whisperCpu = @{
-        url = 'https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip'
-        file = 'whisper-bin-x64.zip'; bytes = 8928640
-    }
 }
-# whisper.cpp ikili surumu ve model dosyalari (HF). Varsayilan model turbo-q5_0 (hiz+dogruluk
-# dengesi; olculdu 2 dk ses CPU ~53 sn / GPU ~2,5 sn); Silero VAD halusinasyonu bastirir.
-# large-v3 tam dogruluklu ("Yuksek kalite" secenegi) modeldir; arayuzdeki mikrofon menusunden
-# secilir. Ikisi de indirilir ki secenek sifirdan kurulumda da calissin.
-$script:WhisperBuild = 'b5454'
-$script:WhisperModels = @(
-    @{ url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin'; file = 'ggml-large-v3-turbo-q5_0.bin'; bytes = 574041195 },
-    @{ url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin'; file = 'ggml-large-v3.bin'; bytes = 3095033483 },
-    @{ url = 'https://huggingface.co/ggml-org/silero-v5.1.2/resolve/main/ggml-silero-v5.1.2.bin'; file = 'ggml-silero-v5.1.2.bin'; bytes = 885098 }
+# Qwen3-ASR (ses dökum). Tek motor: cok dilli (52 dil; Türkce dahil; konusma + sarki/BGM),
+# yuksek dogruluk. LLM tabanli; imagegen venv'i (torch cu130 + transformers
+# 5.x) ile calisir. Model dosyalari HF'den indirilir (boyutla dogrulanir).
+$script:AsrRepo = 'https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf/resolve/main/'
+$script:AsrModels = @(
+    @{ file = 'config.json'; bytes = 2399 },
+    @{ file = 'generation_config.json'; bytes = 165 },
+    @{ file = 'model.safetensors'; bytes = 4076193080 },
+    @{ file = 'processor_config.json'; bytes = 487 },
+    @{ file = 'tokenizer.json'; bytes = 11429653 },
+    @{ file = 'tokenizer_config.json'; bytes = 998 },
+    @{ file = 'chat_template.jinja'; bytes = 1434 }
 )
 $script:LlamaBuild = 'b10998'
 $script:ComfyRepo = 'https://github.com/comfyanonymous/ComfyUI.git'
@@ -430,37 +423,19 @@ function Invoke-Llama {
     Write-Ok 'llama.cpp ve CUDA calisma zamani acildi'
 }
 
-# ------------------------------------------------------------- whisper.cpp (ses dökum)
-function Invoke-Whisper {
-    Write-Step ('whisper.cpp ses dökum motoru (' + $script:WhisperBuild + ')')
-    if ($SkipMedia) { Write-Skip 'whisper.cpp (-SkipMedia)'; return }
-    $target = Join-Path $Root ('whisper.cpp\' + $script:WhisperBuild)
-    $cache = Join-Path $Root 'tools\indirme'
-    New-Item -ItemType Directory -Path $cache -Force | Out-Null
-    # Arsiv 'Release' alt klasorune acilir; dogrudan yol yerine ozyinelemeli ara. Aksi halde
-    # skip kosulu hic tutmaz ve her kurulumda 662 MB ikili yeniden iner.
-    $installed = Get-ChildItem -LiteralPath $target -Recurse -Filter 'whisper-cli.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($installed -and !$Force) {
-        Write-Skip 'whisper-cli.exe zaten kurulu'
-    } else {
-        foreach ($key in @('whisperCuda', 'whisperCpu')) {
-            $package = $script:Packages[$key]
-            $archive = Join-Path $cache $package.file
-            Invoke-Download $package.url $archive $package.bytes
-            Expand-Package $archive $target
-        }
-        if (!(Get-ChildItem $target -Recurse -Filter 'whisper-cli.exe' -File -ErrorAction SilentlyContinue)) { throw 'whisper-cli.exe acilan arsivde bulunamadi.' }
-        Write-Ok 'whisper.cpp ikilileri acildi (CPU + CUDA)'
-    }
-    # Model dosyalari (buyuk; kurulum paketine gomulmez, burada indirilir).
-    $modelDir = Join-Path $Root 'models\whisper'
+# ------------------------------------------------------------- Qwen3-ASR (ses dökum)
+function Invoke-Asr {
+    Write-Step 'Qwen3-ASR ses dökum motoru (1.7B)'
+    if ($SkipMedia) { Write-Skip 'Qwen3-ASR (-SkipMedia)'; return }
+    # Motor kodu imagegen venv'inde (torch + transformers) calisir; ayri ikili yok.
+    $modelDir = Join-Path $Root 'models\qwen3-asr'
     New-Item -ItemType Directory -Path $modelDir -Force | Out-Null
-    foreach ($m in $script:WhisperModels) {
+    foreach ($m in $script:AsrModels) {
         $dst = Join-Path $modelDir $m.file
         if ((Test-Path -LiteralPath $dst -PathType Leaf) -and (Get-Item $dst).Length -eq [long]$m.bytes -and !$Force) {
             Write-Skip ($m.file + ' zaten indirilmis'); continue
         }
-        Invoke-Download $m.url $dst $m.bytes
+        Invoke-Download ($script:AsrRepo + $m.file) $dst $m.bytes
         Write-Ok ($m.file + ' indirildi')
     }
 }
@@ -627,7 +602,7 @@ function Invoke-Verify {
     if (!$SkipMedia) {
         $checks += @{ label = 'imagegen ortami'; path = 'venv\imagegen\Scripts\python.exe' }
         $checks += @{ label = 'ComfyUI';         path = 'ComfyUI\main.py' }
-    $checks += @{ label = 'whisper.cpp (ses dökum)'; path = ('whisper.cpp\' + $script:WhisperBuild); glob = 'whisper-cli.exe' }
+        $checks += @{ label = 'Qwen3-ASR modeli'; path = 'models\qwen3-asr\model.safetensors' }
         $checks += @{ label = 'ComfyUI-GGUF';    path = 'ComfyUI\custom_nodes\ComfyUI-GGUF\__init__.py' }
         $checks += @{ label = 'Fotograf duzenleme dugumleri'; path = 'ComfyUI\custom_nodes\comfyui-krea2edit\__init__.py' }
     }
@@ -691,7 +666,7 @@ $stages = [ordered]@{
     layout    = { Invoke-Layout }
     runtime   = { Invoke-Runtime }
     llama     = { Invoke-Llama }
-    whisper   = { Invoke-Whisper }
+    asr       = { Invoke-Asr }
     python    = { Invoke-Python }
     comfyui   = { Invoke-ComfyUI }
     verify    = { Invoke-Verify }
