@@ -84,9 +84,12 @@ $script:Packages = @{
 }
 # whisper.cpp ikili surumu ve model dosyalari (HF). Varsayilan model turbo-q5_0 (hiz+dogruluk
 # dengesi; olculdu 2 dk ses CPU ~53 sn / GPU ~2,5 sn); Silero VAD halusinasyonu bastirir.
+# large-v3 tam dogruluklu ("Yuksek kalite" secenegi) modeldir; arayuzdeki mikrofon menusunden
+# secilir. Ikisi de indirilir ki secenek sifirdan kurulumda da calissin.
 $script:WhisperBuild = 'b5454'
 $script:WhisperModels = @(
     @{ url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin'; file = 'ggml-large-v3-turbo-q5_0.bin'; bytes = 574041195 },
+    @{ url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin'; file = 'ggml-large-v3.bin'; bytes = 3095033483 },
     @{ url = 'https://huggingface.co/ggml-org/silero-v5.1.2/resolve/main/ggml-silero-v5.1.2.bin'; file = 'ggml-silero-v5.1.2.bin'; bytes = 885098 }
 )
 $script:LlamaBuild = 'b10998'
@@ -432,10 +435,12 @@ function Invoke-Whisper {
     Write-Step ('whisper.cpp ses dökum motoru (' + $script:WhisperBuild + ')')
     if ($SkipMedia) { Write-Skip 'whisper.cpp (-SkipMedia)'; return }
     $target = Join-Path $Root ('whisper.cpp\' + $script:WhisperBuild)
-    $exe = Join-Path $target 'whisper-cli.exe'
     $cache = Join-Path $Root 'tools\indirme'
     New-Item -ItemType Directory -Path $cache -Force | Out-Null
-    if ((Test-Path -LiteralPath $exe -PathType Leaf) -and !$Force) {
+    # Arsiv 'Release' alt klasorune acilir; dogrudan yol yerine ozyinelemeli ara. Aksi halde
+    # skip kosulu hic tutmaz ve her kurulumda 662 MB ikili yeniden iner.
+    $installed = Get-ChildItem -LiteralPath $target -Recurse -Filter 'whisper-cli.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($installed -and !$Force) {
         Write-Skip 'whisper-cli.exe zaten kurulu'
     } else {
         foreach ($key in @('whisperCuda', 'whisperCpu')) {
