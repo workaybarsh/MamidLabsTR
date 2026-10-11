@@ -331,6 +331,8 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
+  - Ses dökum kalitesi: `audioQuality` (`normal` = turbo-q5_0, hızlı; `high` = large-v3, en
+    yüksek doğruluk, ~2x yavaş; varsayılan `normal`). Mikrofon menüsündeki onay kutusu yönetir.
   - Medya: `comfyKeepAlive` (varsayılan `false`; ComfyUI yalnızca medya üretiminde çalışır, boşta VRAM/RAM tutmaz; `true` ile LITE'ta medya işleri arasında açık kalır, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
@@ -486,6 +488,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-11 | Ses yakalama kalitesi seçilebilir yapıldı: mikrofon menüsüne **"Yüksek kalite (large-v3)"** onay kutusu (toggle). İşaretsiz = normal (turbo-q5_0, hızlı), işaretli = yüksek (large-v3, en yüksek doğruluk, ~2x yavaş). Seçim `settings\api.json` → `audioQuality` olarak saklanır ve işçi dökumde açık model yolunu whisper'a geçirir. | qwen-desktop.ps1, agent/qwen-inference.ps1, tests/test_whisper_tools.py |
 | 2026-10-11 | Mikrofon kaydı eklendi (bağımlılıksız): winmm `mciSendString` ile Windows **varsayılan** kayıt cihazına (WAVE_MAPPER) kaydeder; mikrofon tuşu toggle (başlat/dur). Kayıt ses eki olarak eklenir ve otomatik gönderilir (dökum + yanıt). | qwen-desktop.ps1, tests/test_whisper_tools.py |
 | 2026-10-11 | ComfyUI yaşam döngüsü **profile duyarlı** yapıldı: MAX/FLASH (27B, 16 GB'ta kartın sınırında) yükleme öncesi boş ComfyUI **her zaman kapatılır** — aksi halde MTP draft bağlamı CPU'ya taşıp sohbet **aralıklı ~6-7 tok/s**'ye düşüyor (ölçüldü: medya sonrası geçiş adımı bir kez oran 0,18 verdi). LITE (9B) ComfyUI ile birlikte çalışır (oran 1,04) ve **açık tutulur**. Böylece "ComfyUI açık + 27B" belirsizliği (aralıklı taşma) ortadan kalktı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
 | 2026-10-11 | Smoke testine `arayuz_sohbet` adımı eklendi (gerçek pencereyi kullanıcı gibi sürer: yazı yaz + Gönder, yanıt alınmalı); `$pid` otomatik değişken çakışması düzeltildi. | scripts/smoke-test.ps1, tests/test_smoke_test_script.py |

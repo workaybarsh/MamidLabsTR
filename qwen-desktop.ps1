@@ -111,6 +111,8 @@ $script:currentTurnHasImage = $false
 $script:currentTurnImagePaths = @()
 $script:currentTurnAudioPaths = @()
 $script:micRecording = $false
+# Ses dökum kalitesi: 'normal' (turbo-q5_0, hizli) | 'high' (large-v3, en yuksek dogruluk).
+$script:audioQuality = 'normal'
 $script:currentTurnMultiImageOcr = $false
 $script:multiImageOcrMode = $false
 $script:selectedVideos = New-Object System.Collections.Generic.List[string]
@@ -1176,9 +1178,22 @@ $composer.Controls.Add($micBtn)
 $micMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $micUse = $micMenu.Items.Add('Mikrofonu kullan')
 [void]$micMenu.Items.Add('-')
+# Ses yakalama kalitesi: isaretli = yuksek (large-v3), isaretsiz = normal (turbo-q5_0).
+$script:audioQuality = if ([string]$script:apiSettings.audioQuality -eq 'high') { 'high' } else { 'normal' }
+$micQuality = New-Object System.Windows.Forms.ToolStripMenuItem('Yüksek kalite (large-v3)')
+$micQuality.CheckOnClick = $true
+$micQuality.Checked = ($script:audioQuality -eq 'high')
+[void]$micMenu.Items.Add($micQuality)
+[void]$micMenu.Items.Add('-')
 $micCancel = $micMenu.Items.Add('İptal')
 $micBtn.Add_Click({ $micMenu.Show($micBtn, 0, $micBtn.Height) })
 $micUse.Add_Click({ Start-MicrophoneCapture })
+$micQuality.Add_Click({
+    $script:audioQuality = if ($micQuality.Checked) { 'high' } else { 'normal' }
+    $script:apiSettings.audioQuality = $script:audioQuality
+    Save-ApiSettings
+    $metric.Text = if ($script:audioQuality -eq 'high') { 'Ses kalitesi: Yüksek (large-v3, daha yavaş)' } else { 'Ses kalitesi: Normal (turbo)' }
+})
 $micCancel.Add_Click({ $micMenu.Close() })
 
 function New-Chip([string]$text, [bool]$isChecked) {
@@ -2295,6 +2310,7 @@ function Begin-Generation {
         currentImagePath = $(if ($script:currentTurnImagePaths.Count -gt 0) { [string]$script:currentTurnImagePaths[0] } else { '' })
         currentImagePaths = @($script:currentTurnImagePaths)
         currentAudioPaths = @($script:currentTurnAudioPaths)
+        audioQuality = $script:audioQuality
         multiImageOcr = [bool]$script:currentTurnMultiImageOcr
         multiImageOcrMode = [bool]$script:multiImageOcrMode
         profile = $profile

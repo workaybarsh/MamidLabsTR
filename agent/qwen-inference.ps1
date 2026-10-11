@@ -401,6 +401,11 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     if (!$err) {
         $whisperPy = Get-WhisperPyPath; $mediaPy = Get-MediaPythonExe
         $payloadBase = @{ action = 'transcribe'; path = $path; language = 'auto' }
+        # Kalite: 'high' ise large-v3 (en yuksek dogruluk, daha yavas); aksi halde turbo-q5_0.
+        if ([string]$JobData.audioQuality -eq 'high') {
+            $modelPath = Join-Path (Get-InstallRoot) 'models\whisper\ggml-large-v3.bin'
+            if (Test-Path -LiteralPath $modelPath -PathType Leaf) { $payloadBase.model = $modelPath }
+        }
         foreach ($device in @('gpu', 'cpu')) {
             try {
                 Emit 'status' ("Ses whisper.cpp ile yaziya cevriliyor (" + $device + ")…") | Out-Null
