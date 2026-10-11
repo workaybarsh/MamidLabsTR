@@ -31,26 +31,23 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     assert idx_comfy < idx_check < idx_start
 
 
-def test_idle_comfy_is_kept_open_but_leaks_are_cleaned():
-    """ComfyUI medya isleri arasinda ACIK tutulur (varsayilan), ama dil modeli yuklenmeden
-    once YALNIZCA mukerrer/kacak ComfyUI temizlenir. Gercek makinede olculdu: tek (taze)
-    ComfyUI ile MAX 32K birlikte 61 tok/s calisti; IKI ComfyUI ornegi varken 27B tasip
-    0,89 tok/s oldu. ComfyUI bir surec CIFTI'dir (launcher + base python cocugu), bu yuzden
-    surec SAYISI ile "kacak" karari verilemez: tek ornek 2 surec olabilir (yanlislikla
-    kapatilirsa ComfyUI her yuklemede kapanirdi). Örnekler parent'i ComfyUI eslesmeyen
-    "kök" sureclerle sayilir; 8188'i dinleyen ornek korunur."""
+def test_idle_comfy_policy_is_profile_aware():
+    """ComfyUI yasam dongusu profile duyarli: MAX/FLASH (27B, 16 GB'ta kartin sinirinda)
+    ComfyUI ile birlikte guvenilir calismaz — kalan pay ComfyUI baglami + masaustu ile
+    birlesince MTP draft baglami CPU'ya tasip sohbet aralikli ~6-7 tok/s'ye duser (olculdu:
+    medya sonrasi gecis bir kez oran 0,18). Bu yuzden 27B profillerinde bos ComfyUI yukleme
+    oncesi HER ZAMAN kapatilir; LITE (9B) ComfyUI ile birlikte calisir (olculdu oran 1,04)
+    ve orada acik kalir. Kaçak/mukerrer ComfyUI her profilde once temizlenir."""
     manager = read_text("scripts/manage-qwen.ps1")
-    # Ayar geri geldi ve varsayilan acik (medya isleri arasinda reopen ~27 sn onlenir).
     assert "$comfyKeepAlive = $true" in manager
     assert "$settings.comfyKeepAlive" in manager
-    # Kacak tespiti surec sayisina DEGIL örnek köklerine dayanir.
+    # Kacak temizligi korunur (tek saglikli ornek korunur).
     assert "function Get-ComfyInstanceRoots" in manager
     assert "function Stop-ComfyLeaks" in manager
-    assert "Get-NetTCPConnection -LocalPort 8188" in manager
-    # Yukleme öncesi yalnizca kacaklar temizlenir; tek örnek korunur.
     assert "[void](Stop-ComfyLeaks)" in manager
-    assert "@(Get-ComfyProcesses).Count -gt 1" not in manager
-    # Butce yetmezse kapatip tekrar dene (fallback korunur).
+    # Profil duyarli kapatma: MAX/FLASH her zaman, LITE ayara birakilir.
+    assert "if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }" in manager
+    # Butce yetmezse kapatip tekrar dene (guvenlik agi korunur).
     assert "if ((Stop-IdleComfy)) { Test-MemoryBudget $model $Profile $projector } else { throw }" in manager
 
 

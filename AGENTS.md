@@ -137,17 +137,17 @@ Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
 **VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
-(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü:** ComfyUI medya işleri arasında **açık tutulur**
-(varsayılan; `comfyKeepAlive=false` ile kapatılabilir), medya işi başına ~27 sn yeniden açılma olmaz.
-**Tek sağlıklı ComfyUI ile MAX 32K birlikte sorunsuz çalışır:** ölçüldü, gerçek görsel işinden sonra
-ComfyUI kapatılmadan MAX yüklendi ve **62 tok/s** (temiz hâlden ~2 tok/s yavaş); bağımsız ölçüm 61 tok/s
-/ 192 MiB boş. Taşma yalnızca **kaçak/mükerrer ComfyUI örneği** varsa olur. Kritik incelik: ComfyUI bir
-süreç **çiftidir** (venv başlatıcı + base python çocuğu), bu yüzden süreç **sayısı** ile kaçak kararı
-verilemez — tek sağlıklı örnek zaten 2 süreçtir. Örnekler, parent'i ComfyUI eşleşmeyen **kök** süreçlerle
-sayılır (`Get-ComfyInstanceRoots`); `Stop-ComfyLeaks` yalnızca ek kökleri kapatır ve **:8188'i dinleyen tek
-örneği korur** (`Test-ComfyUnderRoot`). Böylece yükleme öncesi tek ComfyUI kapanmaz; kalan bir kopya
-(ör. smoke testinden `--list`) kapatılır. Eski `Select-Object -First 1` yaklaşımı yalnızca birini kapatıp
-kalanı bırakıyordu. Ölçüm: iki ComfyUI örneği varken 27B taşıp **0,89 tok/s**; tek örnekle **61-62 tok/s**.
+(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü (profile duyarlı):** **MAX/FLASH (27B)** profillerinde
+dil modeli yüklenmeden önce boş ComfyUI **her zaman kapatılır** — 27B 16 GB'ta kartın sınırında
+olduğundan ComfyUI bağlamı + masaüstü ile birleşince MTP draft bağlamı CPU'ya taşar ve sohbet
+**aralıklı olarak ~6-7 tok/s**'ye düşer (ölçüldü: "medya sonrası geçiş" adımı bir kez oran 0,18).
+**LITE (9B)** ise ComfyUI ile birlikte çalışır (ölçüldü oran 1,04) ve ComfyUI **açık tutulur**
+(medya işi başına ~27 sn yeniden açılma olmaz). `comfyKeepAlive=false` ile LITE'ta da kapatılır.
+Bir **kaçak/mükerrer** ComfyUI örneği her profilde önce temizlenir: ComfyUI bir süreç **çiftidir**
+(venv başlatıcı + base python çocuğu), bu yüzden süreç **sayısı** ile kaçak kararı verilemez — tek
+sağlıklı örnek zaten 2 süreçtir. Örnekler, parent'i ComfyUI eşleşmeyen **kök** süreçlerle sayılır
+(`Get-ComfyInstanceRoots`); `Stop-ComfyLeaks` yalnızca ek kökleri kapatır ve **:8188'i dinleyen tek
+örneği korur** (`Test-ComfyUnderRoot`). Ölçüm: iki ComfyUI örneği varken 27B taşıp **0,89 tok/s**.
 Bütçe yetmezse ComfyUI kapatılıp yeniden ölçülür (güvenlik ağı). Açık temizlik için `manage-qwen.ps1`
 `-Action closecomfy`. ComfyUI'yi yeniden açmanın maliyeti medya işi başına ~27 sn
 (ölçüldü: soğuk 55 sn, sıcak 28 sn).
@@ -325,7 +325,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
     `videoProvider`, `externalMediaModels`.
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`, `liteReasoningBudget`.
-  - Medya: `comfyKeepAlive` (varsayılan `true`; ComfyUI medya işleri arasında açık kalır, bkz. bölüm 5).
+  - Medya: `comfyKeepAlive` (varsayılan `true`; LITE'ta ComfyUI medya işleri arasında açık kalır; MAX/FLASH'ta 27B nedeniyle yükleme öncesi kapatılır, bkz. bölüm 5).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
 
@@ -398,9 +398,7 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
 7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
-   kartta MAX'ı hiç açtırmaz. **ComfyUI** medya işleri arasında açık tutulur; tek sağlıklı örnek
-   MAX 32K ile birlikte çalışır (61-62 tok/s). Taşma yalnızca **kaçak/mükerrer örnek** varsa olur
-   (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir); yükleme öncesi yalnızca kaçaklar kapatılır (bölüm 5).
+   kartta MAX'ı hiç açtırmaz. **ComfyUI** yaşam döngüsü profile duyarlıdır: MAX/FLASH'ta (27B kartın sınırında) yükleme öncesi **her zaman** kapatılır (yoksa MTP draft bağlamı CPU'ya taşıp sohbet aralıklı ~6-7 tok/s'ye düşer); LITE'ta açık kalır (9B ComfyUI ile birlikte çalışır). Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
    Kaçak örnek 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
    19 tok/s'ye düşer.
@@ -482,6 +480,8 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-11 | ComfyUI yaşam döngüsü **profile duyarlı** yapıldı: MAX/FLASH (27B, 16 GB'ta kartın sınırında) yükleme öncesi boş ComfyUI **her zaman kapatılır** — aksi halde MTP draft bağlamı CPU'ya taşıp sohbet **aralıklı ~6-7 tok/s**'ye düşüyor (ölçüldü: medya sonrası geçiş adımı bir kez oran 0,18 verdi). LITE (9B) ComfyUI ile birlikte çalışır (oran 1,04) ve **açık tutulur**. Böylece "ComfyUI açık + 27B" belirsizliği (aralıklı taşma) ortadan kalktı. | scripts/manage-qwen.ps1, tests/test_memory_admission.py |
+| 2026-10-11 | Smoke testine `arayuz_sohbet` adımı eklendi (gerçek pencereyi kullanıcı gibi sürer: yazı yaz + Gönder, yanıt alınmalı); `$pid` otomatik değişken çakışması düzeltildi. | scripts/smoke-test.ps1, tests/test_smoke_test_script.py |
 | 2026-10-11 | Matematik gösterimine **kimya/genel bilimsel** karakterler eklendi (`Convert-MathText`): denge oku ⇌ ile ⇋ ⇄ ⇆ ↔ ⟷ ⟹ ↪ ↑ ↓ ↕ ve **mhchem `\ce{...}`/`\pu{...}`** desteği (içerik okunur: element sayıları alt simge `H2O`→H₂O, oklar `->`/`<=>`→→/⇌). `->`/`<-` dönüşümü yalnızca `\ce` içinde yapılır; kod bloklarındaki `->` bozulmaz. | qwen-desktop.ps1, tests/test_math_render.py |
 | 2026-10-11 | Ses dökümü (whisper.cpp) eklendi: sohbete eklenen ses otomatik dökumlenir ve bulgular dil modeline verilir (OCR/mmproj mantığı). `agent/whisper-tools.py` 16 kHz mono WAV'a çevirip `whisper-cli` ile yazar; **turbo-q5_0 + Silero VAD** (ölçüm: 2 dk ses CPU 53 sn / GPU 2,5 sn; VAD halüsinasyonu sıfırlar). `Invoke-TranscribeWithModelSwap` OCR gibi yerel modeli boşaltıp (GPU whisper'a kalır) geri yükler. Arayüz: Gönder'in solunda **mikrofon** tuşu (Mikrofonu kullan), ek(+) menüsünde **Ses ekle**, yazı kutusunda **sağ tık → Yapıştır** (medya/metin). Ayrıca **`custom` baseUrl işçiye geçirildi** (taban adresi işçide boş kalıyordu → custom sağlayıcı sohbette çalışmıyordu; gerçek uçtan uca testte bulundu, düzeltildi). | agent/whisper-tools.py, agent/qwen-inference.ps1, qwen-desktop.ps1, tests/test_whisper_tools.py, tests/test_qwen_contracts.py |
 | 2026-10-11 | Sağlayıcı **maksimum bağlam otomatik algılama**: anahtar doğrulanınca model listesi ucundan `context_length` okunur ve bağlam penceresi otomatik uygulanır (commandcode: 1.000.000). `Get-ProviderModelContexts` (api-providers.ps1) + api-settings entegrasyonu. API çabası (effort) default; `custom` uçtan uca (metin+görsel) doğrulandı. | agent/api-providers.ps1, agent/api-settings.ps1, tests/test_api_providers.py |

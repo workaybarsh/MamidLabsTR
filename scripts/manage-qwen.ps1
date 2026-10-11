@@ -275,20 +275,17 @@ try {
     if (!(Test-Path -LiteralPath $model -PathType Leaf)) { throw "Model bulunamadı: $model" }
     # Lite profili gorsel projektoru olmadan da calisir; digerlerinde mmproj zorunludur.
     if (!$custom -and $Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector -PathType Leaf)) { throw "Görsel projektörü bulunamadı: $projector" }
-    # ComfyUI yasam dongusu. Varsayilan: medya isleri arasinda ACIK tutulur (~27 sn'lik
-    # yeniden acilma olmaz). Gercek makinede TEK (taze) ComfyUI ile MAX 32K birlikte
-    # sorunsuz calisir: 61 tok/s, 192 MiB bos. Sohbet de "medya sonrasi gecis" adiminda
-    # 0,92 oraninda kaldi. TASMA yalnizca MUKERRER/kacak ComfyUI sureci varsa olur
-    # (ComfyUI bir cift surec; eski kopya kalirsa VRAM asar -> 0,89 tok/s olculdu).
-    # Bu yuzden yukleme ONCESI once kaçak/mukerrer temizlenir, sonra butce olculur;
-    # yer yetmezse kuyrugu bos ComfyUI kapatilip yeniden olculur.
+    # ComfyUI yasam dongusu. MAX/FLASH (27B, 16 GB'ta kartin sinirinda) ComfyUI ile
+    # birlikte GUVENILIR calismaz: kalan pay ComfyUI baglami + masaustu ile birlikte MTP
+    # draft baglaminin CPU'ya tasmasina yol acar ve sohbet aralikli olarak ~6-7 tok/s'ye
+    # duser (olculdu: ayni makinede medya sonrasi gecis bir kez 0,18 oran). Bu yuzden
+    # 27B profillerinde bos ComfyUI yukleme ONCESI HER ZAMAN kapatilir; medya gerektiginde
+    # yeniden acilir (~27 sn). LITE (9B) 8 GB'ta bile ComfyUI ile birlikte calisir (olculdu
+    # oran 1,04), orada acik kalir. Kaçak/mukerrer ComfyUI her profilde once temizlenir.
     $comfyKeepAlive = $true
     if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
-    # Kaçak/mukerrer ComfyUI tespiti: örnek sayisi 1'den fazlaysa yalnizca kaçaklar kapatilir;
-    # tek saglikli örnek (çift sureciyle) KORUNUR (bkz. Stop-ComfyLeaks). Boylece ComfyUI
-    # medya isleri arasinda acik kalir.
     [void](Stop-ComfyLeaks)
-    if (!$comfyKeepAlive) { [void](Stop-IdleComfy) }
+    if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
     if (!$SkipMemoryCheck) {
