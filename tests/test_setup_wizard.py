@@ -229,6 +229,22 @@ def test_eula_exists_and_covers_ownership():
     assert len(eula) > 1500
 
 
+def test_wizard_optional_components_are_default_on_and_passed_as_skips():
+    """Görsel/video, ses ve OCR isteğe bağlıdır; hepsi VARSAYILAN SEÇİLİ gelir (unchecked yok).
+    İşaret kaldırılınca kuruluma -SkipMedia / -SkipAudio geçirilir."""
+    iss = read_text(ROOT / "packaging" / "windows" / "mamidlabs.iss")
+    for task in ("media", "audio", "ocr", "smoketest"):
+        assert 'Name: "%s"' % task in iss, task + " gorevi yok"
+    assert "unchecked" not in iss, "tum gorevler varsayilan secili olmali"
+    assert "if not WizardIsTaskSelected('media') then P := P + ' -SkipMedia'" in iss
+    assert "if not WizardIsTaskSelected('audio') then P := P + ' -SkipAudio'" in iss
+    # Kurulum betigi de bu bayraklari tanimali.
+    installer = read_text("scripts/install-mamidlabs.ps1")
+    assert "[switch]$SkipAudio" in installer
+    setup = read_text("scripts/setup-run.ps1")
+    assert "[switch]$SkipMedia" in setup and "[switch]$SkipAudio" in setup
+
+
 def test_repository_is_proprietary_licensed():
     license_text = read_text(ROOT / "LICENSE")
     assert "All Rights Reserved" in license_text

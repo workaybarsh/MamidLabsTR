@@ -75,8 +75,10 @@ FinishedHeadingLabel=MamidLabs kurulumu tamamlandı
 FinishedLabelNoIcons=MamidLabs bilgisayarına kuruldu. Masaüstündeki MamidLabs kısayoluyla açabilirsin.
 
 [Tasks]
-Name: "smoketest"; Description: "Kurulum sonunda smoke testi çalıştır (sohbet, belge, görsel, fotoğraf düzenleme, model geçişi) — uzun sürebilir (görsel/video adımları dahil onlarca dakika), model dosyaları indirilmediyse atlanır"; GroupDescription: "Doğrulama:"; Flags: unchecked
-Name: "ocr"; Description: "OCR'ı da kur — fotoğraf, taranmış bir sayfa ya da ekran görüntüsü gönderdiğinde içindeki yazıyı okuyup metne çevirir, örneğin bir faturayı ya da el yazısı bir notu fotoğraflatıp okutabilirsin; yaklaşık 3 GB, önerilir"; GroupDescription: "İsteğe bağlı:"
+Name: "media"; Description: "Görsel ve video üretimi — fotoğraf/görsel üretme, fotoğraf düzenleme ve video üretimi (ComfyUI + Krea-2 + Wan 2.2, profile göre ~20 GB). İşareti kaldırırsan yalnızca sohbet, belge, OCR ve ses araçları kurulur"; GroupDescription: "Bileşenler (önerilir):"
+Name: "audio"; Description: "Ses yakalama — mikrofon ya da ses dosyasını yazıya çevirir (Qwen3-ASR, ~4 GB)"; GroupDescription: "Bileşenler (önerilir):"
+Name: "ocr"; Description: "OCR — fotoğraf, taranmış sayfa ya da ekran görüntüsündeki yazıyı metne çevirir (ör. fatura/el yazısı okuma); yaklaşık 5,5 GB"; GroupDescription: "Bileşenler (önerilir):"
+Name: "smoketest"; Description: "Kurulum sonunda smoke testi çalıştır (sohbet, belge, görsel, model geçişi) — uzun sürebilir (onlarca dakika)"; GroupDescription: "Doğrulama:"; Flags: checkedonce
 
 [Files]
 ; Program kaynagi. setup-run.ps1 bunu install-mamidlabs.ps1 -Source olarak kullanir;
@@ -364,6 +366,8 @@ begin
   begin
     P := P + ' -DownloadModels';
     if WizardIsTaskSelected('smoketest') then P := P + ' -SmokeTest';
+    if not WizardIsTaskSelected('media') then P := P + ' -SkipMedia';
+    if not WizardIsTaskSelected('audio') then P := P + ' -SkipAudio';
     if WizardIsTaskSelected('ocr') then P := P + ' -Ocr';
   end;
   if ProfilePage.SelectedValueIndex = OptOwn then

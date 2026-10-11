@@ -40,6 +40,9 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   sunucusu (yalnızca localhost, şifre korumalı oturum).
 - **Kurulum ve güncelleme:** Inno Setup sihirbazı; sabit sürümlü altyapı (PowerShell 7.6.6, llama.cpp
   b10998 CUDA 13.4, ComfyUI b0f4b7b); uygulama içinden güncelleme denetimi; tam kaldırma.
+  Kurulumda **görsel/video üretimi, ses yakalama ve OCR isteğe bağlıdır** (varsayılan seçili; işaret
+  kaldırılırsa yalnızca sohbet/belge araçları kurulur). Aynı bileşenler **Profil yöneticisinden**
+  seçilip indirilebilir veya silinebilir.
 - **Lisans (EULA):** Kurulum sihirbazında **Son Kullanıcı Lisans Sözleşmesi** gösterilir ve kabul
   edilmeden kurulum sürmez. Yazılımın mülkiyeti ve tüm hakları geliştiriciye aittir; kopyalama,
   değiştirme, kırma (crack) veya ticari amaçla pazarlama yasaktır. İzinsiz kullanım hukuki ve cezai

@@ -34,6 +34,9 @@ param(
     [string]$Root = (Join-Path $env:LOCALAPPDATA 'Programs\MamidLabs'),
     [string]$Source,
     [switch]$SkipMedia,
+    # Ses yakalama (Qwen3-ASR modeli) medyadan ayridir: -SkipMedia medyayi atlar ama
+    # ses yakalamayi atlamaz; yalnizca ses istenmediginde -SkipAudio verilir.
+    [switch]$SkipAudio,
     [switch]$Force,
     # Kurulum sihirbazi kendi kaldirma kaydini yazar; betik ikinci bir kayit acmaz.
     [switch]$NoUninstallEntry
@@ -426,7 +429,7 @@ function Invoke-Llama {
 # ------------------------------------------------------------- Qwen3-ASR (ses dökum)
 function Invoke-Asr {
     Write-Step 'Qwen3-ASR ses dökum motoru (1.7B)'
-    if ($SkipMedia) { Write-Skip 'Qwen3-ASR (-SkipMedia)'; return }
+    if ($SkipAudio) { Write-Skip 'Qwen3-ASR (-SkipAudio)'; return }
     # Motor kodu imagegen venv'inde (torch + transformers) calisir; ayri ikili yok.
     $modelDir = Join-Path $Root 'models\qwen3-asr'
     New-Item -ItemType Directory -Path $modelDir -Force | Out-Null
@@ -470,8 +473,8 @@ function Invoke-Python {
     $appPython = New-Venv (Join-Path $Root 'venv\app') 'uygulama'
     Install-Packages $appPython $script:AppPackages 'uygulama' $null
 
-    if ($SkipMedia) {
-        Write-Skip 'imagegen ortami (-SkipMedia)'
+    if ($SkipMedia -and $SkipAudio) {
+        Write-Skip 'imagegen ortami (medya ve ses de istenmedi)'
         return
     }
     $imagegen = New-Venv (Join-Path $Root 'venv\imagegen') 'imagegen'
@@ -599,12 +602,16 @@ function Invoke-Verify {
         @{ label = 'llama-server';        path = ('llama.cpp\' + $script:LlamaBuild + '\llama-server.exe') },
         @{ label = 'uygulama ortami';    path = 'venv\app\Scripts\python.exe' }
     )
-    if (!$SkipMedia) {
+    if (!$SkipMedia -or !$SkipAudio) {
         $checks += @{ label = 'imagegen ortami'; path = 'venv\imagegen\Scripts\python.exe' }
+    }
+    if (!$SkipMedia) {
         $checks += @{ label = 'ComfyUI';         path = 'ComfyUI\main.py' }
-        $checks += @{ label = 'Qwen3-ASR modeli'; path = 'models\qwen3-asr\model.safetensors' }
         $checks += @{ label = 'ComfyUI-GGUF';    path = 'ComfyUI\custom_nodes\ComfyUI-GGUF\__init__.py' }
         $checks += @{ label = 'Fotograf duzenleme dugumleri'; path = 'ComfyUI\custom_nodes\comfyui-krea2edit\__init__.py' }
+    }
+    if (!$SkipAudio) {
+        $checks += @{ label = 'Qwen3-ASR modeli'; path = 'models\qwen3-asr\model.safetensors' }
     }
     foreach ($check in $checks) {
         # Zip icindeki yuva (ornegin 'Release\') surume gore degisebilir; glob varsa

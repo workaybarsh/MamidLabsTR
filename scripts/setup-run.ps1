@@ -31,6 +31,9 @@ param(
     [switch]$DownloadModels,
     [switch]$SmokeTest,
     [switch]$Ocr,
+    # Görsel/video üretimi ve ses yakalama isteğe bağlıdır; işaret kaldırılırsa atlanır.
+    [switch]$SkipMedia,
+    [switch]$SkipAudio,
     [string]$LlmPath,
     [string]$ImageModelPath,
     [string]$VideoModelPath,
@@ -216,7 +219,7 @@ $prereqOk = Invoke-Step 'Ön koşullar (Python, Git, 7-Zip, VC++ Redistributable
 if ($prereqOk) {
     $infraOk = Invoke-Step 'Altyapı (PowerShell 7, llama.cpp, Python, ComfyUI)' {
         # Alt betik kendi ciktisini yazar; hata firlatirsa adim basarisiz olur.
-        & (Join-Path $Source 'scripts\install-mamidlabs.ps1') -Profile $installProfile -Root $Root -Source $Source -NoUninstallEntry:$FromWizard | Out-Host
+        & (Join-Path $Source 'scripts\install-mamidlabs.ps1') -Profile $installProfile -Root $Root -Source $Source -SkipMedia:$SkipMedia -SkipAudio:$SkipAudio -NoUninstallEntry:$FromWizard | Out-Host
         if (!(Test-Path -LiteralPath $pwsh -PathType Leaf)) { throw 'Gömülü PowerShell 7 kurulmadı.' }
         'kuruldu'
     }
@@ -283,6 +286,7 @@ if (!$SmokeTest) {
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'scripts\smoke-test.ps1'),
                        '-Profile', $Profile, '-Root', $Root, '-SkipVideo', '-ReportPath', $smokeReport)
         if (!$Ocr) { $arguments += '-SkipOcr' }
+        if ($SkipMedia) { $arguments += '-SkipImage'; $arguments += '-SkipEdit' }
         & $pwsh @arguments | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'En az bir bileşen doğrulanamadı; ayrıntı özetin sonunda.' }
         'tüm bileşenler doğrulandı'

@@ -123,6 +123,30 @@ function Remove-ProfileFiles([string]$id) {
     return $result
 }
 
+# Bilesen siniflandirmasi: medya (gorsel/video) ComfyUI altinda, ses ise models\qwen3-asr
+# altindadir; geri kalan (dil modeli/mmproj) cekirdektir ve istege bagli degildir.
+function Get-ProfileFileComponent([string]$target) {
+    $t = ([string]$target) -replace '\\', '/'
+    if ($t -like 'ComfyUI/*') { return 'media' }
+    if ($t -like 'models/qwen3-asr/*') { return 'audio' }
+    return 'core'
+}
+
+# Secili bilesenlerin (media/audio) profildeki dosyalarini siler; yalnizca bu profile
+# ozel (paylasilmayan) dosyalara dokunur. Silinen dosya sayisi ve toplam bayt doner.
+function Remove-ProfileComponents([string]$id, [string[]]$components) {
+    $result = @{ removed = 0; failed = 0; totalBytes = 0L }
+    foreach ($target in (Get-ProfileUniqueTargets $id)) {
+        if ($components -notcontains (Get-ProfileFileComponent $target)) { continue }
+        $full = Join-Path $root $target
+        if (!(Test-Path -LiteralPath $full -PathType Leaf)) { continue }
+        try { $result.totalBytes += [long](Get-Item -LiteralPath $full).Length } catch { }
+        try { Remove-Item -LiteralPath $full -Force -ErrorAction Stop; $result.removed++ }
+        catch { $result.failed++ }
+    }
+    return $result
+}
+
 # Bir profilin SOHBET icin gerekli dosyalarinin (dil modeli + mmproj) diskte
 # olup olmadigini kontrol eder. ComfyUI altindaki medya (gorsel/video) modelleri
 # kasten disaridadir: -SkipMedia ile kurulmus olabilirler ve sohbetin calismasi
@@ -246,11 +270,11 @@ function Switch-ToProfile([string]$id) {
     return $true
 }
 
-function Start-ProfileDownload([string]$id) {
+function Start-ProfileDownload([string]$id, [string[]]$components = @('core', 'media', 'audio')) {
     if ($script:busy -or $script:imageBusy) { return 'Önce mevcut işlemin bitmesini bekle.' }
     $state = Get-ProfileState $id
-    $missing = @($state.missingDownloadable)
-    if (!$missing.Count) { return 'İndirilecek dosya yok.' }
+    $missing = @($state.missingDownloadable | Where-Object { $components -contains (Get-ProfileFileComponent ([string]$_.target)) })
+    if (!$missing.Count) { return 'Seçili bileşenler için indirilecek dosya yok.' }
     $files = @()
     foreach ($file in $missing) {
         $files += @{
@@ -282,7 +306,7 @@ function Show-ProfileManager([string]$focusId) {
 
     $dlg = [Windows.Forms.Form]::new()
     $dlg.Text = 'MamidLabs · Profiller'
-    $dlg.Size = [Drawing.Size]::new(790, 540)
+    $dlg.Size = [Drawing.Size]::new(790, 600)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false
@@ -339,6 +363,20 @@ function Show-ProfileManager([string]$focusId) {
     $tokenClear = [Windows.Forms.Button]::new()
     $tokenClear.Text = 'Sil'
     $tokenClear.SetBounds(592, 439, 60, 28)
+    # Bilesen secimi: indirilecek/silinecek istege bagli bilesenler (dil modeli cekirdektir).
+    $mediaChk = [Windows.Forms.CheckBox]::new()
+    $mediaChk.Text = 'Görsel/video üretimi'
+    $mediaChk.SetBounds(16, 478, 200, 24)
+    $mediaChk.Checked = $true
+    $mediaChk.ForeColor = $colText
+    $audioChk = [Windows.Forms.CheckBox]::new()
+    $audioChk.Text = 'Ses yakalama'
+    $audioChk.SetBounds(224, 478, 200, 24)
+    $audioChk.Checked = $true
+    $audioChk.ForeColor = $colText
+    $delCompBtn = [Windows.Forms.Button]::new()
+    $delCompBtn.Text = 'Seçili bileşenleri sil'
+    $delCompBtn.SetBounds(16, 508, 200, 34)
     if ($script:apiSettings.providers -and $script:apiSettings.providers['github']) {
         $tokenLabel.Text = 'Güncelleme tokenı kayıtlı (boş bırakırsan korunur; değiştirmek için yaz):'
     }
@@ -388,9 +426,35 @@ function Show-ProfileManager([string]$focusId) {
     $downloadBtn.Add_Click({
         $index = $list.SelectedIndex
         if ($index -lt 0) { return }
-        $failure = Start-ProfileDownload $catalog[$index].id
+        $components = @('core')
+        if ($mediaChk.Checked) { $components += 'media' }
+        if ($audioChk.Checked) { $components += 'audio' }
+        $failure = Start-ProfileDownload $catalog[$index].id $components
         if ($failure) { $status.Text = $failure; return }
         $dlg.Close()
+    }.GetNewClosure())
+
+    # Secili bilesenleri (gorsel/video, ses) bu profilden sil: yalnizca bu profile ozel
+    # dosyalar kaldirilir; cekirdek (dil modeli) ve paylasilan dosyalar korunur.
+    $delCompBtn.Add_Click({
+        $index = $list.SelectedIndex
+        if ($index -lt 0) { return }
+        if ($script:busy -or $script:imageBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
+        $components = @()
+        if ($mediaChk.Checked) { $components += 'media' }
+        if ($audioChk.Checked) { $components += 'audio' }
+        if (!$components.Count) { $status.Text = 'Silinecek bileşen seçilmedi (Görsel/video veya Ses).'; return }
+        $profile = $catalog[$index]
+        $answer = [Windows.Forms.MessageBox]::Show(
+            ($profile.label + ' için seçili bileşenler silinecek (yalnızca bu profile özel dosyalar).' + "`r`n`r`nSilinsin mi?"),
+            'Bileşenleri sil', 'YesNo', 'Warning')
+        if ($answer -ne 'Yes') { return }
+        $result = Remove-ProfileComponents $profile.id $components
+        $list.Items[$index] = "$($profile.label) — $(Get-ProfileStatusLabel $profile.id)"
+        & $refresh
+        $status.Text = if ($result.removed) { "Seçili bileşenler silindi ($($result.removed) dosya, $(Format-ByteSize $result.totalBytes))." }
+            else { 'Silinecek (bu profile özel) dosya bulunamadı.' }
+        try { Update-ProviderSelection } catch { }
     }.GetNewClosure())
 
     $switchBtn.Add_Click({
@@ -533,7 +597,7 @@ function Show-ProfileManager([string]$focusId) {
         }
     }.GetNewClosure())
 
-    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $deleteBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear))
+    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $deleteBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear, $mediaChk, $audioChk, $delCompBtn))
     $wanted = 0
     if ($focusId) {
         for ($i = 0; $i -lt $catalog.Count; $i++) { if ($catalog[$i].id -eq $focusId) { $wanted = $i; break } }
