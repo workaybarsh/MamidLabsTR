@@ -186,8 +186,8 @@ Aşağıdaki görseller ve videolar MamidLabs ile yerelde üretilmiştir.
 
 MamidLabs kaynak kodu tescillidir ve kapalı tutulur (özel depo); **tüm hakları saklıdır** ve telif
 hakkı Aybars Haydar Altuntaş'a aittir. Yazılı izin olmadan kullanılamaz, kopyalanamaz,
-değiştirilemez veya dağıtılamaz. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın. 1.0.2 ve öncesi
-sürümler MIT koşullarıyla yayımlanmıştır; 1.0.3 sürümünden itibaren tescilli lisans geçerlidir.
+değiştirilemez veya dağıtılamaz. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın. Önceki
+sürümler MIT koşullarıyla yayımlanmıştır; bu sürümden itibaren tescilli lisans geçerlidir.
 Kullanılan modeller (Qwen, Krea 2, Krea 2 Identity Edit LoRA, Wan 2.2 vb.) ve üçüncü taraf
 bileşenler (llama.cpp, ComfyUI, ComfyUI-GGUF, comfyui-krea2edit vb.) kendi lisanslarına tabidir; bu
 lisans onları kapsamaz.

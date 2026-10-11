@@ -81,9 +81,19 @@ def test_image_ocr_swaps_local_model_and_command_tool_uses_approval():
     assert "function Start-LocalModelRestore([string]$profile)" in inference
     assert "Start-Process -FilePath $powershell -ArgumentList $arguments" in inference
     assert "currentImagePaths = @($script:currentTurnImagePaths)" in desktop
-    assert "multiImageOcr = [bool]$script:currentTurnMultiImageOcr" in desktop
+    assert "multiImageOcr = [bool]($script:currentTurnMultiImageOcr -and $hasOcr)" in desktop
     assert "$dlg.Multiselect = [bool]$script:multiImageOcrMode" in desktop
     assert "Önce \"çoklu görsel okuma modunu aç\" mesajını gönderin" in desktop
+
+
+def test_generation_tools_are_gated_by_installed_components():
+    """Görsel/video ve çoklu-görsel OCR yalnızca ilgili bileşen kuruluysa (ya da API) sunulur;
+    aksi halde model var olmayan aracı çağırıp sapıtıyordu."""
+    desktop = read_text("qwen-desktop.ps1")
+    assert "imagegen = ($hasMedia -or $imageApiOk)" in desktop
+    assert "videogen = ($hasMedia -or $videoApiOk)" in desktop
+    assert "$hasMedia = Test-Path -LiteralPath (Join-Path $root 'ComfyUI\\main.py')" in desktop
+    assert "$hasOcr = (Test-Path -LiteralPath (Join-Path $root 'venv\\ocr\\Scripts\\python.exe'))" in desktop
 
 
 def test_multi_image_selection_is_preserved_until_send_validation():
