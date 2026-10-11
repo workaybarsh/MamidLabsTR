@@ -88,7 +88,8 @@ Bu modellerin kötü niyetli, yasa dışı, zararlı veya üçüncü kişilerin 
 amaçlarla kullanılmasından münhasıran Kullanıcı sorumludur. Kullanıcı, bu modelleri yürürlükteki
 mevzuata ve üçüncü kişilerin haklarına uygun şekilde kullanmayı kabul eder. Hak Sahibi; bu
 modellerin kullanımından doğan veya doğabilecek doğrudan ya da dolaylı hiçbir zarardan ve hiçbir
-hukuki/cezai sorumluluktan sorumlu tutulamaz.
+hukuki/cezai sorumluluktan sorumlu tutulamaz. Kullanıcı, bu modelleri kullanırken kendi
+ülkesinin/yerel yargı alanının yürürlükteki mevzuatına uymakla yükümlüdür.
 
 12) KABUL
 Yazılımı kurmanız, kopyalamanız veya kullanmanız; bu Sözleşme'nin tüm hükümlerini okuduğunuzu
