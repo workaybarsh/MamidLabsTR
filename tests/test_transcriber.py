@@ -747,7 +747,8 @@ def test_worker_steers_model_away_from_reading_failed_audio():
     # no-swap yolu basarisizsa swap ile yeniden deneme (temiz GPU + daha cok bos RAM).
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     assert "!$swapModel -and $provider -eq 'local'" in block
-    assert "($payloadBase + @{ device = 'cuda'; need_swap = $true })" in block
+    # Hashtable '+' duplicate-key istisnasi atar; clone + alan ezme kullanilmali.
+    assert "$retryPayload = $payloadBase.Clone(); $retryPayload['device'] = 'cuda'; $retryPayload['need_swap'] = $true" in block
     assert "Wait-LocalModelStopped" in block
     # Regresyon: eski "dökumsuz sürüyor" yolu not eklemeden devam EDEMEZ.
     assert 'Emit \'status\' "Ses dökumlenemedi; istek dökumsuz sürüyor. $reason"' in caller
@@ -1058,3 +1059,13 @@ def test_installer_known_stages_include_asr_after_python():
     assert "'asr'" in stages and "'whisper'" not in stages
     order = installer.split("$stages = [ordered]@{")[1]
     assert order.index("python") < order.index("asr       = { Invoke-Asr }")
+
+
+def test_transcribe_cpu_fallback_overrides_device_without_duplicate_key():
+    """PowerShell hashtable '+' AYNI ANAHTARDA istisna atar ('device'/'need_swap' zaten
+    var); bu yuzden CPU yedegi payload'u '+' ile birlestiremez. Kopyala + alani ez deseni
+    kullanilmali; aksi halde CUDA dokum basarisiz olunca CPU'ya HIC gecilmez ve ses
+    dökumu kaybolur (bkz. sessiz kalan 'Item has already been added. Key: device')."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "$payloadBase + @{" not in worker
+    assert "$cpuPayload['device'] = 'cpu'" in worker

@@ -513,7 +513,10 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         if ($err -and !$Shared.Cancel) {
             try {
                 Emit 'status' 'Secilen cihaz ile dökum basarisiz; CPU ile deneniyor…' | Out-Null
-                $candidate = Invoke-PythonTool ($payloadBase + @{ device = 'cpu' }) $whisperPy $asrPy
+                # Hashtable '+' AYNI ANAHTARDA istisna atar ('device'/'need_swap' zaten var);
+                # bu yuzden CPU yedegi hic calismiyordu. Kopyala, sonra alani ez.
+                $cpuPayload = $payloadBase.Clone(); $cpuPayload['device'] = 'cpu'
+                $candidate = Invoke-PythonTool $cpuPayload $whisperPy $asrPy
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
@@ -531,7 +534,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
                 & (Get-ManageQwenPath) -Action stop | Out-Null
                 Wait-LocalModelStopped
                 $swapModel = $true
-                $candidate = Invoke-PythonTool ($payloadBase + @{ device = 'cuda'; need_swap = $true }) $whisperPy $asrPy
+                $retryPayload = $payloadBase.Clone(); $retryPayload['device'] = 'cuda'; $retryPayload['need_swap'] = $true
+                $candidate = Invoke-PythonTool $retryPayload $whisperPy $asrPy
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }

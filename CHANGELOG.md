@@ -91,6 +91,16 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Ses dökümü: CPU yedeği PowerShell sözlük hatası yüzünden hiç çalışmıyordu (uçtan uca ses
+  testinde bulundu).** `Invoke-TranscribeWithModelSwap` birincil cihaz (GPU) dökümü başarısız
+  olunca CPU yedeğini `$payloadBase + @{ device = 'cpu' }` ile kuruyordu; ancak PowerShell'de
+  Hashtable `+` **aynı anahtarda istisna atar** ("Item has already been added. Key in dictionary:
+  'device'"), çünkü `$payloadBase` zaten `device`/`need_swap` içerir. Bu yüzden CPU'ya gerçek bir
+  geçiş hiç olmuyor, gerçek ASR hatası yutuluyor ve tur dökümsüz bitiyordu (örn. ctranslate2'nin
+  istediği `cublas64_12.dll` yoksa GPU yolu her zaman hata verir). Artık payload kopyalanır ve
+  alan ezilir (`$cpuPayload = $payloadBase.Clone(); $cpuPayload['device'] = 'cpu'`); aynı düzeltme
+  "modeli bellekten çıkarıp yeniden dene" bloğunda da yapıldı. `tests/test_transcriber.py` bu
+  deseni korur.
 - **Hijyen: audit kaydı rotasyonu ve düşünme (reasoning) tekrar koruması (F3/F4).** (F3) Araç
   çağrısı kaydı `logs\audit.jsonl` sınırsız büyüyordu; artık yazımdan önce dosya 5 MB'ı aşarsa
   `audit.1.jsonl`'e devredilir (varsa üzerine yazılır) ve yeni satır temiz dosyaya gider — devir
