@@ -182,8 +182,11 @@ def test_lite_thinks_without_a_reasoning_budget():
     # Dusunme yine acik ve deepseek formatiyla.
     assert "'--reasoning', 'on'" in manager
     assert "'--reasoning-format', 'deepseek'" in manager
-    # Derin dusunme talimati ve sureyi kisitlamama vurgusu.
-    assert "Düşünme suresini KISITLAMA" in desktop
+    # Derin dusunme talimati YUMUSATILDI: dusunme cikti butcesini paylastigindan model
+    # cok uzun dusunup gorunur yaniti yazmayi atlayabiliyordu; artik yanitini de
+    # mutlaka yazmasi istenir (bkz. qwen-inference.ps1 dusunmesiz kurtarma yolu).
+    assert "Derin ve dikkatli dusun" in desktop
+    assert "YANITINI DA MUTLAKA YAZ" in desktop
 
 
 def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
@@ -205,21 +208,33 @@ def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
     assert "nextn" in manager
 
 
-def test_thinking_is_never_switched_off_in_requests():
-    """Dusunme urun kararidir: istekler yalnizca cabayi ayarlar (reasoning_effort), ozelligi kapatmaz."""
+def test_thinking_is_only_switched_off_for_empty_answer_recovery():
+    """Dusunme urun kararidir; NORMAL istekler yalnizca cabayi ayarlar (reasoning_effort),
+    ozelligi kapatmaz. TEK istisna: bos/kesik gorunur yanit kurtarmasi. LITE'ta
+    reasoning_effort yok sayildigindan dusunme tum cikti butcesini tuketip yaniti
+    engelleyebiliyor; kurtarma yolu ikinci denemeyi `enable_thinking = $false` ile
+    (Set-NoThinkingRequest) yapar. Ana istek/baglam sikistirma hala dusuk caba ister."""
     inference = read_text("agent/qwen-inference.ps1")
 
-    assert "enable_thinking" not in inference
     assert "function Set-LowEffortRequest" in inference
-    # Tanim + baglam sikistirma + ana istek + bos yanit tekrari.
-    assert inference.count("Set-LowEffortRequest") == 4
+    assert "function Set-NoThinkingRequest" in inference
+    assert "enable_thinking = $false" in inference
+    # Tanim + baglam sikistirma + ana istek (kurtarma artik Set-NoThinkingRequest kullanir).
+    assert inference.count("Set-LowEffortRequest") == 3
     assert "$body.reasoning_effort = 'low'" in inference
+    # enable_thinking YALNIZCA kurtarma fonksiyonunda gecer; dusuk caba fonksiyonu
+    # dusunmeyi KAPATMAZ (yalnizca cabayi ayarlar).
+    no_think_fn = inference.split("function Set-NoThinkingRequest")[1].split("}")[0]
+    assert "enable_thinking = $false" in no_think_fn
+    low_fn = inference.split("function Set-LowEffortRequest")[1].split("}")[0]
+    assert "enable_thinking" not in low_fn
 
 
 def test_lite_system_prompt_encourages_deep_reasoning():
     """LITE icin sistem istemine derin/adim adim akil yurutme talimati eklenir; bu
     satir yalnizca lite profilinde bulunur (onek profile gore sabit oldugu icin KV
-    onbellegi bozulmaz) ve sinirsiz dusunme suresinde daha dogru sonuca yonlendirir."""
+    onbellegi bozulmaz). Talimat YUMUSATILDI: dusunmeyi sinirsizca uzatmaya degil,
+    yeterince dusunup YANITI DA YAZMAYA yonlendirir (dusunme cikti butcesini paylasir)."""
     desktop = read_text("qwen-desktop.ps1")
 
     assert "Derin ve dikkatli dusun" in desktop
@@ -229,8 +244,11 @@ def test_lite_system_prompt_encourages_deep_reasoning():
     assert "$script:apiSettings.localProfile -eq 'lite'" in block
     # Dusunme ozelligini kapatmaz; yalnizca yonlendirir.
     assert "enable_thinking" not in desktop
-    # Sabit (tum profiller) dogrulama talimati: iki kez kontrol + uydurma ad yasagi.
-    assert "en az IKI KEZ kontrol et" in desktop
+    # Yumusatilmis talimat: "yanitini da mutlaka yaz" + "uzatma".
+    assert "SINIRSIZCA UZATMA" in desktop
+    assert "YANITINI DA MUTLAKA YAZ" in desktop
+    # Sabit (tum profiller) dogrulama talimati: tekrar gozden gecir + yaniti yaz + uydurma ad yasagi.
+    assert "tekrar gozden gecir" in desktop
     assert "teorem, ozdeslik veya kaynak adi KULLANMA" in desktop
 
 

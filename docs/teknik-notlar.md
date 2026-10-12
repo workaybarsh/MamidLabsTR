@@ -57,6 +57,15 @@ MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, f
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta
 sığmayıp paylaşılan belleğe taşıyordu). Sağ alttaki seçiciyi **değiştirmezsen model yeniden yüklenmez**.
 
+**LITE düşünme ve yanıt bütçesi.** LITE'ta düşünme açık ve sınırsızdır (`--reasoning-budget`
+verilmez; Qwen3.5 9B şablonu `reasoning_effort`u yok sayar). Düşünme tokenları `--predict` **çıktı**
+bütçesini paylaştığından zor bir soruda düşünme tüm 8192'yi yiyip görünür yanıt üretmeyebilir
+(ölçüldü: 8192 token ≈ 159,7 sn, yanıt yok). Bu yüzden işçi, görünür yanıt **boşsa** ya da çıktı
+tavanında kesilip (`finishReason='length'`) kırık metin bıraktıysa ikinci denemeyi **düşünme kapalı**
+(`chat_template_kwargs.enable_thinking = $false` + `/no_think`) yapar ve görünür yanıtı **garanti
+eder**; sistem istemi de modeli yeterince düşünüp **yanıtını da yazmaya** yönlendirir (düşünmeyi
+sınırsızca uzatmaya değil).
+
 **MTP (Multi-Token Prediction).** MAX/FLASH, Qwen3.8 27B GGUF'unun gömülü MTP/nextn draft başlığıyla
 (`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`) `--spec-type draft-mtp` ile başlar. Ayrı bir
 draft model gerekmez; çıktı kayıpsızdır (kabul edilen tokenlar hedef modelle doğrulanır) ve

@@ -578,13 +578,20 @@ def test_update_check_uses_a_github_token_for_the_private_repo():
 
 def test_system_prompt_requires_verification_and_forbids_fabrication():
     """Sabit sistem istemi (Get-SystemPrompt) modele kanitli/dogru cevap vermesini ve cok
-    adimli islerde adimlari/ara sonuclari en az IKI KEZ kontrol etmesini soyler; var
-    oldugundan emin olmadigi test/teorem/kaynak adini uydurmasini yasaklar. Sabit oldugu
-    icin onek degismez ve KV onbellegi bozulmaz."""
+    adimli islerde kritik adimlari/ara sonuclari tekrar gozden gecirmesini soyler; var
+    oldugundan emin olmadigi test/teorem/kaynak adini uydurmasini yasaklar. Dogrulama
+    talimati YUMUSATILDI: "IKI KEZ kontrol et" dusunmeyi sinirsizca uzatmayi tesvik edip
+    LITE'ta cikti butcesini tuketerek gorunur yaniti engelleyebiliyordu; artik model
+    YANITINI DE MUTLAKA YAZMAYA cagrilir. Talimat sabit oldugu icin onek degismez ve KV
+    onbellegi bozulmaz."""
     desktop = read_text("qwen-desktop.ps1")
     assert "Kanitli ve dogru cevap ver" in desktop
-    assert "en az IKI KEZ kontrol et" in desktop
+    assert "tekrar gozden gecir" in desktop
+    assert "YANITINI DA MUTLAKA YAZ" in desktop
+    assert "yanitsiz kalma" in desktop
+    # Eski, dusunmeyi sinirsizca uzatan ifade kalmamali (regresyonun tetikleyicisi).
+    assert "en az IKI KEZ kontrol et" not in desktop
     assert "test, teorem, ozdeslik veya kaynak adi KULLANMA" in desktop
     # Talimat sabit sistem isteminde olmali (tura ozel ipuclarinda degil).
     prompt = desktop[desktop.index("function Get-SystemPrompt"):desktop.index("function Get-TurnHints")]
-    assert "en az IKI KEZ kontrol et" in prompt
+    assert "YANITINI DA MUTLAKA YAZ" in prompt

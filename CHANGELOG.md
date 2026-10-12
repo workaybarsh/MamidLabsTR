@@ -91,6 +91,21 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Zor soruda boş görünür yanıt regresyonu (düşünme tüm çıktı bütçesini yiyordu).** Uçtan uca
+  matematik testinde LITE (9B) zor bir integral sorusunda **8192 tokenın tamamını** (~159,7 sn)
+  düşünmeye harcayıp **görünür yanıt üretmedi**; baloncukta yalnızca "İntegral" kaldı
+  (`logs\qwen-lite.stderr.log`: `eval 159714 ms / 8192 tokens`). Kök neden: düşünme “sınırsız”,
+  çıktı tavanı `--predict 8192` ve arayüz `maxTokens 8192` **aynı bütçeyi** paylaşır; “adımları
+  iki kez kontrol et” talimatı düşünmeyi daha da uzatıyordu ve mevcut boş-yanıt yedeği de aynı
+  8192'ye takılıyordu. (1) **Düşünme-kapalı kurtarma:** yeni `Set-NoThinkingRequest`
+  (`chat_template_kwargs = @{ enable_thinking = $false }`, ayrıca `/no_think`) ile ikinci deneme
+  düşünmeyi **fiilen kapatır** (LITE `reasoning_effort`u yok saydığı için tek garantili yol) ve
+  görünür yanıtı **garanti eder**; tetikleyici hem **boş** hem de çıktı tavanında kesilip
+  (`finishReason='length'`) **kırık metin** bırakan yanıtı kapsar. (2) **Sistem istemi yumuşatıldı:**
+  “en az İKİ KEZ kontrol et” → “kritik adımları tekrar gözden geçir **ama yanıtını da mutlaka yaz**;
+  çok uzun düşünüp yanıtsız kalma” (LITE derin-düşünme satırı da aynı yönde). (3) Düşünme sınırsız
+  olduğundan `--predict`i artırmak yanıtı garanti etmez, yalnızca düşünmeyi uzatıp gecikmeyi büyütür
+  (ölçüm: 8192 token = 159,7 sn); bu yüzden garanti kurtarma seçildi, KV/bağlam taşması yaratılmadı.
 - **Blok LaTeX artık okunur metne çevrilir.** `Convert-MathText`, basit regex'in çözemediği blok
   yapıları **dengeleyen bir ayrıştırıcıyla** (`Read-MathGroup`/`Read-MathAtom`/`Expand-MathCommands`)
   işler: iç içe/kümeli ve kaçışlı `\{ \}` parantezli `\frac{A}{B}`, `\sqrt{X}` / `\sqrt[n]{X}`,

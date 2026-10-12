@@ -2311,14 +2311,17 @@ function Get-SystemPrompt {
     $lines += 'Sen MamidLabs asistanisin. Turkce, dogrudan ve net konus. Sohbet modeli yerel veya API olabilir; araclar kullanicinin bilgisayarinda calisir.'
     $lines += "Bugunun tarihi: $(Get-Date -Format 'yyyy-MM-dd')."
     # Sabit (tura ozel OLMAYAN) dogrulama talimati: onek degismedigi icin KV onbellegi
-    # bozulmaz. Model kanitli/dogru cevap versin ve cok adimli islerde iki kez kontrol etsin.
-    $lines += 'Kanitli ve dogru cevap ver: emin olmadigin bir seyi kesinmis gibi sunma, bilmedigini soyle. Ozellikle matematik, cebir, mantik ve cok adimli sorularda adimlarini ve sembolik/sayisal ARA SONUCLARI en az IKI KEZ kontrol et; gerekirse farkli bir yoldan dogrula. Var oldugundan emin olmadigin test, teorem, ozdeslik veya kaynak adi KULLANMA.'
-    # LITE (kucuk 9B model): dusunme acik ve SINIRSIZ (sunucuda butce yok). Modeli derin ve
-    # adim adim akil yurutmeye tesvik ederiz; düşünme suresini kisitlamasi istenmez, isi
-    # bitene kadar (lazim oldugu kadar) dusunsun. Bu satir profile gore sabittir; onek
-    # degismedigi icin KV onbellegi bozulmaz (yalnizca LITE profilinde eklenir).
+    # bozulmaz. Model kanitli/dogru cevap versin, kritik adimlari tekrar gozden gecirsin
+    # AMA yanitini de mutlaka yazsin (cok uzun dusunup yanitsiz kalmasin; zor soruda
+    # dusunme cikti butcesini yiyebiliyor - bkz. qwen-inference.ps1 kurtarma yolu).
+    $lines += 'Kanitli ve dogru cevap ver: emin olmadigin bir seyi kesinmis gibi sunma, bilmedigini soyle. Ozellikle matematik, cebir, mantik ve cok adimli sorularda kritik adimlari ve sembolik/sayisal ARA SONUCLARI tekrar gozden gecir; gerekirse farkli bir yoldan dogrula. Ama YANITINI DA MUTLAKA YAZ: cok uzun dusunup yanitsiz kalma; yeterince emin oldugunda net ve eksiksiz yaniti hemen ver. Var oldugundan emin olmadigin test, teorem, ozdeslik veya kaynak adi KULLANMA.'
+    # LITE (kucuk 9B model): dusunme acik (sunucuda butce yok). Modeli derin ve adim adim
+    # akil yurutmeye tesvik ederiz AMA dusunmeyi sinirsizca uzatmaya DEGIL: dusunme cikti
+    # butcesini paylastigindan model cok uzun dusunup gorunur yaniti yazmayi atlayabiliyordu.
+    # Bu satir profile gore sabittir; onek degismedigi icin KV onbellegi bozulmaz
+    # (yalnizca LITE profilinde eklenir).
     if ([string]$script:apiSettings.localProfile -eq 'lite') {
-        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle. Düşünme suresini KISITLAMA: gerektigi kadar uzun ve derin dusun; gerekirse birden fazla yaklasim dene ve hatayi bulursan geri don ve duzelt. Yeterince emin oldugunda dusunme adimlarini kisaca ortaya koy ve net, eksiksiz, dogru yaniti ver.'
+        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle. Gerektigi kadar dusun; gerekirse birden fazla yaklasim dene ve hatayi bulursan geri don ve duzelt. Ama dusunmeyi SINIRSIZCA UZATMA ve YANITINI DA MUTLAKA YAZ: dusunmen butun cikti butcesini tuketip yanitsiz kalmamali; yeterince emin oldugunda dusunme adimlarini kisaca ortaya koy ve net, eksiksiz, dogru yaniti hemen yaz.'
     }
     if ($netChip.Checked) { $lines += 'Internet erisimin var: guncel bilgi gerektiginde search_web ve fetch_page araclarini kullan.' }
     else { $lines += 'Internet erisimin KAPALI; web aramasi yapamazsin.' }

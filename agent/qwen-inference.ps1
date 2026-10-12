@@ -341,16 +341,29 @@ function Wait-LocalModelStopped {
     throw 'Dil modeli OCR icin VRAM''den bosaltilamadi.'
 }
 
-# Dusuk caba istegini tek yerden kurar: baglam sikistirma, ana istek ve bos
-# yanit tekrari ayni yolu kullanir.
+# Dusuk caba istegini tek yerden kurar: baglam sikistirma ve ana istek ayni yolu
+# kullanir.
 #
 # MAX/FLASH'taki Qwen3.8 27B sablonu reasoning_effort anahtarini anlar. Lite'taki
 # Qwen3.5 9B sablonu onu yok sayar (olculdu: low caba ile token sayisi degismedi);
 # orada dusunme ACIK ve SINIRSIZDIR (sunucuda --reasoning-budget verilmez; bkz.
-# scripts/manage-qwen.ps1). Baglam sikistirma/bos yanit tekrari yine dusuk caba ister.
+# scripts/manage-qwen.ps1). Bu yuzden zor soruda dusunme TUM cikti butcesini
+# (--predict) yiyip gorunur yanit uretmeyebilir; asil kurtarma asagidaki
+# Set-NoThinkingRequest'tir.
 function Set-LowEffortRequest([hashtable]$body) {
     $body.reasoning_effort = 'low'
     $body.chat_template_kwargs = @{ reasoning_effort = 'low' }
+}
+
+# Bos/kesik GORUNUR yanit kurtarmasi icin dusunmeyi FIILEN kapatir.
+#
+# LITE'ta reasoning_effort yok sayildigi icin dusuk caba istegi dusunmeyi
+# durdurmaz; TEK garantili yol Qwen3 sablonunun destekledigi
+# `enable_thinking = $false` anahtariyla dusunmeyi TAMAMEN kapatmaktir. Boylece
+# model dogrudan gorunur yaniti yazar ve zor soruda dusunme butun cikti butcesini
+# yese bile kullanici yanitsiz kalmaz.
+function Set-NoThinkingRequest([hashtable]$body) {
+    $body.chat_template_kwargs = @{ enable_thinking = $false }
 }
 
 function Start-LocalModelRestore([string]$profile) {
@@ -1222,8 +1235,8 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
                     # reasoning akisinda tekrara girerse 8192 token tavanina kadar bos donuyordu.
                     # Görünür icerikte kullanilanla AYNI esik/desen (ayni sozcuk 6+ kez) burada da
                     # uygulanir; esik muhafazakar oldugu icin mesru uzun dusunme kesilmez.
-                    # Görünür yanit YOKSA mevcut "bos yanit" yolu (asagida, dusuk cabayla yeniden
-                    # deneme) bozulmadan devreye girer; asil yanit uretilmisse korunur.
+                    # Görünür yanit YOKSA/kesikse asagidaki kurtarma yolu (dusunmeyi KAPATARAK
+                    # yeniden deneme) bozulmadan devreye girer; asil yanit uretilmisse korunur.
                     if ($provider -eq 'local' -and (Test-RepeatedOutput $result.reasoning)) {
                         $result.reasoning = Remove-RepeatedTail $result.reasoning
                         if (!$result.finishReason) { $result.finishReason = 'repeat' }
@@ -1850,12 +1863,17 @@ try {
         if ($turn.usage) { $lastUsage = $turn.usage }
         if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
 
-        # Görünür yanıt boş kaldıysa, finish reason ve düşünme çıktısından bağımsız
-        # olarak düşük çabayla bir kez daha deneriz.
-        if ($provider -eq 'local' -and $turn.toolParts.Count -eq 0 -and [string]::IsNullOrWhiteSpace($turn.content)) {
-            Emit 'status' 'Model boş yanıt verdi; önceki bulgular korunarak düşük çabayla devam ediliyor...'
+        # Görünür yanıt BOŞ kaldıysa ya da çıktı tavanında (finishReason='length')
+        # KESİLİP geriye yalnızca kırık bir metin bıraktıysa (zor soruda düşünme tüm
+        # çıktı bütçesini yiyor), düşünmeyi FİİLEN KAPATARAK bir kez daha deneriz.
+        # LITE `reasoning_effort`ı yok saydığı için düşük çaba yetmez; enable_thinking
+        # $false model doğrudan yanıtı yazmaya zorlar ve görünür yanıt GARANTİ edilir.
+        $emptyVisible = [string]::IsNullOrWhiteSpace($turn.content)
+        $truncatedFragment = $turn.finishReason -eq 'length' -and $turn.content.Length -lt 400
+        if ($provider -eq 'local' -and $turn.toolParts.Count -eq 0 -and ($emptyVisible -or $truncatedFragment)) {
+            Emit 'status' 'Model yanıtı tamamlayamadı; düşünme kapatılıp yanıt doğrudan isteniyor...'
             $retryBody = $body.Clone()
-            Set-LowEffortRequest $retryBody
+            Set-NoThinkingRequest $retryBody
             # Arac sonuclari ve onceki turlar zaten messages icinde. Son, yanitsiz
             # turun calisma notlarini da aktar; kullanicinin istegini sifirdan kurma.
             $notes = [string]$turn.reasoning
@@ -1876,13 +1894,15 @@ try {
             }
             $retryBody.messages = @($messages.ToArray()) + @(
                 @{ role = 'assistant'; content = ("[Yanit oncesi calisma notlari; henuz tamamlanmis yanit degil]`n" + $notes) },
-                @{ role = 'user'; content = 'Onceki istegime yukaridaki calisma notlari ve mevcut arac sonuclarindan devam et. Elde edilen bulgulari kullan; tamamlanmis arac islemlerini tekrarlama. Kisa dusunup asil yaniti simdi yaz.' }
+                @{ role = 'user'; content = 'Onceki istegime yukaridaki calisma notlari ve mevcut arac sonuclarindan devam et. Elde edilen bulgulari kullan; tamamlanmis arac islemlerini tekrarlama. Uzun uzun dusunme; ASIL YANITI SIMDI, eksiksiz ve dogrudan yaz. /no_think' }
             )
             $retryTurn = @{ reasoning = ''; content = ''; usage = $null; toolParts = @{}; finishReason = $null }
             Invoke-ChatCompletion $retryBody $Shared $true $retryTurn
             if ($retryTurn.usage) { $lastUsage = $retryTurn.usage }
             if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
-            $turn = $retryTurn
+            # Dusunmesiz tur gorunur yanit urettiyse onu kullan; uretmediyse eldeki
+            # (kirik da olsa) metni koru ki kullanici hicbir sey gormesin degil.
+            if (![string]::IsNullOrWhiteSpace($retryTurn.content) -or $emptyVisible) { $turn = $retryTurn }
         }
 
         $toolCalls = @($turn.toolParts.GetEnumerator() | Sort-Object Key | ForEach-Object {

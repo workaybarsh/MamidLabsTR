@@ -1039,6 +1039,39 @@ def test_reasoning_repeat_guard_uses_same_threshold():
     assert 'IsNullOrWhiteSpace($turn.content)' in worker
 
 
+# ------------------------------- Bos/kesik görünür yanit kurtarmasi (dusunmesiz)
+def test_empty_answer_recovery_disables_thinking(tmp_path):
+    """Zor bir matematik sorusunda model tüm çıktı bütçesini (8192) düşünmeye
+    harcayıp görünür yanıt üretmedi ya da yalnızca kırık bir metin ("İntegral")
+    bıraktı; baloncukta yanıt yoktu. Kurtarma yolu ikinci denemeyi
+    `enable_thinking = $false` ile yapar (LITE reasoning_effort'u yok saydığından
+    tek garantili yol budur) ve /no_think ile modelden doğrudan yanıt ister.
+    Tetikleyici: görünür yanıt BOŞ ya da çıktı tavanında kesilmiş kırık yanıt."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Set-NoThinkingRequest" in worker
+    assert "$body.chat_template_kwargs = @{ enable_thinking = $false }" in worker
+    # Tetikleyici: görünür yanıt BOŞ veya 'length' ile kesilmiş kırık yanıt.
+    assert "$emptyVisible = [string]::IsNullOrWhiteSpace($turn.content)" in worker
+    assert "$truncatedFragment = $turn.finishReason -eq 'length' -and $turn.content.Length -lt 400" in worker
+    assert "($emptyVisible -or $truncatedFragment)" in worker
+    # Kurtarma govdesi thinking'i KAPATIR (dusuk caba DEGIL) ve /no_think ister.
+    block = worker.split("($emptyVisible -or $truncatedFragment)")[1].split("$turn = $retryTurn")[0]
+    assert "Set-NoThinkingRequest $retryBody" in block
+    assert "Set-LowEffortRequest $retryBody" not in block
+    assert "/no_think" in block
+    # Davranis: fonksiyon cagrilinca istek govdesi dusunmeyi kapatir (gercek pwsh).
+    fn = _extract_ps_function(worker, "Set-NoThinkingRequest")
+    script = fn + """
+$b = @{ messages = @(); max_tokens = 8192 }
+Set-NoThinkingRequest $b
+'ENABLED=' + [string]$b.chat_template_kwargs.enable_thinking
+'BODY=' + ($b | ConvertTo-Json -Depth 6 -Compress)
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "ENABLED=False" in out, out
+    assert '"enable_thinking":false' in out, out
+
+
 class ReasoningRepeatHandler(BaseHTTPRequestHandler):
     """SSE: yalnizca reasoning_content gonderir ve ayni sozcugu 6+ kez tekrarlar;
     [DONE] gonderilmez, baglanti acik kalir. F4 korumasi olmadan istemci 8192
