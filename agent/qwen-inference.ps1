@@ -400,10 +400,12 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
     return $ocrResponse
 }
 
-# Ses transkripsiyonu (faster-whisper large-v3-tr). Cihaz ve swap karari PROFIL ADINA
-# gore DEGIL, ses isi baslarken OLCULEN gercek bos VRAM ve sistem RAM'ine gore verilir:
-# LITE profili hem 8 GB (hedef makine) hem 16 GB kartta kullanildigi icin "lite" adi
-# tek basina karar veremez. Oncelik sirasi (bkz. config.choose_plan):
+# Ses transkripsiyonu (faster-whisper large-v3-tr). TIER SECILI dil-modeli profilinden gelir:
+# secili profil lite -> 'lite', max/flash -> 'pro' olarak isciye gecilir (Get-AsrProfileName);
+# boylece LITE ve PRO ayri calisir (compute_type int8_float16/float16, yukleme sirali/paralel,
+# CPU/GPU esigi 15/20 sn). CIHAZ ve SWAP karari ise tier'in bellek esikleri + ses isi
+# baslarken OLCULEN gercek bos VRAM + sistem RAM'i ve kaydin suresine gore verilir
+# (bkz. config.choose_plan):
 #   1) Whisper + AST dil modeliyle BIRLIKTE bos VRAM'e sigarsa -> GPU, swap YOK.
 #   2) Sigmaz ama ses hatti CPU'da sistem RAM'ine sigarsa       -> CPU, swap YOK (yavas,
 #      ama dil modeli VRAM'de yerinde kalir).
@@ -411,12 +413,32 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
 #      (dil modeli bosaltilir, Whisper GPU'da calisir, sonra dil modeli geri yuklenir).
 # Plan isciye (venv python) sorulur; secilen cihaz basarisiz olursa CPU yedegine dusulur;
 # iptal (Durdur) davranisi korunur.
+function Get-AsrProfileName {
+    # Secili dil-modeli profilini ses hatti tier adina cevirir: lite -> 'lite',
+    # max/flash -> 'pro'. Yalnizca YEREL saglayicida gecerlidir: API modunda yerel model
+    # yuklu degildir ve $JobData.profile secili yerel profilden degil, varsayilan 'max'tan
+    # gelebilir (kullanicinin kayitli localProfile'i 'lite' olsa bile); bu yuzden yerel
+    # olmayan saglayicida $null doner ve isci tier'i makinenin toplam VRAM'ine gore secer
+    # (config.select_profile). Profil yok/okunamazsa da $null doner. Eski 'pc1'/'pc2' adlari
+    # da kabul.
+    if ($provider -ne 'local') { return $null }
+    $p = ([string]$JobData.profile).Trim().ToLowerInvariant()
+    if (!$p) { return $null }
+    if ($p -eq 'lite' -or $p -eq 'pc1') { return 'lite' }
+    return 'pro'
+}
+
 function Get-AudioTranscriptionPlan([string]$path) {
     # Olculemezse GUVENLI taraf: yerel saglayicida swap et; API modunda GPU zaten bostur.
     $fallback = [pscustomobject]@{ device = 'cuda'; need_swap = ($provider -eq 'local') }
     try {
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
-        $raw = Invoke-PythonTool @{ action = 'plan'; local_model_loaded = ($provider -eq 'local'); path = $path } $whisperPy $asrPy
+        # Tier secili dil-modeli profilinden gelir (lite/pro); profil yoksa isci tier'i
+        # makinenin toplam VRAM'ine gore secer.
+        $planPayload = @{ action = 'plan'; local_model_loaded = ($provider -eq 'local'); path = $path }
+        $asrProfile = Get-AsrProfileName
+        if ($asrProfile) { $planPayload.profile = $asrProfile }
+        $raw = Invoke-PythonTool $planPayload $whisperPy $asrPy
         $plan = $null
         try { $plan = $raw | ConvertFrom-Json -ErrorAction Stop } catch { }
         if ($plan -and $plan.device) {
@@ -446,8 +468,11 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
         # Konusma disi ses olaylari (AST) ayari: mikrofon menusundeki onay kutusu.
         $audioEvents = if ($null -eq $JobData.audioEvents) { $true } else { [bool]$JobData.audioEvents }
-        # Cihaz/swap plani yukarida (bos VRAM + RAM) belirlendi; isciye aynen verilir.
+        # Cihaz/swap plani yukarida (bos VRAM + RAM) belirlendi; tier SECILI profilden gelir
+        # (lite/pro), isciye aynen verilir.
         $payloadBase = @{ action = 'transcribe'; path = $path; language = 'tr'; events = $audioEvents; device = $device; need_swap = $needSwap }
+        $asrProfile = Get-AsrProfileName
+        if ($asrProfile) { $payloadBase.profile = $asrProfile }
         try {
             Emit 'status' ("Ses large-v3-tr ile yaziya cevriliyor (" + $device + ")…") | Out-Null
             $candidate = Invoke-PythonTool $payloadBase $whisperPy $asrPy

@@ -276,7 +276,9 @@ function Invoke-Layout {
         $_.CommandLine -and $_.CommandLine.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
     if ($running) { throw 'MamidLabs acik; program dosyalari kilitli. Uygulamayi kapatip kurulumu tekrar calistir.' }
 
-    foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE')) {
+    # EULA.txt sihirbazin lisans sayfasinda gosterilir ve .iss [Files] ile kaynak pakete
+    # gomulur; betik tabanli kurulumda da koke ve kurulum-kaynak'e kopyalanmali.
+    foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
         $from = Join-Path $Source $file
         if (Test-Path -LiteralPath $from -PathType Leaf) {
             Copy-Item -LiteralPath $from -Destination (Join-Path $Root $file) -Force
@@ -296,7 +298,8 @@ function Invoke-Layout {
     # kumesiyle tazelenir. Betikle yapilan kurulumda (klasor yoksa) bosuna olusturulmaz.
     $kaynak = Join-Path $Root 'kurulum-kaynak'
     if (Test-Path -LiteralPath $kaynak -PathType Container) {
-        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE')) {
+        # Ayni ust dosya listesi (EULA.txt dahil) kaynak pakete de yazilir.
+        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
             $from = Join-Path $Source $file
             if (Test-Path -LiteralPath $from -PathType Leaf) { Copy-Item -LiteralPath $from -Destination $kaynak -Force }
         }

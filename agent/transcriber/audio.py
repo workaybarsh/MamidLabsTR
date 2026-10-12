@@ -1,6 +1,6 @@
 """Ses hazirligi: herhangi bir ses/video dosyasini 16 kHz mono PCM WAV'a cevirir.
 
-PyAV kullanilir (ffmpeg ikilisi gerekmez). Uzun kayitlar (PC1) `wave` modulu ile
+PyAV kullanilir (ffmpeg ikilisi gerekmez). Uzun kayitlar (lite tier; chunk_minutes>0) `wave` modulu ile
 parcalara bolunur; boylece 16 GB sistem RAM'i sismez.
 """
 from __future__ import annotations

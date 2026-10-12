@@ -39,16 +39,42 @@ def test_package_modules_exist():
 
 
 def test_config_selects_profile_by_vram():
+    """Ad verilmedigi (CLI) durumda tier'i toplam VRAM belirler: >=14000 MiB -> 'pro',
+    alti -> 'lite'."""
     from transcriber import config
 
-    pc2 = config.select_profile(total_mib=16311)
-    assert pc2.name == "pc2" and pc2.compute_type == "float16" and pc2.load_mode == "parallel"
-    pc1 = config.select_profile(total_mib=8000)
-    assert pc1.name == "pc1" and pc1.compute_type == "int8_float16" and pc1.load_mode == "sequential"
-    assert pc1.chunk_minutes > 0 and pc2.chunk_minutes == 0
+    pro = config.select_profile(total_mib=16311)
+    assert pro.name == "pro" and pro.compute_type == "float16" and pro.load_mode == "parallel"
+    lite = config.select_profile(total_mib=8000)
+    assert lite.name == "lite" and lite.compute_type == "int8_float16" and lite.load_mode == "sequential"
+    assert lite.chunk_minutes > 0 and pro.chunk_minutes == 0
     # Turkce dökum varsayilani; whisper modeli large-v3-tr.
-    assert pc2.language == "tr"
-    assert "whisper-large-v3-tr" in pc2.whisper_model
+    assert pro.language == "tr"
+    assert "whisper-large-v3-tr" in pro.whisper_model
+
+
+def test_select_profile_for_uses_selected_profile_name():
+    """SECILI dil-modeli profil ADI tier'i belirler; toplam VRAM yalnizca ad yoksa yedektir."""
+    from transcriber import config
+
+    # 'lite' -> lite tier; VRAM bol olsa bile (16311 MiB) lite kalir.
+    lite_high = config.select_profile_for("lite", total_mib=16311)
+    assert lite_high.name == "lite" and lite_high.load_mode == "sequential"
+    # 'pro'/'max'/'flash' (ve eski 'pc2') -> pro tier; VRAM az olsa bile (8000 MiB) pro kalir.
+    for name in ("pro", "max", "flash", "PRO", " max ", "pc2"):
+        prof = config.select_profile_for(name, total_mib=8000)
+        assert prof.name == "pro", name
+        assert prof.compute_type == "float16" and prof.load_mode == "parallel"
+    # Eski donanim adi 'pc1' -> lite; VRAM bol olsa bile lite.
+    assert config.select_profile_for("pc1", total_mib=16311).name == "lite"
+    # Ad yok / taninmiyor -> VRAM yedegi (8000 -> lite, 16311 -> pro).
+    assert config.select_profile_for(None, total_mib=8000).name == "lite"
+    assert config.select_profile_for(None, total_mib=16311).name == "pro"
+    assert config.select_profile_for("bilinmeyen", total_mib=8000).name == "lite"
+    assert config.select_profile_for("bilinmeyen", total_mib=16311).name == "pro"
+    # overrides ada gore secilen profile de uygulanir.
+    tuned = config.select_profile_for("lite", total_mib=16311, language="auto", events=False)
+    assert tuned.name == "lite" and tuned.language == "auto" and tuned.events is False
 
 
 def test_config_overrides_are_applied():
@@ -118,8 +144,8 @@ def test_profile_carries_audio_memory_thresholds():
 
 
 def test_choose_plan_priority_vram_then_ram_then_swap():
-    """PC2 (CPU dali acik) onceligi: (1) birlikte sigar -> GPU swap yok, (2) CPU RAM'e sigar
-    -> CPU swap yok, (3) ikisi de yetmez -> mecburi swap."""
+    """pro (eski PC2; CPU dali acik) onceligi: (1) birlikte sigar -> GPU swap yok,
+    (2) CPU RAM'e sigar -> CPU swap yok, (3) ikisi de yetmez -> mecburi swap."""
     from transcriber import config
 
     profile = config.select_profile(total_mib=16311)
@@ -379,6 +405,44 @@ def test_run_explicit_device_is_not_overridden(monkeypatch, tmp_path):
     assert capture["device"] == "cpu"
 
 
+def test_cli_and_stdin_use_selected_profile_name(monkeypatch, tmp_path):
+    """CLI/isci sozlesmesi: `--profile` ve stdin `profile` alani ADI tier'a cevirir; ad
+    yoksa profile None kalir (transcriber VRAM yedegine duser)."""
+    import io
+
+    from transcriber import main as transcriber_main
+
+    calls = []
+
+    def fake_run(path, profile=None, **kw):
+        calls.append(profile.name if profile else None)
+        return {"text": "ok", "model": "m", "language": "tr",
+                "profile": profile.name if profile else None}
+
+    monkeypatch.setattr(transcriber_main, "run", fake_run)
+
+    # stdin: 'max' -> pro.
+    monkeypatch.setattr(sys, "stdin", io.StringIO(
+        '{"action":"transcribe","profile":"max","path":"x.wav"}'))
+    assert transcriber_main.main(["--stdin"]) == 0
+    assert calls[-1] == "pro"
+
+    # stdin: profil yok -> None (VRAM yedegi).
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"action":"transcribe","path":"x.wav"}'))
+    assert transcriber_main.main(["--stdin"]) == 0
+    assert calls[-1] is None
+
+    # CLI: 'lite' -> lite.
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"")
+    assert transcriber_main.main([str(wav), "--profile", "lite"]) == 0
+    assert calls[-1] == "lite"
+
+    # CLI: profil yok -> None.
+    assert transcriber_main.main([str(wav)]) == 0
+    assert calls[-1] is None
+
+
 def test_worker_accepts_auto_and_need_swap(monkeypatch, tmp_path):
     """Isci sozlesmesi: 'auto' oldugu gibi gecilir; need_swap varsa iletilir, yoksa None."""
     module = load_worker()
@@ -404,9 +468,30 @@ def test_worker_accepts_auto_and_need_swap(monkeypatch, tmp_path):
     assert captured["need_swap"] is None
 
 
+def test_worker_profile_maps_name_to_tier(monkeypatch):
+    """Isci sozlesmesi: istek `profile` alani verilirse tier ADLA secilir ('lite'/'pro'/
+    'pc1'/'pc2'/'max'/'flash'); ad yoksa tier'i toplam VRAM belirler."""
+    module = load_worker()
+
+    # Ad onceliklidir: bol VRAM (16311) olsa bile 'lite' -> lite tier.
+    monkeypatch.setattr(module.config, "total_vram_mib", lambda: 16311)
+    assert module._profile({"profile": "lite"}).name == "lite"
+    assert module._profile({"profile": "pc1"}).name == "lite"
+    # Az VRAM (8000) olsa bile 'max'/'pc2' -> pro tier.
+    assert module._profile({"profile": "max"}).name == "pro"
+    assert module._profile({"profile": "pc2"}).name == "pro"
+    # Ad verilince gecerli language override uygulanir; 'auto' yok sayilir (profil varsayilani).
+    assert module._profile({"profile": "lite", "language": "en"}).language == "en"
+    assert module._profile({"profile": "lite", "language": "auto"}).language == "tr"
+    # Ad yok: yalnizca language -> VRAM yedegi (8000 -> lite; bos istek -> lite).
+    monkeypatch.setattr(module.config, "total_vram_mib", lambda: 8000)
+    assert module._profile({"language": "tr"}).name == "lite"
+    assert module._profile({}).name == "lite"
+
+
 def test_worker_plan_action_decides_device_and_swap(monkeypatch, tmp_path):
     """Isci sozlesmesi: action='plan' olculen bos VRAM/RAM'e gore (device, need_swap) doner.
-    PC2 profili (CPU dali acik) uzerinden denenir."""
+    pro (eski PC2) profili (CPU dali acik) uzerinden denenir."""
     module = load_worker()
     from transcriber import config
 
@@ -417,7 +502,7 @@ def test_worker_plan_action_decides_device_and_swap(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "available_ram_mib", lambda: 0)
     plan = module.plan({"profile": "pc2", "local_model_loaded": True})
     assert plan["device"] == "cuda" and plan["need_swap"] is False
-    assert plan["profile"] == "pc2" and plan["free_vram_mib"] == vram
+    assert plan["profile"] == "pro" and plan["free_vram_mib"] == vram
 
     # VRAM yetmez, RAM yeter -> CPU, swap yok.
     monkeypatch.setattr(config, "free_vram_mib", lambda: 0)
@@ -485,6 +570,78 @@ def test_transcription_uses_asr_environment_not_imagegen():
     assert "path = $path" in plan
 
 
+def test_worker_maps_selected_profile_to_asr_tier():
+    """Arayuz SECILI dil-modeli profilini ses hatti tier'ina cevirir ('lite'->'lite', aksi->
+    'pro') ve hem plan hem transcribe isteklerine `profile` alani olarak gecirir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Get-AsrProfileName" in worker
+    fn = worker.split("function Get-AsrProfileName")[1].split("function ")[0]
+    assert "return 'lite'" in fn
+    assert "return 'pro'" in fn
+    assert "$planPayload.profile = $asrProfile" in worker
+    assert "$payloadBase.profile = $asrProfile" in worker
+
+
+def _extract_ps_function(source: str, name: str) -> str:
+    """Basit brace sayaci ile `function <name> { ... }` govdesini cikarir."""
+    start = source.index(f"function {name}")
+    depth = 0
+    started = False
+    for index in range(start, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+            started = True
+        elif char == "}":
+            depth -= 1
+            if started and depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(f"{name} fonksiyonunun sonu bulunamadi")
+
+
+def _run_ps1(script: str, tmp_path: Path) -> str:
+    """Betigi gercek pwsh'ta -File ile calistirir (Turkce karakterler -Command'da bozulabilir)."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("PowerShell 7 is unavailable")
+    script_path = tmp_path / "test.ps1"
+    script_path.write_text(script, encoding="utf-8-sig")
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout
+
+
+def test_asr_profile_name_ignores_non_local_provider(tmp_path):
+    """A2 regresyonu: API modunda (yerel model yok) `$JobData.profile` secili yerel profilden
+    DEGIL, varsayilan 'max'tan gelebilir; kullanicinin kayitli localProfile'i 'lite' olsa bile
+    ASR zorla 'pro' olmamali. Get-AsrProfileName yerel OLMAYAN saglayicida $null donmeli ki
+    isci tier'i gercek VRAM'den secsin (config.select_profile); yerel + lite -> 'lite',
+    yerel + max/flash -> 'pro'. Fonksiyon gercek pwsh'ta izole calistirilir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Get-AsrProfileName")
+    script = fn + """
+
+function Ask([string]$prov, $prof) {
+    $script:provider = $prov
+    $script:JobData = [pscustomobject]@{ profile = $prof }
+    '[' + (Get-AsrProfileName) + ']'
+}
+Ask 'openai' 'max'
+Ask 'claude' 'flash'
+Ask 'custom' 'lite'
+Ask 'local' 'lite'
+Ask 'local' 'max'
+Ask 'local' 'flash'
+Ask 'local' 'pc1'
+Ask 'local' ''
+"""
+    out = _run_ps1(script, tmp_path)
+    assert out.split() == ["[]", "[]", "[]", "[lite]", "[pro]", "[pro]", "[lite]", "[]"]
+
+
 def test_desktop_pipes_audio_to_worker_and_shows_transcript():
     desktop = read_text("qwen-desktop.ps1")
     worker = read_text("agent/qwen-inference.ps1")
@@ -531,9 +688,9 @@ def test_microphone_menu_has_non_speech_events_toggle():
 
 
 def test_transcription_uses_model_swap_for_local_provider():
-    """OCR ile ayni desen: yerel saglayicida (dil modeli yuklu) cihaz/swap karari ses isi
-    baslarken OLCULEN bos VRAM/RAM'e gore verilir; dil modeli gerekiyorsa bosaltilir ve
-    geri yuklenir. Karar PROFIL ADINA gore DEGIL (LITE hem 8 GB hem 16 GB'ta calisir)."""
+    """OCR ile ayni desen: yerel saglayicida (dil modeli yuklu) tier SECILI profilden gelir
+    (lite/pro); cihaz/swap karari ise ses isi baslarken OLCULEN bos VRAM/RAM + kaydin
+    suresine gore verilir; dil modeli gerekiyorsa bosaltilir ve geri yuklenir."""
     worker = read_text("agent/qwen-inference.ps1")
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]

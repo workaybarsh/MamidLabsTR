@@ -506,13 +506,19 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   menüsündeki **"Konuşma dışı sesler"** onay kutusuyla kapatılır (`api.json → audioEvents`).
 - **Konuşmacı ayrımı:** pyannote (HF token gerekir; yoksa atlanır).
 - **Çıktı** kronolojik ve zaman damgasızdır: `(ayak sesleri)` / `Konuşmacı: ...` satırları.
-- **Profiller:** `config.py` GPU toplam VRAM'ine bakar. **PC2 (≥ 14 GB):** `float16`, modeller aynı
-  anda. **PC1 (< 14 GB):** `int8_float16`, modeller sırayla ve uzun kayıtlar 30 dk'lık parçalara
-  bölünür (`torch.cuda.empty_cache()` ile her model iş bitince boşaltılır).
+- **Profiller (tier):** `config.py` artık tier'ı **seçili dil-modeli profiline** göre seçer
+  (`select_profile_for`): **pro** (MAX/FLASH) → `float16`, modeller aynı anda; **lite** →
+  `int8_float16`, modeller sırayla ve uzun kayıtlar 30 dk'lık parçalara bölünür
+  (`torch.cuda.empty_cache()` ile her model iş bitince boşaltılır). Eski donanım adları
+  (`pc1`/`pc2`) ve arayüz adları (`max`/`flash`) takma addır (`TIER_ALIASES`). Toplam VRAM
+  yalnızca profil adı verilmezse (CLI, `--profile` yok → `select_profile`) yedek ölçüttür
+  (≥ 14 GB → pro, aksi halde lite).
 - **CPU / GPU seçimi:** GPU'da dökum, yerel dil modelinin VRAM'den boşaltılıp geri yüklenmesini
-  gerektirir (swap). Bu yüzden kısa kayıtlarda CPU, uzun kayıtlarda GPU daha kârlıdır; eşik
-  ölçümle belirlenir ve `agent/transcriber/config.py` içindeki `DEFAULT_CPU_MAX_SECONDS` ile
-  ayarlanır (bkz. AGENTS bölüm 5 ve aşağıdaki AR-GE notu).
+  gerektirir (swap). Cihaz/swap kararı tier adına göre değil, ses işi başlarken **ölçülen gerçek
+  boş VRAM + sistem RAM'i ve kaydın süresine** göre verilir (`choose_plan`): Whisper + AST dil
+  modeliyle birlikte boş VRAM'e sığarsa GPU (swap yok); sığmazsa ve kayıt eşikten kısaysa CPU
+  (swap yok); aksi halde GPU + mecburi swap. Eşik **pro ~20 sn**, **lite ~15 sn**
+  (`agent/transcriber/config.py` → `DEFAULT_CPU_MAX_SECONDS` / `Profile.cpu_max_seconds`).
 
 ## Düzeltmeleri doğrulama
 

@@ -67,6 +67,11 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   İndirilen paket `tools\editions` altında saklanır ve **"Dil sürümünü sil"** ile kaldırılabilir.
 
 ### Değişen
+- **Ses dökümü tier'ı artık seçili profile göre:** yerel ASR hattının seviyesi (`int8_float16` +
+  sıralı yükleme + 15 sn CPU/GPU eşiği olan **LITE** ya da `float16` + paralel + 20 sn olan **PRO**
+  (MAX/FLASH)) artık **seçili dil-modeli profiline** göre belirlenir; eskiden yalnızca toplam VRAM'e
+  bakılıyordu. Toplam VRAM artık yalnızca profil adı verilmezse (CLI) yedek ölçüttür. Cihaz/swap
+  kararı yine ölçülen gerçek boş VRAM + sistem RAM'i ve kaydın süresine göre verilir.
 - **Ses dökümünde CPU/GPU seçimi ölçüme göre:** cihaz artık gerçek boş VRAM + sistem RAM'i +
   kaydın **süresine** göre otomatik seçilir. Ölçülen eşik **PRO ~20 sn**, **LITE ~15 sn**;
   bu süreden kısa kayıtlarda CPU, uzunlarda GPU (swap) kullanılır. Dil modeli + ses hattı boş
@@ -86,6 +91,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Betik tabanlı güncellemede `EULA.txt` kopyalanmıyordu:** `install-mamidlabs.ps1` üst dosya
+  listesi (`qwen-desktop.ps1`, `launch-qwen-desktop.vbs`, `README.md`, `LICENSE`) köke ve
+  `kurulum-kaynak` paketine kopyalanır; `EULA.txt` listede olmadığı için lisans dosyası betikle
+  (sihirbazsız) güncellenen kurulumlarda eksik kalıyordu. Listeye eklendi.
 - **Sessiz/boş ses kaydında döküm sarmalayıcısı sızıyordu:** Qwen3-ASR çıktısını ayrıştıran
   `_extract_text`, konuşma algılanmayan (sessiz) kısa kayıtlarda ham `language None<asr_text>`
   metnini transkript olarak modele gönderiyordu; model de "transkript boş" diye yanıt veriyordu.

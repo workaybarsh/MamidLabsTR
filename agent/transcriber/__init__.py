@@ -1,7 +1,7 @@
 """MamidLabs yerel konusma + ses olayi dökum hatti.
 
 Moduller:
-    config   VRAM'e gore profil (LITE/PC1 vs PRO/PC2)
+    config   tier = secili profil (lite/pro); VRAM yalnizca yedek (select_profile_for/select_profile)
     audio    16 kHz mono WAV'a cevirme + parcalama
     vad      Silero VAD konusma araliklari
     asr      faster-whisper (Whisper large-v3-tr), halusinasyon filtreleri

@@ -38,3 +38,15 @@ def test_layout_creates_source_package_only_when_it_exists():
     block = script[start:end]
     assert "Test-Path -LiteralPath $kaynak -PathType Container" in block
     assert "New-Item -ItemType Directory -Path $kaynak" not in block
+
+
+def test_layout_copies_eula_to_root_and_source_package():
+    """EULA.txt sihirbazin lisans sayfasinda gosterilir ve .iss [Files] kaynak pakete
+    koyar; betik tabanli guncellemede de hem koke hem kurulum-kaynak'e kopyalanmali.
+    Aksi halde EULA yalnizca sihirbaz kurulumunda bulunur, betik guncellemesinde kaybolur."""
+    script = read_text("scripts/install-mamidlabs.ps1")
+    # Iki ust dosya listesi (kok + kurulum-kaynak) EULA.txt icermeli.
+    assert script.count("'LICENSE', 'EULA.txt')") == 2
+    # .iss de ayni kume ile uyusmali.
+    iss = read_text("packaging/windows/mamidlabs.iss")
+    assert 'Source: "..\\..\\EULA.txt"; DestDir: "{app}\\kurulum-kaynak"' in iss

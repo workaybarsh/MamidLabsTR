@@ -9,8 +9,8 @@ Motor: faster-whisper large-v3-tr (Turkce). Ses olaylari (AST) ve konusmaci ayri
     Konusmaci: Evet, biraz geciktim.
 
 Arayuz/isci sozlesmesi: stdin'den JSON alir, stdout'a JSON yazar.
-    istek: {"action":"transcribe","path":...,"device":"auto|cuda|cpu","need_swap":bool,"language":"tr", ...}
-    istek: {"action":"plan","local_model_loaded":bool}   -> {"device":..,"need_swap":..}
+    istek: {"action":"transcribe","path":...,"device":"auto|cuda|cpu","need_swap":bool,"profile":"lite|pro","language":"tr", ...}
+    istek: {"action":"plan","local_model_loaded":bool,"profile":"lite|pro"}   -> {"device":..,"need_swap":..}
     yanit: {"text":..., "model":..., "chars":..., "events":N, "diarized":bool} ya da {"error":...}
 """
 from __future__ import annotations
@@ -29,13 +29,16 @@ from transcriber import config, main as transcriber_main  # noqa: E402
 
 
 def _profile(req: dict):
-    if req.get('profile'):
-        total = 20000 if str(req['profile']).lower() == 'pc2' else 8000
-        return config.select_profile(total_mib=total)
+    """Ses hatti tier'i SECILI profil adindan gelir: 'lite', 'pro' ('max'/'flash'), ya da
+    eski adlar 'pc1'/'pc2'. Ad yoksa/taninmiyorsa tier'i makinenin toplam VRAM'i belirler
+    (bkz. config.select_profile_for)."""
     language = str(req.get('language') or '').strip()
     overrides = {}
     if language and language != 'auto':
         overrides['language'] = language
+    name = req.get('profile')
+    if name:
+        return config.select_profile_for(name, **overrides)
     return config.select_profile(**overrides) if overrides else config.select_profile()
 
 

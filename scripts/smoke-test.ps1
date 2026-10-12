@@ -772,10 +772,16 @@ if ($SkipUi) {
         }
 
         # Arayuzun kullandigi gercek isci ile bir tur: hata ve watchdog metni olmamali.
+        # maxTokens gercek arayuzle AYNI olmali (qwen-desktop.ps1: 8192; sunucu --predict 8192;
+        # bkz. sohbet probe'u). LITE'ta dusunme SINIRSIZDIR (--reasoning-budget yoktur ve
+        # `reasoning_effort=low` Qwen3.5 9B sablonunca yok sayilir), dusunme tokenlari CIKTI
+        # butcesini paylasir. 300 verilirse model tamamen dusunup GORUNUR YANIT uretmeden
+        # kesilir ve isci "Model yanit metni uretmedi." hatasini uretir; bu bir test kosumu
+        # uyumsuzlugudur, uygulama hatasi degil.
         $jobData = @{
             root = $Root; messages = @(@{ role = 'user'; content = 'Merhaba, kendini tek cumleyle tanit.' })
             provider = 'local'; model = "smoke-ui-$Profile"; profile = $Profile
-            maxTokens = 300; contextLimit = 32768; boundFolder = $null
+            maxTokens = 8192; contextLimit = 32768; boundFolder = $null
             consultProviders = @{}; attachedDocuments = @(); currentImagePaths = @()
             hasCurrentImage = $false; multiImageOcr = $false; multiImageOcrMode = $false
             internet = $false; agent = $false; office = $false; documentCreate = $false; effort = 'low'
