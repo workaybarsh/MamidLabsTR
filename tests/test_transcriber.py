@@ -5,9 +5,13 @@ Qwen3-ASR ve whisper.cpp tamamen kaldirildi. Agir testler (model/ortam yoksa) at
 sozlesmeler her zaman denetlenir.
 """
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -727,6 +731,49 @@ def test_transcription_honors_cancel_and_stop_does_not_wait_for_restore():
     assert "Emit 'cancelled'" in caller
 
 
+def test_worker_steers_model_away_from_reading_failed_audio():
+    """Regresyon (ucdan uca ses testi): dökum alinamadiginda (hata ya da bos sonuc) isci son
+    kullanici mesajindaki '[Kullanici bir ses dosyasi ekledi: ...]' notunu tek basina
+    BIRAKMAZ. Aksi halde model dosyayi 'ekli belge' sanip read_document/read_bound_file ile
+    acmaya calisiyor ve TUM ajan turlarini (>8) bosa harcayip kullaniciya tek kelime
+    yanit vermiyordu; dökum baloncugu da hic olusmuyordu. Ayrica plan 'swap yok' deyip
+    dökum yine de alinamazsa dil modeli bosaltilip TEMIZ GPU/RAM ile BIR kez daha denenir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Set-AudioUnavailableNote" in worker
+    # Basarisiz dökumun HER iki yolunda (bos/hata sonucu + istisna) yonlendirme notu eklenir.
+    caller = worker.split("$currentAudioPaths = @($JobData.currentAudioPaths")[1].split("Otomatik baglam")[0]
+    assert caller.count("Set-AudioUnavailableNote") >= 2
+    assert "read_document/read_bound_file" in worker
+    # no-swap yolu basarisizsa swap ile yeniden deneme (temiz GPU + daha cok bos RAM).
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "!$swapModel -and $provider -eq 'local'" in block
+    assert "($payloadBase + @{ device = 'cuda'; need_swap = $true })" in block
+    assert "Wait-LocalModelStopped" in block
+    # Regresyon: eski "dökumsuz sürüyor" yolu not eklemeden devam EDEMEZ.
+    assert 'Emit \'status\' "Ses dökumlenemedi; istek dökumsuz sürüyor. $reason"' in caller
+
+
+def test_set_audio_unavailable_note_isolated(tmp_path):
+    """Set-AudioUnavailableNote izole calistirilir: yonlendirme notu son kullanici mesajina
+    eklenir ve modeli dosyayi okumaktan acikca caydirir (gercek pwsh)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Set-AudioUnavailableNote")
+    script = fn + """
+$items = [Collections.ArrayList]::new()
+[void]$items.Add(@{ role = 'user'; content = @(@{ type = 'text'; text = '[Kullanici bir ses dosyasi ekledi: ses.wav]' }) })
+$ok = Set-AudioUnavailableNote $items 'ses.wav' 'CUDA out of memory'
+'OK=' + $ok
+'COUNT=' + @($items[0].content).Count
+'NOTE=' + [string]$items[0].content[-1].text
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "OK=True" in out
+    assert "COUNT=2" in out
+    assert "BELGE degil" in out
+    assert "read_document" in out
+    assert "ses.wav" in out
+
+
 def test_audio_turn_preempts_language_model_loading():
     desktop = read_text("qwen-desktop.ps1")
     assert "function Stop-ModelSwitchForAudio" in desktop
@@ -746,6 +793,232 @@ def test_python_tool_subprocess_is_killed_instantly_on_stop():
     # Cihaz dongusu kaldirildi; CPU yedegi yalnizca iptal EDILMEDIYSE denenir.
     assert "if ($err -and !$Shared.Cancel) {" in asr
     assert "if ($Shared.Cancel) { Emit 'cancelled'" in worker
+
+
+# ---------------------------------------------------- D2: duvar-saati siniri
+def test_python_tool_has_wall_clock_timeout():
+    """D2: Invoke-PythonTool bekleme dongusu eskiden yalnizca iptali yokluyordu; alt
+    surec kilitlenirse TUM is sonsuza kadar bekliyordu. Artik ust sure var (varsayilan
+    180 sn; parametre ya da $payload.timeoutSeconds ile gecersiz kilinabilir) ve
+    asilirsa alt surec agaci oldurulup hata donulur; iptal davranisi korunur."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("function Invoke-PythonTool")[1].split("function ")[0]
+    assert "function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [string]$pythonPath = $null, [int]$timeoutSeconds = 0)" in worker
+    assert "$payload.timeoutSeconds" in block
+    assert "if ($timeoutSeconds -le 0) { $timeoutSeconds = 180 }" in block
+    assert "$deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)" in block
+    assert "[DateTime]::UtcNow -ge $deadline" in block
+    assert "return \"Arac zaman asimina ugradi ($timeoutSeconds sn).\"" in block
+    # Iptal davranisi korunur (once iptal, sonra zaman asimi yoklanir).
+    assert block.index("$Shared.Cancel") < block.index("-ge $deadline")
+
+
+def test_python_tool_wall_clock_timeout_kills_subprocess(tmp_path):
+    """D2 davranis: sonsuza kadar uyuyan alt surec zaman asiminda oldurulur ve is
+    TAKILMADAN hata dondurur (gercek pwsh + gercek Python sureci)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Invoke-PythonTool")
+    sleeper = tmp_path / "sleeper.py"
+    sleeper.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+    script = fn + f"""
+$shared = @{{ Cancel = $false }}
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$out = Invoke-PythonTool @{{ x = 1 }} '{sleeper}' '{sys.executable}' 2
+'OUT=' + $out
+'ELAPSED=' + [int]$sw.Elapsed.TotalSeconds
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "Arac zaman asimina ugradi" in out, out
+    elapsed = int(out.split("ELAPSED=")[1].split()[0])
+    assert elapsed < 15, out
+
+
+# --------------------------------------------- F1/F2: baglam tasmasi korumasi
+def test_inference_loop_guards_against_context_overflow():
+    """F1/F2: tur ici araç sonuclari birikip prompt ctx-size'i asarsa --no-context-shift
+    yuzunden sunucu HATA donduruyordu ve tur dusuyordu. Her tur BASINDA tahmini prompt
+    boyutu hesaplanir; butce asilirsa EN ESKI araç ciktilarini kisaltir, hala sigmazsa
+    araclara devam etmeden gorunur yanit ister. Ayrica max_tokens kalan odaga gore
+    sinirlanir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Estimate-MessagesTokens" in worker
+    assert "function Compress-TurnMessages" in worker
+    assert "$promptTokensEst = Estimate-MessagesTokens $messages" in worker
+    assert "Compress-TurnMessages $messages $trimBudget" in worker
+    assert "Baglam sinirina yaklasildi; eski arac ciktilari kisaltildi." in worker
+    assert "Baglam siniri asildi; araclara devam edilmeden eldeki bulgularla yanit isteniyor." in worker
+    # max_tokens kalan odaga gore sinirlanir; gonderilen govde bu degeri kullanir.
+    assert "$maxTokens = [math]::Min($maxTokens, [math]::Max(256, $contextLimit - $promptTokensEst - $contextReserve))" in worker
+    assert "max_tokens = $maxTokens" in worker
+    assert "max_tokens = [int]$JobData.maxTokens" not in worker
+    # Guvenli bitis: araclar sunulmaz.
+    assert "$offeredTools = if ($forceFinalAnswer)" in worker
+    assert "$forceFinalAnswer" in worker.split("function Estimate-MessagesTokens")[1]
+
+
+def test_estimate_and_compress_turn_messages_isolated(tmp_path):
+    """F1 davranis: tahmin araç ciktisiyla buyur; Compress-TurnMessages butceyi asan
+    EN ESKI araç ciktisini kisaltir, sistem mesajini ve SON kullanici mesajini korur,
+    mesaji SILMEZ (assistant tool_calls ile tool eslesmesi bozulmaz)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Estimate-MessagesTokens") + "\n\n" + \
+        _extract_ps_function(worker, "Compress-TurnMessages")
+    script = fn + """
+$items = [Collections.ArrayList]::new()
+[void]$items.Add(@{ role = 'system'; content = 'SISTEM TALIMATI' })
+[void]$items.Add(@{ role = 'user'; content = 'ilk soru' })
+[void]$items.Add(@{ role = 'assistant'; content = ''; tool_calls = @(@{ id = 'c1'; type = 'function'; function = @{ name = 'read_bound_file'; arguments = '{}' } }) })
+[void]$items.Add(@{ role = 'tool'; tool_call_id = 'c1'; content = ('X' * 30000) })
+[void]$items.Add(@{ role = 'user'; content = 'SON SORU' })
+'BEFORE=' + (Estimate-MessagesTokens $items)
+$n = Compress-TurnMessages $items 500
+'AFTER=' + (Estimate-MessagesTokens $items)
+'TRIMMED=' + $n
+'COUNT=' + $items.Count
+'SYS=' + [string]$items[0].content
+'LAST=' + [string]$items[4].content
+'TOOL=' + [string]$items[3].content
+'ARGS=' + [string]$items[2].tool_calls[0].function.arguments
+"""
+    out = _run_ps1(script, tmp_path)
+    before = int(out.split("BEFORE=")[1].split()[0])
+    after = int(out.split("AFTER=")[1].split()[0])
+    assert before >= 10000, out
+    assert after < before, out
+    trimmed = int(out.split("TRIMMED=")[1].split()[0])
+    assert trimmed >= 1, out
+    assert "COUNT=5" in out
+    assert "SYS=SISTEM TALIMATI" in out
+    assert "LAST=SON SORU" in out
+    assert "kisaltildi" in out.split("TOOL=")[1]
+    assert "ARGS={}" in out
+
+
+# --------------------------------------------------- F3: audit log rotasyonu
+def test_audit_log_has_size_rotation():
+    """F3: logs/audit.jsonl sinirsiz buyuyordu; hicbir boyut tavani/rotasyon yoktu.
+    Tavan (5 MB) asilinca mevcut dosya audit.1.jsonl'e devredilir (uzerine yazilir)
+    ve yeni kayit temiz dosyaya gider. Devir de ayni try icindedir; audit yazimi
+    hicbir durumda turu DUSURMEZ (mevcut catch yutar)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("function Write-AuditLog")[1].split("$endpoint =")[0]
+    assert "5MB" in block
+    assert "audit.1.jsonl" in block
+    assert "Move-Item" in block and "-Force" in block
+    # Devir, mutex kilitli bloğun ICINDE ve yazimdan ONCE olmali (yaris onlenir).
+    after_lock = block.split("$owns = $lock.WaitOne(2000)")[1]
+    assert after_lock.index("Move-Item") < after_lock.index("Add-Content")
+    # try/catch korunur: yazim/rotasyon hatasi yutulur, tur dusmez.
+    assert "catch {" in block
+
+
+def test_write_audit_log_rotates_when_oversized(tmp_path):
+    """F3 davranis (gercek pwsh): 5 MB'i asan audit.jsonl bir sonraki yazimdan once
+    audit.1.jsonl'e devredilir (varsa eski devir dosyasinin UZERINE yazilir) ve yeni
+    satir temiz dosyaya gider. Devirden sonra dosya kucuk kaldigi icin ikinci yazim
+    yeniden devretmez."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Get-AuditLock") + "\n\n" + \
+        _extract_ps_function(worker, "Write-AuditLog")
+    log_dir = tmp_path / "logs"
+    log_path = log_dir / "audit.jsonl"
+    rotated = log_dir / "audit.1.jsonl"
+    script = fn + f"""
+function Get-AuditLogPath {{ '{log_path}' }}
+[IO.Directory]::CreateDirectory('{log_dir}') | Out-Null
+# Var olan devir dosyasi (uzerine yazilmali) + tavani asan 6 MB'lik dolu kayit.
+[IO.File]::WriteAllText('{rotated}', 'ESKI-DEVIR-ICERIGI')
+[IO.File]::WriteAllText('{log_path}', ('x' * 999 + "`n") * 6000)
+Write-AuditLog 'read_bound_file' 'not_required' 'ok' 'a.txt' ''
+Write-AuditLog 'run_command' 'asked_yes' 'ok' 'echo hi' 'C:\\tmp\\out.txt'
+'WROTE=ok'
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "WROTE=ok" in out, out
+    new_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert len(new_lines) == 2, new_lines
+    assert '"tool":"read_bound_file"' in new_lines[0]
+    assert '"tool":"run_command"' in new_lines[1]
+    rotated_text = rotated.read_text(encoding="utf-8")
+    assert rotated_text.startswith("x" * 100), rotated_text[:120]
+    assert "ESKI-DEVIR-ICERIGI" not in rotated_text
+    assert len(rotated_text.splitlines()) == 6000
+
+
+# --------------------------------------------- F4: reasoning tekrar korumasi
+def test_reasoning_repeat_guard_uses_same_threshold():
+    """F4: LITE'ta dusunme sinirsizdir; runaway dedektoru yalnizca görünür icerige
+    baktigindan model reasoning akisinda tekrara girerse 8192 token tavanina kadar
+    bos donuyordu. reasoning birikimine de AYNI esik/desen uygulanir ve akis guvenli
+    durdurulur; görünür yanit yoksa mevcut 'bos yanit' yolu (finishReason'a bakmaz)
+    bozulmadan devreye girer."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("if ($delta.reasoning_content) {")[1].split("if ($delta.content) {")[0]
+    assert "(Test-RepeatedOutput $result.reasoning)" in block
+    assert "Remove-RepeatedTail $result.reasoning" in block
+    assert "$stopForRepeat = $true" in block
+    assert "$finished = $true" in block
+    # Koruma yerel akisla sinirlidir; uzak saglayicilar etkilenmez (icerikle ayni).
+    assert "$provider -eq 'local'" in block
+    # Bos-yanit yolu hala görünür icerige bakar; reasoning tekrari onu bozmaz.
+    assert 'IsNullOrWhiteSpace($turn.content)' in worker
+
+
+class ReasoningRepeatHandler(BaseHTTPRequestHandler):
+    """SSE: yalnizca reasoning_content gonderir ve ayni sozcugu 6+ kez tekrarlar;
+    [DONE] gonderilmez, baglanti acik kalir. F4 korumasi olmadan istemci 8192
+    tokena kadar doner ya da 120 sn sessizlik zaman asimina kadar beklerdi."""
+
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        try:
+            for _ in range(400):
+                chunk = {"choices": [{"index": 0, "delta": {"reasoning_content": "dusunuyorum "}}]}
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                self.wfile.flush()
+            time.sleep(60)
+        except OSError:
+            pass
+
+    def log_message(self, *args):
+        pass
+
+
+def test_reasoning_repeat_stops_stream_early(tmp_path):
+    """F4 davranis (gercek pwsh + sahte SSE sunucusu): reasoning akisinda tekrar
+    erken durdurulmazsa LITE 8192 tokena kadar bos donuyordu. Ayni esik/desen
+    reasoning'e uygulanir; akis 'repeat' ile guvenli kapanir, görünür yanit yoktur
+    (dolayisiyla mevcut bos-yanit/retry yolu devreye girebilir) ve istisna sizmaz."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ReasoningRepeatHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        script = f"""
+$job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; model = 'test'; contextLimit = 32768; maxTokens = 8192; agent = $false; internet = $false; office = $false; documentCreate = $false }}
+$shared = @{{ Cancel = $false }}
+. '{ROOT}\\agent\\qwen-inference.ps1' $job $shared | Out-Null
+$endpoint = 'http://127.0.0.1:{server.server_port}/v1/chat/completions'
+$script:http = [Net.Http.HttpClient]::new(); $script:http.Timeout = [Threading.Timeout]::InfiniteTimeSpan
+$turn = @{{ reasoning = ''; content = ''; usage = $null; toolParts = @{{}}; finishReason = $null }}
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$threw = ''
+try {{ Invoke-ChatCompletion @{{ messages = @() }} $shared $false $turn | Out-Null }} catch {{ $threw = [string]$_.Exception.GetBaseException().Message }}
+@{{ content = $turn.content; reasoningLen = $turn.reasoning.Length; finish = $turn.finishReason; threw = $threw; seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1) }} | ConvertTo-Json -Compress
+"""
+        out = _run_ps1(script, tmp_path)
+    finally:
+        server.shutdown()
+    got = json.loads(out.strip().splitlines()[-1])
+    assert got["finish"] == "repeat", got
+    assert got["content"] == "", got
+    assert got["threw"] == "", got
+    assert got["reasoningLen"] < 2000, got
+    assert got["seconds"] < 15, got
 
 
 def test_stop_cancels_work_but_never_kills_an_in_flight_model_load():

@@ -91,6 +91,34 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Hijyen: audit kaydı rotasyonu ve düşünme (reasoning) tekrar koruması (F3/F4).** (F3) Araç
+  çağrısı kaydı `logs\audit.jsonl` sınırsız büyüyordu; artık yazımdan önce dosya 5 MB'ı aşarsa
+  `audit.1.jsonl`'e devredilir (varsa üzerine yazılır) ve yeni satır temiz dosyaya gider — devir
+  de mevcut `try/catch` içinde olduğundan audit yazımı hiçbir durumda turu düşürmez. (F4) Tekrar
+  (runaway) dedektörü yalnızca görünür içeriğe bakıyordu; LITE'ta düşünme **sınırsız** olduğundan
+  model `reasoning_content` akışında tekrara girerse 8192 token tavanına kadar boş dönüyordu. Artık
+  reasoning birikimine görünür içerikle **aynı eşik/desen** muhafazakâr biçimde uygulanır; güçlü
+  tekrar saptanınca akış güvenli noktada durdurulur (görünür yanıt yoksa mevcut boş-yanıt yolu
+  korunur).
+- **Ajan döngüsü dayanıklılığı: tur içi bağlam taşması, duvar-saati sınırı ve `custom` sağlayıcı
+  toleransı.** (F1) Araç sonuçları tur içinde birikip prompt `contextLimit`/`--ctx-size`'i aşınca
+  `--no-context-shift` yüzünden sunucu hata döndürüp tur düşüyordu; artık her tur başında tahmini
+  prompt boyutu hesaplanır, bütçe aşılırsa **en eski araç çıktıları** (sistem mesajı ve son kullanıcı
+  mesajı korunarak) kısaltılır; hâlâ sığmazsa araçlara devam etmeden eldeki bulgularla görünür yanıt
+  istenir. (F2) `max_tokens` kalan bağlam odasına göre sınırlanır (küçük bağlamlı model/uç).
+  (D2) Python alt süreçlerine duvar-saati sınırı eklendi (varsayılan 180 sn; aşılınca öldürülür).
+  (D3) OpenAI uyumlu `custom` uç geçici kopmada bir kez yeniden dener ve yanıt üretildiyse kopmayı
+  hata saymaz; uzak sağlayıcılarda davranış korunur.
+- **Ses eki döküme çevrilemediğinde model dosyayı okumaya çalışıp turları boşa harcıyordu (uçtan uca
+  ses testinde bulundu).** Eklenen bir `.wav` transkript üretemediğinde işçi sessizce "dökümsüz"
+  devam ediyor, kullanıcı mesajındaki `[Kullanıcı bir ses dosyası ekledi: ...]` notu tek başına
+  kalıyordu; model bunu "ekli belge" sanıp `read_document`/`read_bound_file` ile `.wav`'ı açmaya
+  çalışıyor ve **8/8 ajan turunu** döküm baloncuğu hiç oluşmadan harcıyordu. Artık (1) plan "swap
+  yok" deyip döküm alınamazsa dil modeli bellekten çıkarılıp **temiz GPU/RAM** ile bir kez daha
+  denenir (WDDM'de plan'ın okuduğu boş VRAM, model yüklüyken iyimser olabiliyordu), (2) yine
+  alınamazsa son kullanıcı mesajına sesin **belge olmadığını** ve yazıya çevrilemediğini söyleyen
+  açık bir yönlendirme notu eklenir. Motor tek başına sağlamdı (doğrudan `whisper-tools.py`
+  çağrısı çalışıyor); kusur işçinin başarısızlığı yutup modele yanlış bağlam bırakmasıydı.
 - **Betik tabanlı güncellemede `EULA.txt` kopyalanmıyordu:** `install-mamidlabs.ps1` üst dosya
   listesi (`qwen-desktop.ps1`, `launch-qwen-desktop.vbs`, `README.md`, `LICENSE`) köke ve
   `kurulum-kaynak` paketine kopyalanır; `EULA.txt` listede olmadığı için lisans dosyası betikle

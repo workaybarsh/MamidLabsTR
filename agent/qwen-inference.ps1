@@ -44,7 +44,8 @@ function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
 # ekler (is/arac kimligi, kaynak kanal, onay, sonuc, degisen yollar). Belge/komut
 # ICERIGI hicbir zaman yazilmaz - yalnizca kimlik alanlari (yol, komut metni,
 # sorgu, dosya adi); API anahtarlari zaten arac argumanlarinda gelmez, bu
-# yuzden ayrica redakte edilmesi gerekmez.
+# yuzden ayrica redakte edilmesi gerekmez. Kayit sinirsiz buyumesin diye 5 MB'i
+# asinca audit.1.jsonl'e devredilir (F3).
 # Fonksiyon olarak tanimlanir (Get-InstallRoot ile ayni sebep/desen): dosya
 # yalnizca fonksiyonlari alinarak yuklendiginde (davranis testleri) top-level
 # atamalar calismaz, null uzerinde metot cagrisi patlar.
@@ -71,7 +72,18 @@ function Write-AuditLog([string]$tool, [string]$approval, [string]$result, [stri
         # dosyaya ayni anda yazabilir; mutex satirlarin birbirine karismasini onler.
         $lock = Get-AuditLock
         $owns = $lock.WaitOne(2000)
-        try { Add-Content -LiteralPath $path -Value $line -Encoding utf8 }
+        try {
+            # F3: audit kaydi sinirsiz buyumesin. Tavan (5 MB) asilinca mevcut dosya
+            # audit.1.jsonl'e devredilir (varsa uzerine yazilir); yeni kayit temiz
+            # dosyaya gider. Tek dosya devri yeterlidir: kayitlar yalnizca kimlik
+            # alanlari tasir ve eski satirlar zaten amac disidir, coklu rotasyon gerekmez.
+            # Devir de ayni try icindedir; sozlesme korunur: audit yazimi hicbir
+            # durumda turu DUSURMEZ (catch asagida yutar).
+            if ((Test-Path -LiteralPath $path -PathType Leaf) -and (Get-Item -LiteralPath $path).Length -ge 5MB) {
+                Move-Item -LiteralPath $path -Destination (Join-Path $dir 'audit.1.jsonl') -Force
+            }
+            Add-Content -LiteralPath $path -Value $line -Encoding utf8
+        }
         finally { if ($owns) { $lock.ReleaseMutex() } }
     } catch {
         # Audit log yazilamamasi kullanicinin isteğini engellememeli; sessizce
@@ -158,7 +170,7 @@ function Test-BinaryFile([string]$path) {
     return ($controlCount / $bytes.Count) -gt 0.05
 }
 
-function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [string]$pythonPath = $null) {
+function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [string]$pythonPath = $null, [int]$timeoutSeconds = 0) {
     if (!$pythonPath) { $pythonPath = Get-PythonExe }
     if (!(Test-Path -LiteralPath $pythonPath -PathType Leaf)) { return 'Python araci kurulu degil.' }
     if (!$scriptPath) { $scriptPath = Get-ToolsPyPath }
@@ -180,10 +192,21 @@ function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [st
         # bekleme sirasinda iptal yoklanir. Boylece uzun suren ses/OCR/arama isleri bloklamaz.
         $outTask = $p.StandardOutput.ReadToEndAsync()
         $errTask = $p.StandardError.ReadToEndAsync()
+        # Duvarl saat siniri: alt surec yanit vermezse (kilitlenme, sonsuz dongu) TUM is
+        # sonsuza kadar beklemesin ve tur kilitlenip dusmesin. Varsayilan 180 sn; cagiran
+        # parametreyle ya da $payload.timeoutSeconds ile gecersiz kilabilir (uzun suren
+        # isler icin). Asilirsa alt surec agaci oldurulur ve mevcut hata yoluna dusulur.
+        if ($timeoutSeconds -le 0 -and $payload -and $payload.timeoutSeconds) { $timeoutSeconds = [int]$payload.timeoutSeconds }
+        if ($timeoutSeconds -le 0) { $timeoutSeconds = 180 }
+        $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
         while (!$p.HasExited) {
             if ($Shared -and $Shared.Cancel) {
                 try { $p.Kill($true) } catch { }
                 throw [OperationCanceledException]::new()
+            }
+            if ([DateTime]::UtcNow -ge $deadline) {
+                try { $p.Kill($true) } catch { }
+                return "Arac zaman asimina ugradi ($timeoutSeconds sn)."
             }
             Start-Sleep -Milliseconds 150
         }
@@ -194,6 +217,10 @@ function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [st
     } finally { $p.Dispose() }
 }
 
+# Tekrar (runaway) dedektoru: son 800 karakterde ayni sozcugun (2-32 harf/rakam)
+# 6+ kez ardisik tekrarlanmasini arar. Görünür icerikte (F0) ve reasoning
+# birikiminde (F4) ayni esik/desen kullanilir; esik muhafazakar tutulur ki mesru
+# uzun cikti/dusunme yanlislikla kesilmesin.
 function Test-RepeatedOutput([string]$text) {
     if ([string]::IsNullOrWhiteSpace($text)) { return $false }
     $tail = if ($text.Length -gt 800) { $text.Substring($text.Length - 800) } else { $text }
@@ -487,6 +514,24 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
             try {
                 Emit 'status' 'Secilen cihaz ile dökum basarisiz; CPU ile deneniyor…' | Out-Null
                 $candidate = Invoke-PythonTool ($payloadBase + @{ device = 'cpu' }) $whisperPy $asrPy
+                $parsed = $null
+                try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
+                if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
+                elseif ($parsed -and $parsed.error) { $err = [Exception]::new([string]$parsed.error) }
+                else { $err = [Exception]::new([string]$candidate) }
+            } catch { $err = $_ }
+        }
+        # Plan "swap yok" dediyse ama dökum yine de alinamadiysa dil modeli bellekten
+        # cikarilip (TEMIZ GPU + daha cok bos RAM) BIR kez daha denenir, sonra geri yuklenir.
+        # WDDM'de plan'in okudugu "bos VRAM" model yukluyken iyimser olabiliyor (bkz. AGENTS
+        # tuzak 7/13) ve no-swap yolu sessizce basarisiz olup dökumsuz tura dusuyordu.
+        if ($err -and !$Shared.Cancel -and !$swapModel -and $provider -eq 'local') {
+            try {
+                Emit 'status' 'Ses dökumu alinamadi; dil modeli gecici olarak bellekten cikarilip yeniden deneniyor…' | Out-Null
+                & (Get-ManageQwenPath) -Action stop | Out-Null
+                Wait-LocalModelStopped
+                $swapModel = $true
+                $candidate = Invoke-PythonTool ($payloadBase + @{ device = 'cuda'; need_swap = $true }) $whisperPy $asrPy
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
@@ -1075,10 +1120,15 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
                 $response = $script:http.SendAsync($request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cts.Token).GetAwaiter().GetResult()
             } catch {
                 $cause = $_.Exception.GetBaseException()
-                if ($provider -ne 'local' -or $networkRetried -or $shared.Cancel -or $cts.IsCancellationRequested -or
+                # 'custom' (kendi OpenAI-uyumlu ucun) da yerel gibi gecici baglanti
+                # kopmalarina acik (Ollama/LM Studio/vLLM yeniden baslatilabilir, ag
+                # dalgalanabilir). Uzak saglayicilar (openai/claude/gemini/deepseek)
+                # KORUNUR: yalnizca local + custom sinirli (1) yeniden denenir.
+                $retryableProvider = $provider -eq 'local' -or $provider -eq 'custom'
+                if (!$retryableProvider -or $networkRetried -or $shared.Cancel -or $cts.IsCancellationRequested -or
                     ($cause -isnot [Net.Http.HttpRequestException] -and $cause -isnot [IO.IOException] -and $cause -isnot [Net.Sockets.SocketException])) { throw }
                 $networkRetried = $true
-                Emit 'status' 'Yerel model baglantisi kesildi; bir kez yeniden baglaniliyor...'
+                Emit 'status' $(if ($provider -eq 'custom') { 'Ozel uc baglantisi kesildi; bir kez yeniden baglaniliyor...' } else { 'Yerel model baglantisi kesildi; bir kez yeniden baglaniliyor...' })
                 [Threading.Tasks.Task]::Delay(750, $cts.Token).GetAwaiter().GetResult()
                 continue
             }
@@ -1144,6 +1194,20 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
                     $piece = [string]$delta.reasoning_content
                     $result.reasoning += $piece
                     if ($emitDeltas) { Emit 'thinking' $piece }
+                    # F4: LITE'ta dusunme SINIRSIZDIR (sunucuda --reasoning-budget yok; dusuk
+                    # caba istegi bunu kapatmaz). Yalnizca gorunur icerik kontrol edildiginden model
+                    # reasoning akisinda tekrara girerse 8192 token tavanina kadar bos donuyordu.
+                    # Görünür icerikte kullanilanla AYNI esik/desen (ayni sozcuk 6+ kez) burada da
+                    # uygulanir; esik muhafazakar oldugu icin mesru uzun dusunme kesilmez.
+                    # Görünür yanit YOKSA mevcut "bos yanit" yolu (asagida, dusuk cabayla yeniden
+                    # deneme) bozulmadan devreye girer; asil yanit uretilmisse korunur.
+                    if ($provider -eq 'local' -and (Test-RepeatedOutput $result.reasoning)) {
+                        $result.reasoning = Remove-RepeatedTail $result.reasoning
+                        if (!$result.finishReason) { $result.finishReason = 'repeat' }
+                        $finished = $true
+                        $stopForRepeat = $true
+                        if ($emitDeltas) { Emit 'status' 'Model düşünmede tekrara girdi; akış güvenli noktada durduruldu.' }
+                    }
                 }
                 if ($delta.content) {
                     $piece = [string]$delta.content
@@ -1192,7 +1256,10 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
         # normaldir ve hata sayilmaz. Gercek (iceriksiz/aracsiz/tamamlanmamis) kopmalar
         # yine hata olarak bildirilir.
         $usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0
-        if ($provider -eq 'local' -and $isReset -and !$shared.Cancel -and $usable) {
+        # local + custom: yanit uretildikten sonra (finish_reason/icerik/arac cagrisi)
+        # baglanti koptuysa bu HATA degildir; cevabin altina '[Hata]' eklenmez. Uzak
+        # saglayicilarda davranis KORUNUR (yalnizca local/custom toleranslidir).
+        if (($provider -eq 'local' -or $provider -eq 'custom') -and $isReset -and !$shared.Cancel -and $usable) {
             if (!$result.finishReason) { $result.finishReason = 'connection-closed' }
         } else {
             throw
@@ -1241,6 +1308,67 @@ function Get-PlainText($content) {
         elseif ($type -eq 'image_url') { $parts += '[gorsel]' }
     }
     return ($parts -join ' ')
+}
+
+# F1: Tur ici baglam tasmasi korumasi. Arac sonuclari tur boyunca birikip prompt'u
+# buyutur; llama-server --no-context-shift ile calistigindan (bkz. manage-qwen.ps1)
+# prompt ctx-size'i asarsa istek HATA ile doner ve tur duser. Bu yuzden her tur
+# BASINDA tahmini prompt boyutunu olcup gerekirse eski ciktilar kisaltilir.
+# Hesap masaustundeki Estimate-ContextTokens ile ayni yaklasimdir (karakter/3;
+# gorsel parcasi sabit 4096 karakter); araç cagrisi argumanlari da baglama gider.
+function Estimate-MessagesTokens([Collections.ArrayList]$items) {
+    $chars = 0
+    foreach ($message in @($items.ToArray())) {
+        $content = $message.content
+        if ($content -is [string]) { $chars += $content.Length }
+        else {
+            foreach ($part in @($content)) {
+                if ($part -is [string]) { $chars += $part.Length }
+                elseif ($part.type -eq 'text') { $chars += ([string]$part.text).Length }
+                elseif ($part.type -eq 'image_url') { $chars += 4096 }
+            }
+        }
+        foreach ($call in @($message.tool_calls)) {
+            if ($call -and $call.function -and $call.function.arguments) { $chars += ([string]$call.function.arguments).Length }
+        }
+    }
+    return [int]($chars / 3)
+}
+
+# Butceyi asan EN ESKI araç ciktilarini (ve gerekiyorsa eski asistan metinlerini)
+# iceriklerini kisaltarak kirpar. Sistem mesajina (index 0) ve son kullanici
+# mesajina DOKUNMAZ: kullanicinin asil sorusu ve talimatlar korunur. Mesaj SILINMEZ
+# (assistant tool_calls ile tool sonucu eslesmesi bozulmaz); yalnizca icerik kucultulur.
+function Compress-TurnMessages([Collections.ArrayList]$items, [int]$budgetTokens) {
+    if ($items.Count -eq 0) { return 0 }
+    $marker = '[Eski cikti baglam siniri icin kisaltildi]'
+    $lastUser = -1
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        if ([string]$items[$i].role -eq 'user') { $lastUser = $i; break }
+    }
+    $trimmed = 0
+    # 1) En eski arac sonuclarini kisalt.
+    for ($i = 1; $i -lt $items.Count; $i++) {
+        if ((Estimate-MessagesTokens $items) -le $budgetTokens) { break }
+        $message = $items[$i]
+        if ([string]$message.role -ne 'tool') { continue }
+        if ([string]$message.content -le $marker) { continue }
+        $message.content = $marker
+        $trimmed++
+    }
+    # 2) Hala sigmiyorsa eski asistan mesajlarinin gorunur metnini kisalt
+    #    (tool_calls alani korunur; araç eslesmesi bozulmaz).
+    for ($i = 1; $i -lt $items.Count; $i++) {
+        if ((Estimate-MessagesTokens $items) -le $budgetTokens) { break }
+        if ($i -eq $lastUser) { continue }
+        $message = $items[$i]
+        if ([string]$message.role -ne 'assistant') { continue }
+        if ($message.content -is [string] -and $message.content.Length -gt $marker.Length) {
+            $message.content = $marker
+            $trimmed++
+        }
+    }
+    return $trimmed
 }
 
 function Test-OcrIntent([string]$text) {
@@ -1363,6 +1491,33 @@ function Add-TranscriptToMessages([Collections.ArrayList]$items, [string]$transc
     return $false
 }
 
+# Transkript alinamadiginda (hata ya da bos sonuc): son kullanici mesajindaki
+# "[Kullanici bir ses dosyasi ekledi: ...]" notu tek basina kalirsa model dosyayi
+# "ekli belge" sanip read_document/read_bound_file ile acmaya calisir ve tum ajan
+# turlarini bosa harcar (arayuz testinde: 8/8 tur, yalnizca read_document; dosya hic
+# bulunamaz). Bu yuzden not, dosyanin bir belge OLMADIGINI ve yaziya cevrilemedigini
+# acikca soyleyen bir notla birlestirilir; boylece model kullaniciya durumu bildirir.
+function Set-AudioUnavailableNote([Collections.ArrayList]$items, [string]$fileName, [string]$reason) {
+    for ($i = $items.Count - 1; $i -ge 0; $i--) {
+        $message = $items[$i]
+        if ([string]$message.role -ne 'user') { continue }
+        $note = "[Ses dosyasi yaziya cevrilemedi ($fileName)] $reason " +
+            "Bu dosya bir BELGE degil (ses kaydi); read_document/read_bound_file gibi araclarla " +
+            "acmaya calisma, dosya hicbir yolda bulunamaz. Kullaniciya sesin yaziya " +
+            "cevrilemedigini kisa ve net bir sekilde soyle."
+        if ($message.content -is [string]) {
+            $message.content = [string]$message.content + "`n`n" + $note
+        } else {
+            $parts = New-Object System.Collections.Generic.List[object]
+            foreach ($part in @($message.content)) { [void]$parts.Add($part) }
+            [void]$parts.Add(@{ type = 'text'; text = $note })
+            $message.content = @($parts.ToArray())
+        }
+        return $true
+    }
+    return $false
+}
+
 function Replace-CurrentImagesWithOcrToolNotice([Collections.ArrayList]$items) {
     for ($i = $items.Count - 1; $i -ge 0; $i--) {
         $message = $items[$i]
@@ -1458,11 +1613,13 @@ try {
                 }
             } else {
                 $reason = if ($tr -and $tr.error) { [string]$tr.error } else { 'Ses tanıma metin üretmedi.' }
+                [void](Set-AudioUnavailableNote $messages ([IO.Path]::GetFileName($audioPath)) $reason)
                 Emit 'status' "Ses dökumlenemedi; istek dökumsuz sürüyor. $reason"
             }
         } catch {
             # Durdurma sirasinda olusan istisna hata degil, iptaldir.
             if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
+            [void](Set-AudioUnavailableNote $messages ([IO.Path]::GetFileName($audioPath)) $_.Exception.Message)
             Emit 'status' ("Ses dökumlenemedi; istek dökumsuz sürüyor. " + $_.Exception.Message)
         }
     }
@@ -1538,6 +1695,32 @@ try {
     for ($round = 0; $round -lt $maxRounds; $round++) {
         if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.'; return }
         Emit 'status' $(if ($round -eq 0) { 'Düşünüyor…' } else { "Ajan turu $($round + 1)/$maxRounds..." })
+        # F1/F2: tur ici baglam korumasi. $contextLimit secili modelden gelir (yerel
+        # profil 32768, ozel/API modelinin kayitli degeri). Tahmini prompt boyutu
+        # butceyi asarsa EN ESKI arac ciktilarini kisaltiriz; hala sigmiyorsa araclara
+        # devam etmeden eldeki bulgularla gorunur yanit istenir (sunucu 400'i yerine).
+        $contextLimit = if ($JobData.contextLimit) { [int]$JobData.contextLimit } else { 32768 }
+        $contextReserve = 1024
+        $promptTokensEst = Estimate-MessagesTokens $messages
+        $forceFinalAnswer = $false
+        if ($promptTokensEst + [int]$JobData.maxTokens + $contextReserve -gt $contextLimit) {
+            $trimBudget = [math]::Max(256, $contextLimit - [int]$JobData.maxTokens - $contextReserve)
+            $trimmedCount = Compress-TurnMessages $messages $trimBudget
+            $promptTokensEst = Estimate-MessagesTokens $messages
+            if ($promptTokensEst + 256 + $contextReserve -gt $contextLimit) {
+                $forceFinalAnswer = $true
+                Emit 'status' 'Baglam siniri asildi; araclara devam edilmeden eldeki bulgularla yanit isteniyor.'
+            } elseif ($trimmedCount -gt 0) {
+                Emit 'status' 'Baglam sinirina yaklasildi; eski arac ciktilari kisaltildi.'
+            }
+        }
+        # F2: max_tokens'i kalan baglam odasina gore sinirla (kucuk baglamli model/uc).
+        # Uzak saglayicilarda (openai/claude/gemini/deepseek) tavan KORUNUR; yalnizca
+        # local + custom uclarda uygulanir.
+        $maxTokens = [int]$JobData.maxTokens
+        if ($provider -eq 'local' -or $provider -eq 'custom') {
+            $maxTokens = [math]::Min($maxTokens, [math]::Max(256, $contextLimit - $promptTokensEst - $contextReserve))
+        }
         # DIKKAT: [array] cast'i BILEREK var. "messages = if (...) {...} else {...}" seklinde
         # dogrudan hashtable degeri olarak atanirsa, $messages TEK elemanliyken (sohbetin ilk
         # turu, arac yoksa) PowerShell diziyi tek nesneye "acar"; ConvertTo-Json bunu JSON
@@ -1569,7 +1752,7 @@ try {
         $body = @{
             model = [string]$JobData.model
             messages = $sendMessages
-            max_tokens = [int]$JobData.maxTokens
+            max_tokens = $maxTokens
             stream = $true
             stream_options = @{ include_usage = $true }
             temperature = 0.6
@@ -1581,7 +1764,11 @@ try {
         # (bagli klasordeki dosyalari karistirmaya) kalkmasini engellemek icin: web araclari her
         # zaman; kullanici dosya sormadiysa dosya araclari da artik SUNULMAZ. Ilk hatadan sonra
         # hepsi sunulur: model BIR kez daha web deneyebilir.
-        $offeredTools = if ($script:webToolFailCount -ge 2) {
+        # F1: baglam siniri asildiysa araclari sunmayi birak ve modelden eldeki
+        # bulgularla gorunur bir yanit yazmasini iste.
+        $offeredTools = if ($forceFinalAnswer) {
+            @()
+        } elseif ($script:webToolFailCount -ge 2) {
             $blocked = @('search_web', 'fetch_page', 'find_reference_image')
             if (!(Test-FileIntent $userText)) { $blocked += @('list_bound_files', 'read_bound_file') }
             @($toolDefinitions | Where-Object { $_.function.name -notin $blocked })
@@ -1593,6 +1780,11 @@ try {
         # Ayni sekilde web araci ag hatasiyla basarisiz olursa, modelin komut/sayfa gibi
         # araclarla etrafindan dolasmasini onleyen bir not eklenir (ikisi tek mesajda birlesir).
         $systemNotes = @()
+        if ($forceFinalAnswer) {
+            $systemNotes += (
+                '[SISTEM NOTU] Baglam penceresi doldu. Artik YENI ARAC CAGIRMA; elindeki arac ' +
+                'sonuclarindan ve bu sohbetten yararlanarak kullaniciya net, kisa ve dogrudan bir yanit yaz.')
+        }
         if ($script:deniedTools -and $script:deniedTools.Count -gt 0) {
             $systemNotes += (
                 'Kullanici bu istekte su islemleri onay penceresinde REDDETTI: ' + (@($script:deniedTools) -join ', ') +
@@ -1619,7 +1811,7 @@ try {
         if ($systemNotes.Count -gt 0) {
             $body.messages = @($sendMessages) + @(@{ role = 'user'; content = ('[Sistem notu] ' + ($systemNotes -join ' ')) })
         }
-        if ($JobData.multiImageOcr -and $round -eq 0) {
+        if ($JobData.multiImageOcr -and $round -eq 0 -and !$forceFinalAnswer) {
             $body.tool_choice = @{ type = 'function'; function = @{ name = 'read_images_ocr' } }
         }
         if ($JobData.effort) {

@@ -1,7 +1,13 @@
-﻿import subprocess
+﻿import json
 import shutil
+import socket
+import struct
+import subprocess
 import tempfile
+import threading
+import time
 import importlib.util
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -140,7 +146,9 @@ def test_web_tool_failure_is_detected_and_discourages_workarounds():
     assert "$script:webToolFailCount -gt 0 -and" in inference
     assert "ag komutu calistirilmadi" in inference
     # 2. web hatasindan sonra web araclari modele artik sunulmaz (arama dongusunu engeller).
-    assert "$offeredTools = if ($script:webToolFailCount -ge 2)" in inference
+    # (F1 baglam korumasi birinci kosul oldu; web-hatasi dali elseif olarak korunur.)
+    assert "$offeredTools = if ($forceFinalAnswer)" in inference
+    assert "elseif ($script:webToolFailCount -ge 2)" in inference
     # Kullanici dosya sormadiysa dosya araclari da sunulmaz (cevabi dosyalarda aramasin).
     assert "function Test-FileIntent" in inference
     assert "$blocked += @('list_bound_files', 'read_bound_file')" in inference
@@ -249,6 +257,98 @@ def test_stream_watchdog_uses_fresh_connection_and_survives_dropped_stream():
 
     assert "if ($provider -eq 'local') { $request.Headers.ConnectionClose = $true }" in inference
     assert "$result.finishReason = 'connection-closed'" in inference
+
+
+# ---------------------------------------------------- D3: custom retry/tolerans
+def test_custom_provider_retries_and_tolerates_partial_stream():
+    """D3: 'custom' (OpenAI uyumlu ozel uc) icin gecici baglanti hatasinda sinirli
+    yeniden deneme + kismi yanit toleransi. Uzak saglayicilar (openai/claude/gemini/
+    deepseek) KORUNUR: yalnizca local + custom bu toleransi alir."""
+    inference = read_text("agent/qwen-inference.ps1")
+
+    assert "$retryableProvider = $provider -eq 'local' -or $provider -eq 'custom'" in inference
+    assert "if (!$retryableProvider -or $networkRetried" in inference
+    assert "Ozel uc baglantisi kesildi; bir kez yeniden baglaniliyor..." in inference
+    assert "($provider -eq 'local' -or $provider -eq 'custom') -and $isReset -and !$shared.Cancel -and $usable" in inference
+    # Uzak saglayicilar toleransa EKLENMEZ (yan etki minimal kalsin): yeni retry
+    # kosulu yalnizca local/custom icerir.
+    retry_lines = [line for line in inference.splitlines() if "retryableProvider" in line]
+    assert retry_lines
+    for line in retry_lines:
+        assert "openai" not in line and "claude" not in line and "gemini" not in line and "deepseek" not in line
+
+
+class _DropMidStreamHandler(BaseHTTPRequestHandler):
+    """Icerik parcasi gonderip [DONE] olmadan RST ile baglantiyi kapatir
+    (gercek custom uc/kopma senaryosu)."""
+
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        self.wfile.write(
+            b"data: "
+            + json.dumps({"choices": [{"index": 0, "delta": {"content": "Merhaba"}}]}).encode()
+            + b"\n\n"
+        )
+        self.wfile.flush()
+        time.sleep(1.0)
+        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        try:
+            self.connection.close()
+        except OSError:
+            pass
+        self.close_connection = True
+
+    def log_message(self, *args):
+        pass
+
+
+def test_custom_provider_dropped_stream_is_not_an_error(tmp_path):
+    """D3 davranis: custom saglayici yanit metni urettikten sonra baglantiyi koparirsa
+    bu HATA sayilmaz (cevabin altina '[Hata]' eklenmez); finish_reason 'connection-closed'
+    olur ve disari istisna sizmaz."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("pwsh bulunamadi")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DropMidStreamHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        script = tmp_path / "custom-drop.ps1"
+        base = f"http://127.0.0.1:{server.server_port}"
+        script.write_text(
+            f"""
+$job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; provider = 'custom'; baseUrl = '{base}'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }}
+$shared = @{{ Cancel = $false }}
+. '{ROOT}\\agent\\qwen-inference.ps1' $job $shared | Out-Null
+# compactOnly cikisinda betik kendi HttpClient'ini kapatir.
+$script:http = [Net.Http.HttpClient]::new(); $script:http.Timeout = [Threading.Timeout]::InfiniteTimeSpan
+$turn = @{{ reasoning = ''; content = ''; usage = $null; toolParts = @{{}}; finishReason = $null }}
+$threw = $false
+try {{
+    Invoke-ChatCompletion @{{ model = 'test'; max_tokens = 100; messages = @() }} $shared $false $turn | Out-Null
+}} catch {{
+    $threw = [string]$_.Exception.GetBaseException().Message
+}}
+@{{ content = $turn.content; finish = $turn.finishReason; threw = $threw }} | ConvertTo-Json -Compress
+""",
+            encoding="utf-8-sig",
+        )
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)],
+            capture_output=True, encoding="utf-8", errors="replace", check=False, timeout=60,
+        )
+    finally:
+        server.shutdown()
+    assert result.returncode == 0, result.stderr or result.stdout
+    got = json.loads(result.stdout.strip().splitlines()[-1])
+    assert got["content"] == "Merhaba", got
+    assert got["finish"] == "connection-closed", got
+    assert got["threw"] is False, got
 
 
 def test_ocr_model_swap_keeps_json_response_separate_from_status_events():

@@ -3,6 +3,7 @@ import ipaddress
 import re
 import socket
 import sys
+import threading
 import urllib.request
 from urllib.parse import urlparse
 
@@ -10,6 +11,17 @@ from urllib.parse import urlparse
 MAX_PAGE_BYTES = 3_000_000
 MAX_REFERENCE_BYTES = 20 * 1024 * 1024
 MAX_REFERENCE_PIXELS = 40_000_000
+
+# Yavas DNS'te socket.getaddrinfo bloke edebilir; cozumleme ayri bir is
+# parcaciginda yapilir ve join(timeout) ile sinirlanir. Bu sure asilirsa
+# _pin_resolution OSError yukseltir; cagirici bunu mevcut temiz hata JSON'u
+# akisina cevirir (istisna disari sizmaz).
+DNS_TIMEOUT_SECONDS = 5
+# ddgs birden fazla arama motoru backend'ini kendi icinde denedigi icin
+# search_web'in toplam suresi backend x timeout kadar (olculdu: ~60 sn)
+# olabiliyordu. Tek bir toplam ust sinir (deadline) uygulanir; asilirsa kalan
+# backend'ler beklenmez, elde sonuc varsa o doner, yoksa temiz hata JSON'u.
+SEARCH_DEADLINE_SECONDS = 25
 
 # DNS rebinding korumasi: _validate_remote_url hostu bir kez cozup dogruluyordu,
 # ama gercek baglanti (urllib/http.client) ayri bir DNS sorgusuyla tekrar
@@ -27,7 +39,25 @@ _real_getaddrinfo = socket.getaddrinfo
 
 
 def _pin_resolution(host, port):
-    results = _real_getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    # Cozumlemeyi ayri bir is parcaciginda yapip join(timeout) ile sinirlariz;
+    # boylece yavas/askida kalan bir DNS sorgusu bloke etmez. Secilen adresler
+    # (pinning) degismez; yalnizca bir sure siniri eklenir.
+    outcome = {}
+
+    def _resolve():
+        try:
+            outcome['results'] = _real_getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except Exception as exc:  # cagirana aynen iletilir
+            outcome['error'] = exc
+
+    worker = threading.Thread(target=_resolve, daemon=True)
+    worker.start()
+    worker.join(DNS_TIMEOUT_SECONDS)
+    if worker.is_alive():
+        raise OSError('DNS cozumlemesi zaman asimina ugradi.')
+    if 'error' in outcome:
+        raise outcome['error']
+    results = outcome['results']
     _pinned_addresses[host] = results
     return [ipaddress.ip_address(item[4][0]) for item in results]
 
@@ -97,12 +127,31 @@ def search_web(request):
     from ddgs import DDGS
     query = str(request.get('query', ''))[:500]
     count = max(1, min(int(request.get('count', 5)), 8))
-    try:
-        # Ulasilamayan bir arama motoru isi dakikalarca bekletmesin.
-        results = list(DDGS(timeout=15).text(query, max_results=count))
-    except Exception as exc:
-        return json.dumps({'error': f'Web aramasi basarisiz: {exc}'}, ensure_ascii=False)
-    return json.dumps(results, ensure_ascii=False)
+    collected = []
+    failure = {}
+
+    def _search():
+        try:
+            # Ulasilamayan bir arama motoru isi dakikalarca bekletmesin.
+            # Degerlendirme backend'leri sirayla/paralel denedigi icin toplam
+            # sureyi dis taraftaki deadline sinirlar.
+            for item in DDGS(timeout=15).text(query, max_results=count):
+                collected.append(item)
+        except Exception as exc:
+            failure['error'] = exc
+
+    worker = threading.Thread(target=_search, daemon=True)
+    worker.start()
+    worker.join(SEARCH_DEADLINE_SECONDS)
+    if worker.is_alive():
+        # Toplam sure siniri asildi: kalan backend'leri beklemeyi birak. Elde
+        # edilmis sonuc varsa onlari, yoksa gecerli bir hata JSON'u dondur.
+        if collected:
+            return json.dumps(collected, ensure_ascii=False)
+        return json.dumps({'error': 'Web aramasi zaman asimina ugradi: sonuc yok.'}, ensure_ascii=False)
+    if 'error' in failure:
+        return json.dumps({'error': f'Web aramasi basarisiz: {failure["error"]}'}, ensure_ascii=False)
+    return json.dumps(collected, ensure_ascii=False)
 
 
 def fetch_page(request):
@@ -140,7 +189,9 @@ def find_reference_image(request):
     os.makedirs(out_dir, exist_ok=True)
 
     try:
-        results = list(DDGS().images(query, max_results=8))
+        # Gorsel aramasi da search_web ile ayni sekilde acik timeout almali;
+        # aksi halde ddgs varsayilanina bagli kalip isi uzun sure bekletir.
+        results = list(DDGS(timeout=15).images(query, max_results=8))
     except Exception as exc:
         return json.dumps({'error': 'gorsel aramasi basarisiz: %s' % exc}, ensure_ascii=False)
 
