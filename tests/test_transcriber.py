@@ -167,8 +167,9 @@ def test_choose_plan_priority_vram_then_ram_then_swap():
 
 
 def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
-    """LITE politikasi (esik: cpu_max_seconds = LITE_CPU_MAX_SECONDS = 15 sn): VRAM yetmezse
-    CPU co-resident YALNIZCA kayit esikten KISA VE sistem RAM'i yetiyorsa secilir
+    """LITE politikasi (esik: cpu_max_seconds = LITE_CPU_MAX_SECONDS = 15 sn; CPU dali icin
+    sistem RAM esigi LITE_AUDIO_RAM_MIB = 3.584 MiB, olculen tepe commit ~3.775 MiB): VRAM
+    yetmezse CPU co-resident YALNIZCA kayit esikten KISA VE sistem RAM'i yetiyorsa secilir
     (('cpu', False); dil modeli VRAM'de kalir, ses modeli CPU'da kosar, swap YOK). UZUN kayit
     ya da RAM yetersizligi -> GPU + mecburi swap (('cuda', True))."""
     from transcriber import config
@@ -176,22 +177,27 @@ def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
     profile = config.select_profile(total_mib=8000)
     threshold = profile.cpu_max_seconds
     assert threshold == config.LITE_CPU_MAX_SECONDS
+    # LITE'in CPU dali icin RAM esigi olculen degere cekildi; PRO esigi degismedi.
+    assert profile.audio_ram_mib == config.LITE_AUDIO_RAM_MIB
+    assert config.LITE_AUDIO_RAM_MIB < config.DEFAULT_AUDIO_RAM_MIB
+    assert config.select_profile(total_mib=16311).audio_ram_mib == config.DEFAULT_AUDIO_RAM_MIB
+    ram_ok = profile.audio_ram_mib          # tam esik "yetiyor" sayilir
     # Bos VRAM yeter -> GPU, swap YOK (onceki kural korunur).
     assert config.choose_plan(profile, vram_free_mib=profile.audio_vram_mib,
                              ram_free_mib=0) == ("cuda", False)
     # KISA kayit + RAM yeter -> CPU co-resident, swap YOK.
     assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
-                             ram_free_mib=10 ** 6) == ("cpu", False)
+                             ram_free_mib=ram_ok) == ("cpu", False)
     assert config.choose_plan(profile, duration_seconds=threshold, vram_free_mib=0,
-                             ram_free_mib=10 ** 6) == ("cpu", False)
+                             ram_free_mib=ram_ok) == ("cpu", False)
     # UZUN kayit (esik hemen ustu dahil) -> GPU + mecburi swap.
     assert config.choose_plan(profile, duration_seconds=threshold + 1, vram_free_mib=0,
-                             ram_free_mib=10 ** 6) == ("cuda", True)
+                             ram_free_mib=ram_ok) == ("cuda", True)
     assert config.choose_plan(profile, duration_seconds=3600, vram_free_mib=0,
-                             ram_free_mib=10 ** 6) == ("cuda", True)
-    # KISA ama RAM YETMIYOR -> mecburi swap.
+                             ram_free_mib=ram_ok) == ("cuda", True)
+    # KISA ama RAM YETMIYOR (esik alti) -> mecburi swap.
     assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
-                             ram_free_mib=profile.audio_ram_mib - 1) == ("cuda", True)
+                             ram_free_mib=ram_ok - 1) == ("cuda", True)
 
 
 def test_choose_plan_without_local_model_never_swaps():
@@ -738,6 +744,16 @@ def test_transcription_uses_model_swap_for_local_provider():
     assert "need_swap = $needSwap" in block
     # Profil adina gore karar (LITE istisnasi) KALDIRILDI; LITE'ta da VRAM/RAM'e gore swap.
     assert "([string]$JobData.profile) -ne 'lite'" not in worker
+
+
+def test_swap_status_message_reflects_process_stop():
+    """Kozmetik ama onemli: swap sirasinda dil modeli RAM'e TASINMIYOR; `manage-qwen -Action
+    stop` ile SUREC KAPATILIYOR (RAM dostu). Durum metni bunu yansitmali (yaniltici 'RAM'e
+    aliniyor' DEGIL). Kod davranisi degismez."""
+    worker = read_text("agent/qwen-inference.ps1")
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "kapatılıyor" in block
+    assert "RAM'e aliniyor" not in block
 
 
 def test_transcription_honors_cancel_and_stop_does_not_wait_for_restore():

@@ -97,7 +97,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   (`('cpu', False)`; dil modeli VRAM'de kalır, ses modeli CPU/sistem RAM'inde koşar; swap yok),
   uzun kayıtta ya da RAM yetersizken **GPU + mecburi swap** (`('cuda', True)`). CPU yolu hiçbir
   zaman zorlama değildir: seçilen cihaz başarısız olursa CPU yedeğine düşülür, GPU yoksa son çare
-  olarak kalır. PRO davranışı değişmedi (20 sn). (2) `requirements\asr.txt`'e `nvidia-cublas-cu12`
+  olarak kalır. PRO davranışı değişmedi (20 sn). Ölçüm hükmü: LITE co-resident RAM'e
+  **SIĞIYOR** (llama-server VRAM'deyken ASR CPU dökümü OOM'suz başarılı; ASR CPU hattı tepe
+  commit ~3.775 MiB); bu yüzden LITE `audio_ram_mib` 5.120 → **3.584 MiB** (PRO 5.120'de
+  kalır) ve LITE CPU dalı artık seçilebiliyor (5.120 ile her zaman swap'a düşüyordu). (2) `requirements\asr.txt`'e `nvidia-cublas-cu12`
   + `nvidia-cudnn-cu12` eklendi (CTranslate2 4.x Windows'ta `cublas64_12.dll` / `cudnn_*64_9.dll`
   arar; torch'un cu130 tekerlekleri `cublas64_13.dll` getirir) ve `asr.py`
   `_add_cuda_dll_dirs` ile `site-packages\nvidia\*\bin` dizinlerini DLL arama yoluna ekler; **GPU
@@ -105,7 +108,8 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   süresinden türeyen sonlu bir `timeoutSeconds` eklendi (`max(600, d*4+300)`, üst sınır 3600;
   süre yoksa 1800) — uzun CPU co-resident/swap dökümü sabit 180 sn zaman aşımıyla kesilmez;
   "Durdur" yine anında etkilidir. `tests/test_transcriber.py` ve `tests/test_requirements_files.py`
-  bu sözleşmeleri korur.
+  bu sözleşmeleri korur. Ayrıca swap durum metni düzeltildi: dil modeli RAM'e taşınmıyor,
+  `manage-qwen -Action stop` ile **süreç kapatılıyor** (kod davranışı değişmedi).
 - **Ses dökümü: CPU yedeği PowerShell sözlük hatası yüzünden hiç çalışmıyordu (uçtan uca ses
   testinde bulundu).** `Invoke-TranscribeWithModelSwap` birincil cihaz (GPU) dökümü başarısız
   olunca CPU yedeğini `$payloadBase + @{ device = 'cpu' }` ile kuruyordu; ancak PowerShell'de

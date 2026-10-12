@@ -507,7 +507,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     if ($Shared.Cancel) { throw [OperationCanceledException]::new() }
     if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Ses dosyasi bulunamadi.' }
     if ($swapModel) {
-        Emit 'status' 'Dil modeli RAM''e aliniyor; transkripsiyon icin VRAM bosaltiliyor…' | Out-Null
+        Emit 'status' 'Dil modeli geçici olarak kapatılıyor; transkripsiyon için VRAM boşaltılıyor…' | Out-Null
         try { & (Get-ManageQwenPath) -Action stop | Out-Null; Wait-LocalModelStopped } catch { $err = $_ }
     }
     if (!$err) {
