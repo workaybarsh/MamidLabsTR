@@ -49,6 +49,11 @@ TIER_ALIASES = {
 # "kisa -> CPU, uzun -> GPU + swap" mantigi gecerlidir.
 DEFAULT_CPU_MAX_SECONDS = 20.0
 
+# LITE (8 GB kart) CPU/GPU esigi. LITE swap'i daha kisa olculdu (~9-14 sn); kesim noktasi
+# d = (swap - 1,7) / 0,831 ~= 9-15 sn. Guvenlik payiyla 15 sn secildi. Sayisal hukmu veren
+# olcum ajani sonucu gelmediginde mevcut AR-GE degeri kullanilir; guvenli aralik 15-20 sn.
+LITE_CPU_MAX_SECONDS = 15.0
+
 # Tek motor: Whisper large-v3'un Turkce ince ayarli CTranslate2 (float16) surumu.
 DEFAULT_WHISPER_MODEL = 'oguzhangokboru/whisper-large-v3-tr'
 # AudioSet tabanli ses olayi modeli (AST). 'none' ile kapatilir.
@@ -97,9 +102,12 @@ PROFILES = {
         name=PC1, compute_type='int8_float16', load_mode='sequential', chunk_minutes=30,
         whisper_model=DEFAULT_WHISPER_MODEL, events_model=DEFAULT_EVENTS_MODEL,
         language='tr', events=True, diarize=True,
-        # LITE swap'i daha kisa olculdu (9B: boşalt ~3 + geri yukle ~6 = ~9 sn); esik PRO'dan
-        # biraz dusuk (bkz. DEFAULT_CPU_MAX_SECONDS yorumu).
-        cpu_max_seconds=15.0,
+        # LITE ASR politikasi: CPU co-resident YALNIZCA kayit `cpu_max_seconds`ten KISA VE
+        # sistem RAM'i yetiyorsa secilir (dil modeli VRAM'de kalir, ses modeli CPU/sistem
+        # RAM'inde kosar; swap YOK). Uzun kayit ya da RAM yetersizliginde GPU + mecburi swap
+        # (swap maliyeti ~9-14 sn olsa da GPU dokumu cok daha hizli oldugu icin toplam sure
+        # daha kisa; bkz. choose_plan). Esik LITE_CPU_MAX_SECONDS (15 sn).
+        cpu_max_seconds=LITE_CPU_MAX_SECONDS,
     ),
 }
 
@@ -229,19 +237,26 @@ def choose_plan(profile: Profile, duration_seconds: float | None = None,
     """Ses hatti icin (device, need_swap) planini ONCELIK sirasiyla doner.
 
     Tier (`profile`) SECILI profil adindan gelir (lite/pro); cihaz/swap karari ise tier'in
-    bellek esikleri + GERCEK bos VRAM + sistem RAM'i ve kaydin SURESINE gore verilir
-    ("kisa -> CPU, uzun -> GPU" ekonomisi):
+    bellek esikleri + GERCEK bos VRAM + sistem RAM'i ve kaydin SURESINE gore verilir:
 
       1) Whisper + AST, yerel dil modeliyle BIRLIKTE bos VRAM'e sigarsa (`audio_vram_mib`)
          -> ('cuda', False): GPU'da dökum, swap YOK (en hizli, maliyetsiz).
-      2) Sigmazsa ve kayit `esik` saniyeden KISAYSA (swap maliyeti dökum kazancindan buyuk):
-         ses hatti CPU'da sistem RAM'ine sigiyorsa (`audio_ram_mib`)
-         -> ('cpu', False): swap YOK; yavastir ama dil modeli VRAM'de kalir.
-      3) Aksi halde (kayit UZUN; CPU RAM'e sigmiyor; ya da sure bilinmiyor ve RAM yetmiyor)
-         -> ('cuda', True): GPU dökumu. Dil modeli gerekiyorsa MECBURI boşaltilir/geri yuklenir
-         (uzun kayitta GPU kazanci swap maliyetini asar; RAM yetmezse zaten kaçınılmaz).
+      2) Sigmazsa ve CPU co-resident kosulu saglaniyorsa -> ('cpu', False): dil modeli VRAM'de
+         KALIR, ses modeli CPU/sistem RAM'inde kosar (swap YOK; yavastir). Kosul: kayit
+         `esik` saniyeden KISA **VE** ses hatti sistem RAM'ine sigiyor (`audio_ram_mib`).
+         Kisa kayitta swap maliyeti dökum kazancindan buyuktur. Esik: `cpu_max_seconds` /
+         `profile.cpu_max_seconds` / `DEFAULT_CPU_MAX_SECONDS` (LITE 15 sn, PRO 20 sn).
+      3) Aksi halde (kayit UZUN ya da RAM yetmiyor) -> ('cuda', True): GPU dökumu. Dil modeli
+         MECBURI boşaltilir/geri yuklenir (swap); uzun kayitta GPU kazanci swap maliyetini
+         asar, RAM yetmezse zaten kaçınılmazdir.
+
+    Sure bilinmiyorsa (duration_seconds=None) swap ZORLANMAZ; yalnizca bellek kurali
+    uygulanir (RAM yetiyorsa CPU, yetmiyorsa mecburi swap). Boylece tek bir kayit icin
+    gereksiz dil-modeli boşalt/geri yukle yapilmaz.
 
     Yerel dil modeli yuklu degilse (API saglayicisi) GPU zaten bostur -> ('cuda', False).
+    CPU yolu hicbir zaman ZORLAMA degildir: secilen cihaz basarisiz olursa isci katmani CPU
+    yedegine duser; GPU hic yoksa (CUDA/nvidia-smi yok) CPU son care olarak kalir.
     `vram_free_mib`/`ram_free_mib` verilmezse makineden okunur (olculemezse 0 -> guvenli
     taraf: sigmiyor sayilir).
     """
@@ -254,15 +269,13 @@ def choose_plan(profile: Profile, duration_seconds: float | None = None,
     if vram_free_mib >= profile.audio_vram_mib:
         return 'cuda', False
     ram_ok = ram_free_mib >= profile.audio_ram_mib
-    # Sure bilinmiyorsa yalnizca bellek kuralina gore karar ver (swap'i zorlamadan).
-    if duration_seconds is None:
-        return ('cpu', False) if ram_ok else ('cuda', True)
     threshold = cpu_max_seconds
     if threshold is None:
         threshold = profile.cpu_max_seconds
     if threshold is None:
         threshold = DEFAULT_CPU_MAX_SECONDS
-    short = duration_seconds <= threshold
-    if short and ram_ok:
+    # CPU co-resident YALNIZCA kayit esikten KISA VE RAM yetiyorsa. Sure bilinmiyorsa swap
+    # zorlanmaz (bellek kurali): tek bir kayit icin gereksiz dil-modeli swap'i yapilmaz.
+    if ram_ok and (duration_seconds is None or duration_seconds <= threshold):
         return 'cpu', False
     return 'cuda', True

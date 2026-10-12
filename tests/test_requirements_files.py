@@ -68,3 +68,23 @@ def test_installer_reads_packages_from_requirements_files():
     assert "throw ('Bagimlilik dosyasi bulunamadi: ' + $path)" in installer
     # Bulunamayan dosya artik acikca hata vermeli; eski inline dizi kalmamali.
     assert "$script:AppPackages = @(" not in installer
+
+
+def test_asr_requirements_pin_cuda12_runtime_and_exclude_torch():
+    """venv\\asr: CTranslate2 4.x Windows'ta cublas64_12.dll / cudnn_*64_9.dll arar; torch'un
+    cu130 tekerlekleri cublas64_13.dll getirir, bu yuzden GPU icin nvidia-cublas-cu12 +
+    nvidia-cudnn-cu12 paketleri KURULMALI ve surume KILITLI olmali. torch ayri index'ten
+    geldigi icin asr.txt'te OLMAMALI (aksi halde CPU tekerlegi cekilebilir)."""
+    packages = {package_name(p) for p in parse_requirements("asr.txt")}
+    assert "nvidia-cublas-cu12" in packages
+    assert "nvidia-cudnn-cu12" in packages
+    assert not any(p.startswith("torch") for p in packages)
+    # Surumler kilitli (== ) olmali.
+    for pin in parse_requirements("asr.txt"):
+        assert "==" in pin, f"requirements/asr.txt: '{pin}' surume kilitlenmemis"
+    # Kurulum betigi asr.txt'yi okuyup bu ortama kurar (asr.py DLL yollarini site-packages
+    # nvidia\\*\\bin altindan ekler).
+    installer = read_text("scripts/install-mamidlabs.ps1")
+    assert "$script:AsrPackages = Read-Requirements 'asr.txt'" in installer
+    asr = read_text("agent/transcriber/asr.py")
+    assert "_add_cuda_dll_dirs" in asr and "nvidia" in asr

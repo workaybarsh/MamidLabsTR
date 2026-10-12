@@ -166,19 +166,32 @@ def test_choose_plan_priority_vram_then_ram_then_swap():
     assert config.choose_plan(profile, vram_free_mib=0, ram_free_mib=0) == ("cuda", True)
 
 
-def test_choose_plan_lite_uses_cpu_branch_for_short_long_uses_gpu():
-    """LITE da ayni birlesik mantigi kullanir (RAM yeterli olcüldü): VRAM yetmez + KISA ->
-    CPU/swap yok, UZUN -> GPU + mecburi swap."""
+def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
+    """LITE politikasi (esik: cpu_max_seconds = LITE_CPU_MAX_SECONDS = 15 sn): VRAM yetmezse
+    CPU co-resident YALNIZCA kayit esikten KISA VE sistem RAM'i yetiyorsa secilir
+    (('cpu', False); dil modeli VRAM'de kalir, ses modeli CPU'da kosar, swap YOK). UZUN kayit
+    ya da RAM yetersizligi -> GPU + mecburi swap (('cuda', True))."""
     from transcriber import config
 
     profile = config.select_profile(total_mib=8000)
+    threshold = profile.cpu_max_seconds
+    assert threshold == config.LITE_CPU_MAX_SECONDS
+    # Bos VRAM yeter -> GPU, swap YOK (onceki kural korunur).
     assert config.choose_plan(profile, vram_free_mib=profile.audio_vram_mib,
                              ram_free_mib=0) == ("cuda", False)
-    threshold = config.DEFAULT_CPU_MAX_SECONDS
+    # KISA kayit + RAM yeter -> CPU co-resident, swap YOK.
     assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
                              ram_free_mib=10 ** 6) == ("cpu", False)
+    assert config.choose_plan(profile, duration_seconds=threshold, vram_free_mib=0,
+                             ram_free_mib=10 ** 6) == ("cpu", False)
+    # UZUN kayit (esik hemen ustu dahil) -> GPU + mecburi swap.
     assert config.choose_plan(profile, duration_seconds=threshold + 1, vram_free_mib=0,
                              ram_free_mib=10 ** 6) == ("cuda", True)
+    assert config.choose_plan(profile, duration_seconds=3600, vram_free_mib=0,
+                             ram_free_mib=10 ** 6) == ("cuda", True)
+    # KISA ama RAM YETMIYOR -> mecburi swap.
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
+                             ram_free_mib=profile.audio_ram_mib - 1) == ("cuda", True)
 
 
 def test_choose_plan_without_local_model_never_swaps():
@@ -524,9 +537,10 @@ def test_worker_plan_action_decides_device_and_swap(monkeypatch, tmp_path):
     assert plan["device"] == "cuda" and plan["need_swap"] is False
 
 
-def test_lite_profile_uses_shared_plan(monkeypatch, tmp_path):
-    """LITE (8 GB) ayni plani kullanir: RAM yeterli oldugu icin kisa kayit CPU, uzun kayit
-    GPU + swap. Yerel model yoksa (API) GPU zaten bos -> swap gerekmez."""
+def test_lite_profile_plan_short_cpu_long_gpu(monkeypatch, tmp_path):
+    """LITE (8 GB) plani: RAM yetiyorken KISA kayit CPU co-resident (swap yok), UZUN kayit
+    GPU + mecburi swap; RAM yetmezse (kisa bile) mecburi swap. Yerel model yoksa (API) GPU
+    zaten bos -> swap gerekmez."""
     module = load_worker()
     from transcriber import config, audio
 
@@ -537,7 +551,13 @@ def test_lite_profile_uses_shared_plan(monkeypatch, tmp_path):
     monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 5.0)
     plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
     assert plan["device"] == "cpu" and plan["need_swap"] is False
+    # UZUN kayit -> GPU + mecburi swap.
     monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 3600.0)
+    plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
+    assert plan["device"] == "cuda" and plan["need_swap"] is True
+    # RAM yetmezse KISA kayit bile mecburi swap.
+    monkeypatch.setattr(config, "available_ram_mib", lambda: 0)
+    monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 5.0)
     plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
     assert plan["device"] == "cuda" and plan["need_swap"] is True
     # Yerel model yoksa (API) GPU zaten bos -> swap gerekmez.
@@ -832,6 +852,41 @@ $out = Invoke-PythonTool @{{ x = 1 }} '{sleeper}' '{sys.executable}' 2
     assert "Arac zaman asimina ugradi" in out, out
     elapsed = int(out.split("ELAPSED=")[1].split()[0])
     assert elapsed < 15, out
+
+
+# ------------------------------------- ses: kayit suresinden sonlu zaman asimi
+def test_transcribe_sets_finite_timeout_from_recording_duration():
+    """Sabit 180 sn'lik arac zaman asimi uzun ses kayitlarinda (CPU co-resident yolu ~gercek
+    zamanli; GPU + swap) dökumu yarida kesmesin: transcribe istegi, kaydin suresinden
+    turetilen SONLU bir `timeoutSeconds` tasir; plan islemi de kaydin suresini
+    (`duration_seconds`) dondurur ki zaman asimi ondan hesaplanabilsin."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Get-AudioTimeoutSeconds" in worker
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "Get-AudioTimeoutSeconds" in block
+    assert "timeoutSeconds = $audioTimeout" in block
+    plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]
+    assert "duration_seconds" in plan
+
+
+def test_audio_timeout_seconds_is_clamped(tmp_path):
+    """Get-AudioTimeoutSeconds kurali: max(600, d*4+300), ust sinir 3600 sn; sure
+    bilinmiyorsa/0 ise 1800 sn. Gercek pwsh ile dogrulanir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Get-AudioTimeoutSeconds")
+    script = fn + """
+'T0=' + (Get-AudioTimeoutSeconds 0)
+'T5=' + (Get-AudioTimeoutSeconds 5)
+'T120=' + (Get-AudioTimeoutSeconds 120)
+'T600=' + (Get-AudioTimeoutSeconds 600)
+'T3600=' + (Get-AudioTimeoutSeconds 3600)
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "T0=1800" in out, out
+    assert "T5=600" in out, out
+    assert "T120=780" in out, out
+    assert "T600=2700" in out, out
+    assert "T3600=3600" in out, out
 
 
 # --------------------------------------------- F1/F2: baglam tasmasi korumasi

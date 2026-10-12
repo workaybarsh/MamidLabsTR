@@ -434,10 +434,12 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
 # baslarken OLCULEN gercek bos VRAM + sistem RAM'i ve kaydin suresine gore verilir
 # (bkz. config.choose_plan):
 #   1) Whisper + AST dil modeliyle BIRLIKTE bos VRAM'e sigarsa -> GPU, swap YOK.
-#   2) Sigmaz ama ses hatti CPU'da sistem RAM'ine sigarsa       -> CPU, swap YOK (yavas,
-#      ama dil modeli VRAM'de yerinde kalir).
-#   3) Ikisi de yetmezse                                        -> MECBURI VRAM swap
-#      (dil modeli bosaltilir, Whisper GPU'da calisir, sonra dil modeli geri yuklenir).
+#   2) Sigmaz ama kayit KISA (esik: LITE 15 sn / PRO 20 sn) VE ses hatti CPU'da sistem
+#      RAM'ine sigarsa -> CPU, swap YOK (dil modeli VRAM'de kalir; yavastir ama boşalt/yukle
+#      maliyeti yoktur).
+#   3) Aksi halde (kayit UZUN ya da RAM yetmiyor) -> MECBURI VRAM swap
+#      (dil modeli boşaltilir, Whisper GPU'da calisir, sonra dil modeli geri yuklenir; uzun
+#      kayitta GPU kazanci swap maliyetini asar).
 # Plan isciye (venv python) sorulur; secilen cihaz basarisiz olursa CPU yedegine dusulur;
 # iptal (Durdur) davranisi korunur.
 function Get-AsrProfileName {
@@ -455,9 +457,22 @@ function Get-AsrProfileName {
     return 'pro'
 }
 
+function Get-AudioTimeoutSeconds([double]$durationSeconds) {
+    # Sabit 180 sn'lik arac zaman asimi uzun ses kayitlarinda (CPU co-resident yolu ~gercek
+    # zamanli; GPU yolu + swap) dökumu yarida kesmesin. Zaman asimi kaydin suresinden
+    # turetilir: max(600, d*4 + 300), ust sinir 3600 sn; sure okunamazsa 1800 sn.
+    # Bu yalnizca kilitlenmeye karsi guvenlik agidir: "Durdur" yine ANINDA isler
+    # (Invoke-PythonTool iptal bayragini ayrica yoklar).
+    if ($durationSeconds -le 0) { return 1800 }
+    $t = [int][Math]::Ceiling($durationSeconds * 4.0 + 300.0)
+    if ($t -lt 600) { $t = 600 }
+    if ($t -gt 3600) { $t = 3600 }
+    return $t
+}
+
 function Get-AudioTranscriptionPlan([string]$path) {
     # Olculemezse GUVENLI taraf: yerel saglayicida swap et; API modunda GPU zaten bostur.
-    $fallback = [pscustomobject]@{ device = 'cuda'; need_swap = ($provider -eq 'local') }
+    $fallback = [pscustomobject]@{ device = 'cuda'; need_swap = ($provider -eq 'local'); duration_seconds = $null }
     try {
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
         # Tier secili dil-modeli profilinden gelir (lite/pro); profil yoksa isci tier'i
@@ -469,7 +484,8 @@ function Get-AudioTranscriptionPlan([string]$path) {
         $plan = $null
         try { $plan = $raw | ConvertFrom-Json -ErrorAction Stop } catch { }
         if ($plan -and $plan.device) {
-            return [pscustomobject]@{ device = [string]$plan.device; need_swap = [bool]$plan.need_swap }
+            # duration_seconds: kaydin suresi (timeout ondan turetilir; bkz. Get-AudioTimeoutSeconds).
+            return [pscustomobject]@{ device = [string]$plan.device; need_swap = [bool]$plan.need_swap; duration_seconds = $plan.duration_seconds }
         }
     } catch { }
     return $fallback
@@ -481,6 +497,9 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     $plan = Get-AudioTranscriptionPlan $path
     $needSwap = [bool]$plan.need_swap
     $device = [string]$plan.device
+    # Kaydin suresinden SONLU bir arac zaman asimi turet; CPU co-resident yolu (uzun kayit
+    # ~gercek zamanli) ya da GPU + swap sabit 180 sn'de kesilmesin (bkz. Get-AudioTimeoutSeconds).
+    $audioTimeout = Get-AudioTimeoutSeconds ([double]$plan.duration_seconds)
     $swapModel = $needSwap
     $resp = $null
     $err = $null
@@ -497,7 +516,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         $audioEvents = if ($null -eq $JobData.audioEvents) { $true } else { [bool]$JobData.audioEvents }
         # Cihaz/swap plani yukarida (bos VRAM + RAM) belirlendi; tier SECILI profilden gelir
         # (lite/pro), isciye aynen verilir.
-        $payloadBase = @{ action = 'transcribe'; path = $path; language = 'tr'; events = $audioEvents; device = $device; need_swap = $needSwap }
+        $payloadBase = @{ action = 'transcribe'; path = $path; language = 'tr'; events = $audioEvents; device = $device; need_swap = $needSwap; timeoutSeconds = $audioTimeout }
         $asrProfile = Get-AsrProfileName
         if ($asrProfile) { $payloadBase.profile = $asrProfile }
         try {

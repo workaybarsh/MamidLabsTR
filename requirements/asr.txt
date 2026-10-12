@@ -8,8 +8,16 @@
 # (https://download.pytorch.org/whl/cu130) gelir ve ayri kurulur:
 #   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu130
 #   pip install -r requirements\asr.txt
+#
+# cuBLAS/cuDNN (CUDA 12): faster-whisper'in arka ucu CTranslate2 4.x, Windows'ta
+# cublas64_12.dll / cudnn_*64_9.dll arar; torch'un cu130 tekerlekleri cublas64_13.dll
+# getirdigi icin bunlar YOKSA device=cuda "Library cublas64_12.dll is not found" ile
+# duser. Bu iki paket venv\asr icine kurulur; asr.py de site-packages\nvidia\*\bin
+# dizinlerini DLL arama yoluna ekler.
 faster-whisper==1.1.1
 transformers==5.17.0
 pyannote.audio==3.3.2
 av==18.1.0
 onnxruntime==1.20.1
+nvidia-cublas-cu12==12.9.0.13
+nvidia-cudnn-cu12==9.9.0.52

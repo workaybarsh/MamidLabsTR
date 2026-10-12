@@ -91,6 +91,21 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Ses dökümü: LITE CPU/GPU politikası ve GPU çalışma zamanı DLL'leri netleştirildi; transcribe
+  zaman aşımı kayıt süresine bağlandı.** (1) LITE ASR artık kayıt `LITE_CPU_MAX_SECONDS` (15 sn)
+  süresinden **kısa VE** sistem RAM'i yetiyorsa **CPU co-resident** kullanır
+  (`('cpu', False)`; dil modeli VRAM'de kalır, ses modeli CPU/sistem RAM'inde koşar; swap yok),
+  uzun kayıtta ya da RAM yetersizken **GPU + mecburi swap** (`('cuda', True)`). CPU yolu hiçbir
+  zaman zorlama değildir: seçilen cihaz başarısız olursa CPU yedeğine düşülür, GPU yoksa son çare
+  olarak kalır. PRO davranışı değişmedi (20 sn). (2) `requirements\asr.txt`'e `nvidia-cublas-cu12`
+  + `nvidia-cudnn-cu12` eklendi (CTranslate2 4.x Windows'ta `cublas64_12.dll` / `cudnn_*64_9.dll`
+  arar; torch'un cu130 tekerlekleri `cublas64_13.dll` getirir) ve `asr.py`
+  `_add_cuda_dll_dirs` ile `site-packages\nvidia\*\bin` dizinlerini DLL arama yoluna ekler; **GPU
+  dökümü artık çalışır** (gerçek kayıtla doğrulandı, `device=cuda`). (3) Transcribe isteğine kayıt
+  süresinden türeyen sonlu bir `timeoutSeconds` eklendi (`max(600, d*4+300)`, üst sınır 3600;
+  süre yoksa 1800) — uzun CPU co-resident/swap dökümü sabit 180 sn zaman aşımıyla kesilmez;
+  "Durdur" yine anında etkilidir. `tests/test_transcriber.py` ve `tests/test_requirements_files.py`
+  bu sözleşmeleri korur.
 - **Ses dökümü: CPU yedeği PowerShell sözlük hatası yüzünden hiç çalışmıyordu (uçtan uca ses
   testinde bulundu).** `Invoke-TranscribeWithModelSwap` birincil cihaz (GPU) dökümü başarısız
   olunca CPU yedeğini `$payloadBase + @{ device = 'cpu' }` ile kuruyordu; ancak PowerShell'de
