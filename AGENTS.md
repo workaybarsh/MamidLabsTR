@@ -46,6 +46,7 @@ Varsayılan kurulum kökü `%LOCALAPPDATA%\Programs\MamidLabs`.
 | `agent/model-registry.ps1` | Model seçim kutusu girdileri, profil alias'ları |
 | `agent/profile-catalog.ps1`, `agent/profiles.json` | Profil dosya kataloğu, Profiller penceresi, eksikleri indirme, güncelleme denetimi |
 | `agent/process-launch.ps1` | `Start-DetachedProcess`: çocuk süreç stdout borusunu devralmadan başlatma |
+| `agent/whisper-tools.py`, `agent/transcriber/` | Ses dökümü (faster-whisper large-v3-tr + AST ses olayları + pyannote konuşmacı ayrımı); işçi `whisper-tools.py` paketi çağırır |
 | `agent/qwen-agent-tools.py` | Web araması (ddgs), sayfa okuma, bağlı klasör araçları |
 | `agent/office-tools.py` | PDF/Word/Excel/PowerPoint/ZIP/RAR okuma, PDF/DOCX/PPTX üretimi |
 | `agent/ocr-tools.py` | PaddleOCR işçisi (GPU görsel, CPU PDF) |
@@ -75,6 +76,8 @@ runtime\pwsh\pwsh.exe            gömülü PowerShell 7.6.6 (uygulama YALNIZCA b
 llama.cpp\b10998\llama-server.exe CUDA 13.4 yapısı
 venv\app\                        uygulama Python'u (araçlar, HF, belge)
 venv\imagegen\                   ComfyUI + torch cu130 + PyAV
+venv\asr\                        ses dökümü (faster-whisper + transformers/AST + pyannote; torch cu130)
+tools\hf-home\                   HF önbelleği (whisper large-v3-tr + AST modelleri burada)
 venv\ocr\ venv\ocr-cpu\          PaddleOCR (isteğe bağlı, sihirbazda varsayılan işaretli; install-ocr.ps1)
 ComfyUI\                         sabit commit; custom_nodes: ComfyUI-GGUF, comfyui-krea2edit
 ComfyUI\models\{diffusion_models,unet,text_encoders,vae,loras}\
@@ -117,7 +120,7 @@ kurulum-kaynak\                  sihirbazın açtığı kaynak paket
 | Profil | Alias | Model | Önemli bayraklar |
 |---|---|---|---|
 | MAX | `qwen3.8-27b-max` | Qwen3.8 27B IQ4_XS + mmproj F16 | `--no-mmproj-offload` (projektör CPU'da), ctx 32768, predict 8192, `--reasoning-effort xhigh`, q4_0 KV, batch 512/256, `--spec-type draft-mtp` |
-| FLASH | `qwen3.8-27b-flash` | aynı dosyalar | predict 4096, `--reasoning-effort low`, `--spec-type draft-mtp` |
+| FLASH | `qwen3.8-27b-flash` | aynı dosyalar | predict 8192, `--reasoning-effort low`, `--spec-type draft-mtp` |
 | LITE | `qwen3.5-9b-lite` | Huihui-Qwen3.5 9B Q5_K_M + mmproj Q8_0 | ctx 32768, predict **8192** (düşünme tokenları çıktı bütçesini paylaştığından 3072 küçüktü), düşünme açık ve **sınırsız** (`--reasoning-budget` verilmez; sistem istemi derin düşünmeyi ve süreyi kısıtlamamayı söyler), batch 256/128, projektör GPU'da, `--spec-type draft-mtp` (indirmede eklenir) |
 
 **MTP (Multi-Token Prediction).** Qwen3.8 27B GGUF'u gömülü bir MTP/nextn draft başlığı taşır
@@ -332,6 +335,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
   - Arayüz: `uiPreferences.{internet, agent, accessMode}`, `firstRunApiSettings`.
   - LITE ayarları: `liteModel`, `liteContext`.
   - Medya: `comfyKeepAlive` (varsayılan `false`; ComfyUI yalnızca medya üretiminde çalışır, boşta VRAM/RAM tutmaz; `true` ile LITE'ta medya işleri arasında açık kalır, bkz. bölüm 5).
+  - Ses: `audioEvents` (varsayılan `true`; mikrofon menüsündeki **"Konuşma dışı sesler"** onay kutusu. İşaretli ise AST ile konuşma dışı olaylar döküme eklenir; işaret kaldırılırsa yalnızca Whisper konuşması yazılır).
 - Sohbetler `chats\` altında `MAMIDLABS-CHAT-DPAPI-V2` önekiyle şifreli.
 - `logs\audit.jsonl`: araç çağrıları kaydı (içerik değil; yol/komut kimliği).
 
@@ -359,8 +363,10 @@ python -m pytest -q          # ~320 test, ~115 sn; ek ayar gerekmez (tests/conft
   bir tur atıp "sunucu kapatıldı"/watchdog metni olmadan yanıt üretmeli ve MTP çalışmalı;
   `-SkipUi` ile atlanır). `arayuz` en sonda çalışır çünkü uygulama kapanınca sunucuyu durdurur.
   Sesli giriş (ses dökümü) `/completion` ile değil, gerçek işçide `transcript` olayıyla ve
-  `tests/test_qwen3_asr.py` ile doğrulanır. Motor **Qwen3-ASR-1.7B** (`agent/qwen3-asr-tools.py`,
-  `models\qwen3-asr`); LLM tabanlıdır, imagegen venv'inde (torch + transformers) çalışır.
+  `tests/test_transcriber.py` ile doğrulanır. Motor **faster-whisper large-v3-tr** + AST ses
+  olayları; `agent/whisper-tools.py` işçisi `agent/transcriber/` paketini çağırır ve `venv\asr`
+  (torch cu130 + faster-whisper + transformers + pyannote) içinde çalışır. Çıktı kronolojik ve
+  zaman damgasızdır: `(ayak sesleri)` / `Konuşmacı: ...` satırları.
 - **CI:** her push/PR'da `testler.yml` (windows-latest, Python 3.12); paketle ilgili yollar
   değişince `kurulum-paketi.yml`. `master`'a PR ile birleştirilir.
 
@@ -487,6 +493,9 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-12 | **Profiller penceresine dil profili indirme + silme eklendi:** kullanıcı arayüz dilini (Türkçe/English) seçip diğer dil sürümünün kurulum paketini oradan indirip kurabilir (aynı klasöre, `UsePreviousAppDir`; `settings\`/`chats\` korunur) ya da indirdiği paketi **silebilir**. İndirilen paket kalıcı `tools\editions\MamidLabs_Setup_<dil>.exe`'ye iner ve `edition.json` kaydı tutulur; "Dil sürümünü sil" paket + kaydı kaldırır. `agent/profile-catalog.ps1`: `MamidLabsEditionLang`, `OtherEditionRepo`, `Get-EditionRelease`, `Get-EditionDownloadDir`/`Get-EditionRecord`, dil ComboBox + "Seçili dil sürümünü indir" + "Dil sürümünü sil" düğmeleri. | agent/profile-catalog.ps1, AGENTS.md, CHANGELOG.md |
+| 2026-10-12 | **FLASH çıktı tavanı 4096 → 8192:** üç profil de artık `--predict` ve arayüz `max_tokens` olarak 8192 kullanır (tavan, hedef değil; EOS'ta durur, normal yanıt hızı değişmez). MAX/FLASH ayrımını `--reasoning-effort` korur. | scripts/manage-qwen.ps1, qwen-desktop.ps1, AGENTS.md, docs/teknik-notlar.md, CHANGELOG.md |
+| 2026-10-12 | **Ses dökümü motoru Qwen3-ASR'den `agent/transcriber/` (faster-whisper + AST) hattına taşındı; Qwen3-ASR ve whisper.cpp tamamen kaldırıldı.** Yeni paket: `config` (GPU VRAM'ine göre PC1/PC2 profili: PC1 int8_float16 + sıralı, PC2 float16 + paralel), `audio` (PyAV 16 kHz mono WAV), `vad` (Silero), `asr` (**faster-whisper `oguzhangokboru/whisper-large-v3-tr`**, halüsinasyon filtreleri: VAD, `condition_on_previous_text=False`, `no_speech/logprob/compression` eşikleri, düşük sıcaklık yedeği, bilinen kalıp/tekrar eleme), `events` (AST AudioSet → Türkçe etiket; "Speech" etiketleri filtrelenir), `diarize` (pyannote, opsiyonel), `merge` (**kronolojik, zaman damgasız**: `(ayak sesleri)` / `Konuşmacı: ...`), `main` (txt+json). Kurulumda **`venv\asr`** (faster-whisper + transformers/AST + pyannote + torch cu130) ve modeller HF önbelleğine iner. Ses olayları varsayılan **açık**; mikrofon menüsüne **"Konuşma dışı sesler"** onay kutusu eklendi (kapalıysa yalnızca konuşma; `settings\api.json → audioEvents`). Kırmızı mikrofon tuşu artık kaydı **iptal** eder (dur+sil; gönderme sağ tık menüsü/Gönder ile). Her iki dil sürümü (TR: tr / ENG: auto + İngilizce etiketler). | agent/transcriber/*, agent/whisper-tools.py, agent/qwen-inference.ps1, qwen-desktop.ps1, scripts/install-mamidlabs.ps1, requirements/asr.txt, agent/profile-catalog.ps1, packaging/windows/mamidlabs.iss, tests/test_transcriber.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-12 | **Ses dökümü ayrıştırma kusuru düzeltildi (arayüz testinde bulundu).** Sessiz/kısa bir kayıtta Qwen3-ASR çıktısını ayrıştıran `_extract_text` ham `language None<asr_text>` metnini transkript sanıp modele gönderiyordu. Artık `<asr_text>` etiketi ve `language ...` sarmalayıcısı **her zaman** temizlenir; sessiz sonuçta `text` boş döner ve arayüz/işçi "ses tanıma metin üretmedi" deyip dökümsüz sürdürür. Gerçek sessiz kayıt + TTS konuşma kaydıyla doğrulandı. | agent/qwen3-asr-tools.py, tests/test_qwen3_asr.py, CHANGELOG.md |
 | 2026-10-11 | **LITE çıktı tavanı 3072 → 8192 (`--predict`).** Düşünme açık ve **sınırsız** olduğu için düşünme tokenları `--predict` **çıktı** bütçesini paylaşır (bağlam penceresi 32768'den ayrı bir şeydir). 3072 basit bir istekte bile düşünmeye tükenip **görünür yanıt üretmeden** kesiliyordu ("boş yanıt"). Arayüz LITE için zaten `max_tokens=8192` gönderiyor; sunucu da uyumlu. Smoke sohbet probe'u da 8192 kullanır. | scripts/manage-qwen.ps1, scripts/smoke-test.ps1, AGENTS.md, docs/teknik-notlar.md |
 | 2026-10-11 | **"Durdur" artık o an yapılan HER işi anında keser** (yanıt, ASR/OCR/arama gibi uzun süren Python alt süreçleri, medya üretimi); ardından dil modeli arka planda yüklenir ve sohbet bir sonraki mesajla devam eder. `Invoke-PythonTool` artık çıktıyı **asenkron** toplar ve bekleme döngüsünde `$Shared.Cancel`'ı yoklar; iptalde alt süreç ağacı **anında öldürülür** (`$p.Kill($true)`), ASR cihaz döngüsü CPU yedeğine geçmeden kırılır, araç/ASR iptali hata olarak gösterilmez. **Tek istisna: dil modeli YÜKLENİYORSA kesilmez** — `Cancel-Generation` `switchProcess`/`pendingModelChange`'e dokunmaz, yükleme arka planda tamamlanır. | agent/qwen-inference.ps1, qwen-desktop.ps1, tests/test_qwen3_asr.py |

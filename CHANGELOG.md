@@ -21,14 +21,24 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   birlikte çalışır (ölçüldü 61-62 tok/s); kaçak/mükerrer örnek yükleme öncesi temizlenir.
 - **Belge ve OCR:** PDF/Word/Excel/PowerPoint/ZIP/RAR okuma, PDF/DOCX/PPTX üretimi; PaddleOCR ile
   görsel ve PDF OCR.
-- **Ses dökümü (Qwen3-ASR-1.7B):** sohbete eklenen ses dosyası otomatik yazıya çevrilir ve bulgular
-  dil modeline verilir (OCR/mmproj mantığı). Motor **Qwen3-ASR**: 52 dil + **Türkçe**; konuşma,
-  şarkı ve fon müzikli kayıtlar; GPU'da hızlı (yoksa CPU'ya düşer). Yerel sağlayıcıda dil modeli
-  VRAM'den boşaltılıp dökum alınır ve geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu
-  (**Windows varsayılan kayıt cihazından canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde
-  **Ses ekle**. Model kurulumda `models\qwen3-asr` altına indirilir.
+- **Ses dökümü (Whisper + ses olayları):** sohbete eklenen ses dosyası veya mikrofon kaydı otomatik
+  yazıya çevrilir ve bulgular dil modeline verilir (OCR/mmproj mantığı). Motor **faster-whisper
+  large-v3 (Türkçe ince ayarlı sürüm)**: en yüksek doğruluk + **Silero VAD** ile sessizlikte uydurma
+  metin bastırılır. **Konuşma dışı ses olayları** (AudioSet/AST; ör. ayak sesleri, kapı) ve
+  (isteğe bağlı) **konuşmacı ayrımı** (pyannote) aynı döküme eklenir. Çıktı **kronolojik ve zaman
+  damgasızdır**:
+  ```
+  (ayak sesleri)
+  Konuşmacı: Geldin mi?
+  (kapı kapanma sesi)
+  Konuşmacı: Evet, biraz geciktim.
+  ```
+  GPU'da hızlı (yoksa CPU'ya düşer). Yerel sağlayıcıda dil modeli VRAM'den boşaltılıp dökum alınır ve
+  geri yüklenir. Arayüzde Gönder'in solunda **mikrofon** tuşu (**Windows varsayılan kayıt cihazından
+  canlı kayıt**, bağımlılıksız) ve ek (+) menüsünde **Ses ekle**. Motor ve modeller kurulumda
+  `venv\asr` + HF önbelleğine indirilir.
 - **ASR, dil modeli yüklemesini geçersiz kılar:** ses eki olan bir mesaj gönderildiğinde dil modeli
-  hazır olmasa bile işlem hemen başlar; süren model yüklemesinden vazgeçilir, ses Qwen3-ASR ile
+  hazır olmasa bile işlem hemen başlar; süren model yüklemesinden vazgeçilir, ses Whisper ile
   yazıya çevrilir, ardından dil modeli (seçili profile göre) geri yüklenir. Böylece ses göndermek için
   modelin yüklenmesini beklemek gerekmez.
 - **Sağlayıcı maksimum bağlam otomatik algılama:** API anahtarı doğrulanınca modelin bağlam penceresi
@@ -51,8 +61,22 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   edilmeden kurulum sürmez. Yazılımın mülkiyeti ve tüm hakları geliştiriciye aittir; kopyalama,
   değiştirme, kırma (crack) veya ticari amaçla pazarlama yasaktır. İzinsiz kullanım hukuki ve cezai
   sorumluluk doğurabilir; sorumluluk reddi ve sınırlandırılması, fesih ile hukuk/mahkeme hükümleri yer alır.
+- **Dil profili (Profiller penceresi):** Profiller penceresine **arayüz dili / dil profili** seçimi
+  eklendi (Türkçe/English). Kullanıcı buradan **diğer dil sürümünün kurulum paketini indirip
+  kurabilir**; kurulum aynı klasöre yapılır (`UsePreviousAppDir`), `settings\` ve `chats\` korunur.
+  İndirilen paket `tools\editions` altında saklanır ve **"Dil sürümünü sil"** ile kaldırılabilir.
 
 ### Değişen
+- **FLASH çıktı tavanı 4096 → 8192:** artık üç profil de (`--predict` ve arayüz `max_tokens`) 8192
+  kullanır. Bu bir **tavan**dır, hedef değil: üretim EOS'ta durduğu için normal yanıtların hızı
+  değişmez; yalnızca uzun yanıtlarda/düşünmede yanıtın yarıda kesilmesi (boş yanıt) engellenir.
+  MAX/FLASH ayrımını `--reasoning-effort` (xhigh vs low) korur.
+- **Ses döküm motoru değişti:** Qwen3-ASR ve whisper.cpp kaldırıldı; yerine **faster-whisper
+  large-v3 + AST ses olayları** hattı (`agent/transcriber/`) geldi. Mikrofon menüsüne **"Konuşma
+  dışı sesler"** onay kutusu eklendi (kapalıysa yalnızca konuşma dökumlenir). **Kırmızı mikrofon
+  tuşuna basmak artık kaydı iptal eder** (durur, dosya silinir, hiçbir şey gönderilmez); kaydı
+  bitirip göndermek için sağ tık menüsü ya da **Gönder** kullanılır.
+- **Kurulum sihirbazı Türkçe/İngilizce dil seçimi sunar** (bu sürümde varsayılan Türkçe).
 - **LITE artık düşünme bütçesi kullanmaz (sınırsız):** `--reasoning-budget` hiç verilmez; düşünme
   açık kalır ve model gerektiği kadar uzun düşünür. Sistem istemi modele derin düşünmesini ve
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.

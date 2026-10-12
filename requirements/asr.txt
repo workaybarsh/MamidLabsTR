@@ -1,0 +1,15 @@
+# venv\asr: yerel konusma + ses olayi dökum hatti.
+#   - faster-whisper: Whisper large-v3-tr (CTranslate2) konusma dökumu + dahili Silero VAD
+#   - transformers: AST (AudioSet) ses olayi etiketleme
+#   - pyannote.audio: konusmaci ayrimi (opsiyonel; HF token ister)
+#   - av: 16 kHz mono WAV'a cevirme (ffmpeg gerekmez)
+#
+# torch/torchaudio bu dosyada YOK: CUDA 13.0 tekerlekleri ayri bir dizinden
+# (https://download.pytorch.org/whl/cu130) gelir ve ayri kurulur:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu130
+#   pip install -r requirements\asr.txt
+faster-whisper==1.1.1
+transformers==5.17.0
+pyannote.audio==3.3.2
+av==18.1.0
+onnxruntime==1.20.1

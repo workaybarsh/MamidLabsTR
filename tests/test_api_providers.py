@@ -229,7 +229,7 @@ def test_claude_request_omits_disabled_thinking_and_forced_tool_choice(tmp_path)
     # Opus 5.5 / Fable 5.1 'disabled' ve zorunlu tool_choice'u 400 ile reddeder.
     assert "thinking" not in request
     assert request["tool_choice"] == {"type": "auto"}
-    # max_tokens dusunce + yaniti birlikte sinirlar; FLASH'in 4096'si yetmez.
+    # max_tokens dusunce + yaniti birlikte sinirlar; yerel profilin cikti tavani (8192) yetmez.
     assert request["max_tokens"] >= 16000
 
 

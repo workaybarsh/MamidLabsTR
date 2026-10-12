@@ -34,7 +34,7 @@ param(
     [string]$Root = (Join-Path $env:LOCALAPPDATA 'Programs\MamidLabs'),
     [string]$Source,
     [switch]$SkipMedia,
-    # Ses yakalama (Qwen3-ASR modeli) medyadan ayridir: -SkipMedia medyayi atlar ama
+    # Ses dökum ortami (venv\asr) medyadan ayridir: -SkipMedia medyayi atlar ama
     # ses yakalamayi atlamaz; yalnizca ses istenmediginde -SkipAudio verilir.
     [switch]$SkipAudio,
     [switch]$Force,
@@ -49,7 +49,7 @@ if (!$Source) { $Source = Split-Path -Parent $PSScriptRoot }
 # yazilir; uninstall-mamidlabs.ps1 koku sildiginde geride iz kalmaz.
 $env:PIP_CACHE_DIR = Join-Path $Root 'tools\pip-cache'
 
-$script:KnownStages = @('all', 'preflight', 'layout', 'runtime', 'llama', 'asr', 'python', 'comfyui', 'verify')
+$script:KnownStages = @('all', 'preflight', 'layout', 'runtime', 'llama', 'python', 'asr', 'comfyui', 'verify')
 $Stage = @($Stage | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 if (!$Stage) { $Stage = @('all') }
 $unknown = @($Stage | Where-Object { $script:KnownStages -notcontains $_ })
@@ -75,19 +75,11 @@ $script:Packages = @{
         file = 'cudart-llama-bin-win-cuda-13.4-x64.zip'; bytes = 423535356
     }
 }
-# Qwen3-ASR (ses dökum). Tek motor: cok dilli (52 dil; Türkce dahil; konusma + sarki/BGM),
-# yuksek dogruluk. LLM tabanli; imagegen venv'i (torch cu130 + transformers
-# 5.x) ile calisir. Model dosyalari HF'den indirilir (boyutla dogrulanir).
-$script:AsrRepo = 'https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf/resolve/main/'
-$script:AsrModels = @(
-    @{ file = 'config.json'; bytes = 2399 },
-    @{ file = 'generation_config.json'; bytes = 165 },
-    @{ file = 'model.safetensors'; bytes = 4076193080 },
-    @{ file = 'processor_config.json'; bytes = 487 },
-    @{ file = 'tokenizer.json'; bytes = 11429653 },
-    @{ file = 'tokenizer_config.json'; bytes = 998 },
-    @{ file = 'chat_template.jinja'; bytes = 1434 }
-)
+# Ses dökum modelleri (faster-whisper + AST). Ilk kurulumda HF onbellegine (HF_HOME =
+# kok\tools\hf-home) cekilir; calisma aninda aga gerek kalmaz. Whisper: large-v3'un
+# Turkce ince ayarli CTranslate2 (float16) surumu.
+$script:AsrWhisperModel = 'oguzhangokboru/whisper-large-v3-tr'
+$script:AsrEventsModel = 'MIT/ast-finetuned-audioset-10-10-0.4593'
 $script:LlamaBuild = 'b10998'
 $script:ComfyRepo = 'https://github.com/comfyanonymous/ComfyUI.git'
 # Gorsel ve video uretimiyle uctan uca dogrulanmis commit.
@@ -114,6 +106,10 @@ $script:AppPackages = Read-Requirements 'app.txt'
 $script:ImagegenTorch = @('torch', 'torchvision', 'torchaudio')
 $script:ImagegenTorchIndex = 'https://download.pytorch.org/whl/cu130'
 $script:ImagegenPackages = Read-Requirements 'imagegen.txt'
+# Ses (ASR) ortami: faster-whisper (Whisper large-v3-tr) + AST ses olaylari + pyannote.
+# torch/torchaudio CUDA 13.0 tekerleklerinden ayri kurulur (imagegen ile ayni index).
+$script:AsrTorch = @('torch', 'torchaudio')
+$script:AsrPackages = Read-Requirements 'asr.txt'
 
 # Profil basina asgari donanim. Lite'ta Windows masaustunun tuttugu ~1 GB VRAM
 # dusuldukten sonra kalan paya gore secilmistir.
@@ -426,20 +422,36 @@ function Invoke-Llama {
     Write-Ok 'llama.cpp ve CUDA calisma zamani acildi'
 }
 
-# ------------------------------------------------------------- Qwen3-ASR (ses dökum)
+# ------------------------------------------------------------------ ses (ASR)
+# Konusma dökumu: faster-whisper (Whisper large-v3-tr) + AST ses olaylari. Modeller ilk
+# kurulumda HF onbellegine (HF_HOME = kok\tools\hf-home) cekilir; calisma aninda ag
+# gerekmez. venv\asr "python" asamasinda olusturulur (bkz. Invoke-Python).
 function Invoke-Asr {
-    Write-Step 'Qwen3-ASR ses dökum motoru (1.7B)'
-    if ($SkipAudio) { Write-Skip 'Qwen3-ASR (-SkipAudio)'; return }
-    # Motor kodu imagegen venv'inde (torch + transformers) calisir; ayri ikili yok.
-    $modelDir = Join-Path $Root 'models\qwen3-asr'
-    New-Item -ItemType Directory -Path $modelDir -Force | Out-Null
-    foreach ($m in $script:AsrModels) {
-        $dst = Join-Path $modelDir $m.file
-        if ((Test-Path -LiteralPath $dst -PathType Leaf) -and (Get-Item $dst).Length -eq [long]$m.bytes -and !$Force) {
-            Write-Skip ($m.file + ' zaten indirilmis'); continue
-        }
-        Invoke-Download ($script:AsrRepo + $m.file) $dst $m.bytes
-        Write-Ok ($m.file + ' indirildi')
+    Write-Step 'Ses dökum modelleri (Whisper large-v3-tr + AST)'
+    if ($SkipAudio) { Write-Skip 'Ses dökum modelleri (-SkipAudio)'; return }
+    $python = Join-Path $Root 'venv\asr\Scripts\python.exe'
+    if (!(Test-Path -LiteralPath $python -PathType Leaf)) {
+        Write-Warn 'venv\asr bulunamadi; once "python" asamasi calistirilmali.'
+        return
+    }
+    $env:HF_HOME = Join-Path $Root 'tools\hf-home'
+    $env:HF_HUB_DISABLE_TELEMETRY = '1'
+    $env:MAMIDLABS_ASR_WHISPER = $script:AsrWhisperModel
+    $env:MAMIDLABS_ASR_EVENTS = $script:AsrEventsModel
+    $code = @'
+import os
+from huggingface_hub import snapshot_download
+for repo in (os.environ["MAMIDLABS_ASR_WHISPER"], os.environ["MAMIDLABS_ASR_EVENTS"]):
+    print("indiriliyor: " + repo, flush=True)
+    snapshot_download(repo_id=repo)
+    print("tamam: " + repo, flush=True)
+'@
+    try {
+        $output = Invoke-NativeText { $code | & $python - }
+        if ($output -match 'tamam:') { Write-Ok 'Ses dökum modelleri hazir (HF onbellegi)' }
+        else { Write-Warn ('Ses modelleri dogrulanamadi: ' + $output) }
+    } catch {
+        Write-Warn ('Ses modelleri indirilemedi: ' + $_.Exception.Message)
     }
 }
 
@@ -472,6 +484,15 @@ function Invoke-Python {
     Write-Step 'Python calisma ortamlari'
     $appPython = New-Venv (Join-Path $Root 'venv\app') 'uygulama'
     Install-Packages $appPython $script:AppPackages 'uygulama' $null
+
+    # Ses (ASR) ortami medyadan bagimsizdir: yalnizca ses istenmediginde atlanir.
+    if (!$SkipAudio) {
+        $asrPython = New-Venv (Join-Path $Root 'venv\asr') 'ses (ASR)'
+        Install-Packages $asrPython $script:AsrTorch 'ses torch (CUDA 13.0)' $script:ImagegenTorchIndex
+        Install-Packages $asrPython $script:AsrPackages 'ses (ASR)' $null
+    } else {
+        Write-Skip 'ses (ASR) ortami (ses istenmedi)'
+    }
 
     if ($SkipMedia -and $SkipAudio) {
         Write-Skip 'imagegen ortami (medya ve ses de istenmedi)'
@@ -611,7 +632,8 @@ function Invoke-Verify {
         $checks += @{ label = 'Fotograf duzenleme dugumleri'; path = 'ComfyUI\custom_nodes\comfyui-krea2edit\__init__.py' }
     }
     if (!$SkipAudio) {
-        $checks += @{ label = 'Qwen3-ASR modeli'; path = 'models\qwen3-asr\model.safetensors' }
+        $checks += @{ label = 'ses (ASR) ortami'; path = 'venv\asr\Scripts\python.exe' }
+        $checks += @{ label = 'whisper-tools.py'; path = 'agent\whisper-tools.py' }
     }
     foreach ($check in $checks) {
         # Zip icindeki yuva (ornegin 'Release\') surume gore degisebilir; glob varsa
@@ -673,8 +695,8 @@ $stages = [ordered]@{
     layout    = { Invoke-Layout }
     runtime   = { Invoke-Runtime }
     llama     = { Invoke-Llama }
-    asr       = { Invoke-Asr }
     python    = { Invoke-Python }
+    asr       = { Invoke-Asr }
     comfyui   = { Invoke-ComfyUI }
     verify    = { Invoke-Verify }
 }

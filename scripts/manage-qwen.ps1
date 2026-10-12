@@ -310,11 +310,12 @@ try {
     }
     New-Item -ItemType Directory -Path $logs -Force | Out-Null
 
-    # LITE cikti siniri 8192: dusunme ACIK ve SINIRSIZ oldugu icin (sunucu tarafinda dusunme
-    # butcesi yok) dusunme tokenlari bu cikti butcesini paylasir; 3072 kucuk kaliyordu ve basit
-    # bir istekte bile model tamamen dusunup GORUNUR YANIT URETMEDEN kesilebiliyordu ("bos yanit").
-    # Arayuz istegi de LITE icin max_tokens=8192 gonderir; sunucu da bunu karsilamali.
-    $predict = switch ($Profile) { 'lite' { '8192' } 'flash' { '4096' } default { '8192' } }
+    # Cikti siniri uc profilde de 8192: dusunme ACIK oldugu icin dusunme tokenlari bu cikti
+    # butcesini paylasir; 3072/4096 kucuk kaliyordu ve model tamamen dusunup GORUNUR YANIT
+    # URETMEDEN kesilebiliyordu ("bos yanit"). 8192 bir TAVANDIR, hedef degil: uretim EOS'ta
+    # durur, bu yuzden normal yanitlarin hizi degismez. Arayuz istegi de max_tokens=8192
+    # gonderir; sunucu bunu karsilamali.
+    $predict = switch ($Profile) { 'lite' { '8192' } 'flash' { '8192' } default { '8192' } }
     # Model adları max/flash/lite'tir; llama.cpp şablonu için karşılık gelen reasoning
     # değerleri hâlâ low/xhigh olarak gönderilir.
     $reasoningEffort = if ($Profile -eq 'max') { 'xhigh' } else { 'low' }

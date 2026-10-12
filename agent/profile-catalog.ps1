@@ -123,12 +123,12 @@ function Remove-ProfileFiles([string]$id) {
     return $result
 }
 
-# Bilesen siniflandirmasi: medya (gorsel/video) ComfyUI altinda, ses ise models\qwen3-asr
-# altindadir; geri kalan (dil modeli/mmproj) cekirdektir ve istege bagli degildir.
+# Bilesen siniflandirmasi: medya (gorsel/video) ComfyUI altinda, ses ise venv\asr ve
+# whisper model dosyalari altindadir; geri kalan (dil modeli/mmproj) cekirdektir.
 function Get-ProfileFileComponent([string]$target) {
     $t = ([string]$target) -replace '\\', '/'
     if ($t -like 'ComfyUI/*') { return 'media' }
-    if ($t -like 'models/qwen3-asr/*') { return 'audio' }
+    if ($t -like 'venv/asr/*' -or $t -like 'models/whisper*') { return 'audio' }
     return 'core'
 }
 
@@ -170,6 +170,10 @@ function Test-LocalProfileChatFilesPresent([string]$id) {
 # surumleri ayri AppId ve ayri GitHub deposu tasir (bkz. AGENTS.md, tuzaklar).
 $script:MamidLabsAppId = '{56CF14A8-57AF-4EEB-A520-937212F0B365}'
 $script:MamidLabsRepo = 'workaybarsh/MamidLabsTR'
+# Bu sürümün arayüz dili ve "dil profili" (diğer dil sürümü) deposu. Profiller penceresindeki
+# dil seçimi, diğer dil sürümünün kurulum paketini indirip kurar (kurulum aynı klasöre yapılır).
+$script:MamidLabsEditionLang = 'tr'
+$script:OtherEditionRepo = 'workaybarsh/MamidLabsENG'
 
 # Ozel (private) depo icin guncelleme denetimi ve indirmesi bir GitHub tokeni gerektirir;
 # aksi halde GitHub 404 doner. Token su sirayla aranir: GITHUB_TOKEN / GH_TOKEN ortam
@@ -237,6 +241,41 @@ function Test-MamidLabsUpdateAvailable {
     return @{ available = $isNewer; version = $remoteVersion; downloadUrl = [string]$asset.browser_download_url
               apiUrl = [string]$asset.url; size = [long]$asset.size; localVersion = $local }
 }
+
+# Diğer dil sürümünün en son kurulum paketini bulur (dil profili indirme). Sonuç:
+# @{ version; downloadUrl; apiUrl; size } ya da @{ error }. Ağ hatasında istisna fırlatmaz.
+function Get-EditionRelease([string]$repo) {
+    $token = Get-UpdateToken
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" `
+            -Headers (Get-GitHubHeaders $token) -TimeoutSec 20 -ErrorAction Stop
+    } catch {
+        $reason = if (!$token) { 'özel depo için güncelleme tokenı gerekli' } else { 'internet yok?' }
+        return @{ error = "Denetlenemedi ($reason)" }
+    }
+    $asset = @($release.assets | Where-Object { $_.name -like '*Setup*.exe' }) | Select-Object -First 1
+    if (!$asset) { return @{ error = 'Kurulum dosyası bulunamadı' } }
+    return @{ version = ([string]$release.tag_name).TrimStart('v', 'V')
+              downloadUrl = [string]$asset.browser_download_url
+              apiUrl = [string]$asset.url; size = [long]$asset.size }
+}
+
+# Indirilen dil profili (diger dil surumu) paketinin kalici yolu ve kaydi. "Sil" icin izlenir;
+# boylece kullanici daha sonra kaldirabilir. Indirilen paket burada tutulur (gecici %TEMP% degil).
+function Get-EditionDownloadDir { return (Join-Path $root 'tools\editions') }
+function Get-EditionRecordPath { return (Join-Path (Get-EditionDownloadDir) 'edition.json') }
+
+function Get-EditionRecord {
+    $path = Get-EditionRecordPath
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    try { return (Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return $null }
+}
+
+# Profiller penceresindeki kapanışlar (GetNewClosure) `$script:` değişkenlerini GÖREMEZ
+# ($script: kapanışın kendi modül kapsamına bakar, boş döner). "Meşgul" bayrakları anlık
+# olduğundan yerel değişkene kopyalanamaz (bayat kalır); bu yüzden canlı değer bu fonksiyon
+# üzerinden okunur (fonksiyon içinde $script: gerçek script kapsamına bakar).
+function Test-ProfileManagerBusy { return [bool]($script:busy -or $script:imageBusy) }
 
 function Get-ProfileStatusLabel([string]$id) {
     $state = Get-ProfileState $id
@@ -306,7 +345,7 @@ function Show-ProfileManager([string]$focusId) {
 
     $dlg = [Windows.Forms.Form]::new()
     $dlg.Text = 'MamidLabs · Profiller'
-    $dlg.Size = [Drawing.Size]::new(790, 600)
+    $dlg.Size = [Drawing.Size]::new(790, 660)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false
@@ -377,6 +416,29 @@ function Show-ProfileManager([string]$focusId) {
     $delCompBtn = [Windows.Forms.Button]::new()
     $delCompBtn.Text = 'Seçili bileşenleri sil'
     $delCompBtn.SetBounds(16, 508, 200, 34)
+    # Dil profili değerleri GetNewClosure() içinde $script: ile GÖRÜNMEZ (kapanış kendi modül
+    # kapsamına bakar, $script: boş döner); bu yüzden yerel değişkene alınır. Aksi halde
+    # "zaten kurulu" denetimi ve diğer sürüm deposu boş kalır (bkz. $mainForm = $form, tuzak 21).
+    $editionLang = $script:MamidLabsEditionLang
+    $otherEditionRepo = $script:OtherEditionRepo
+    # Dil profili: bu sürümün dili varsayılan seçilidir; kullanıcı diğer dil sürümünü
+    # (İngilizce/Türkçe) buradan indirip kurabilir. Aynı klasöre kurulur.
+    $langLabel = [Windows.Forms.Label]::new()
+    $langLabel.Text = 'Arayüz dili / dil profili:'
+    $langLabel.SetBounds(16, 552, 210, 20)
+    $langLabel.ForeColor = $colText
+    $langCombo = [Windows.Forms.ComboBox]::new()
+    $langCombo.DropDownStyle = 'DropDownList'
+    [void]$langCombo.Items.Add('Türkçe')
+    [void]$langCombo.Items.Add('English')
+    $langCombo.SetBounds(232, 550, 140, 26)
+    $langCombo.SelectedIndex = if ($editionLang -eq 'en') { 1 } else { 0 }
+    $langBtn = [Windows.Forms.Button]::new()
+    $langBtn.Text = 'Seçili dil sürümünü indir'
+    $langBtn.SetBounds(380, 549, 200, 28)
+    $langDeleteBtn = [Windows.Forms.Button]::new()
+    $langDeleteBtn.Text = 'Dil sürümünü sil'
+    $langDeleteBtn.SetBounds(586, 549, 176, 28)
     if ($script:apiSettings.providers -and $script:apiSettings.providers['github']) {
         $tokenLabel.Text = 'Güncelleme tokenı kayıtlı (boş bırakırsan korunur; değiştirmek için yaz):'
     }
@@ -439,7 +501,7 @@ function Show-ProfileManager([string]$focusId) {
     $delCompBtn.Add_Click({
         $index = $list.SelectedIndex
         if ($index -lt 0) { return }
-        if ($script:busy -or $script:imageBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
+        if (Test-ProfileManagerBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
         $components = @()
         if ($mediaChk.Checked) { $components += 'media' }
         if ($audioChk.Checked) { $components += 'audio' }
@@ -477,10 +539,13 @@ function Show-ProfileManager([string]$focusId) {
     # Profil silme: yalnizca bu profile OZEL dosyalar kaldirilir; baska profillerle
     # paylasilanlar (or. LITE'in MAX/FLASH ile ortak medya dosyalari) korunur. Aktif
     # profil siliniyorsa once model durdurulur.
+    # $script:apiSettings bir KAPANIŞ içinde ($script: boş döner) görünmediğinden yerel
+    # değişkene alınır; aynı nesne olduğu için token kaydetme/silme de gerçek ayarları değiştirir.
+    $settings = $script:apiSettings
     $deleteBtn.Add_Click({
         $index = $list.SelectedIndex
         if ($index -lt 0) { return }
-        if ($script:busy -or $script:imageBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
+        if (Test-ProfileManagerBusy) { $status.Text = 'Önce mevcut işlemin bitmesini bekle.'; return }
         $profile = $catalog[$index]
         $present = @((Get-ProfileUniqueTargets $profile.id) | Where-Object {
             Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf })
@@ -490,7 +555,7 @@ function Show-ProfileManager([string]$focusId) {
         }
         $bytes = 0L
         foreach ($rel in $present) { try { $bytes += [long](Get-Item -LiteralPath (Join-Path $root $rel)).Length } catch { } }
-        $isActive = ([string]$script:apiSettings.selectedModel -eq "builtin-$($profile.id)")
+        $isActive = ([string]$settings.selectedModel -eq "builtin-$($profile.id)")
         $warn = if ($isActive) { "`r`n`r`nDIKKAT: Bu profil şu an seçili. Model çalışıyorsa önce durdurulur." } else { '' }
         $answer = [Windows.Forms.MessageBox]::Show(
             ($profile.label + ' profiline ait ' + $present.Count + ' dosya (' + (Format-ByteSize $bytes) + ') silinecek.' +
@@ -506,11 +571,13 @@ function Show-ProfileManager([string]$focusId) {
         try { Update-ProviderSelection } catch { }
     }.GetNewClosure())
 
+    # $settings yukarida yakalanan gerçek ayarlar nesnesidir; token kaydetme/silme kapanışları
+    # (GetNewClosure) onu kullanır çünkü $script:apiSettings kapanış içinde boş döner.
     $tokenSave.Add_Click({
-        if (!$script:apiSettings.providers) { $script:apiSettings.providers = @{} }
+        if (!$settings.providers) { $settings.providers = @{} }
         $value = $tokenBox.Text.Trim()
         if ($value) {
-            $script:apiSettings.providers['github'] = @{ key = (ConvertFrom-SecureString (ConvertTo-SecureString $value -AsPlainText -Force)) }
+            $settings.providers['github'] = @{ key = (ConvertFrom-SecureString (ConvertTo-SecureString $value -AsPlainText -Force)) }
             $status.Text = 'Güncelleme tokenı kaydedildi. "Güncellemeleri denetle" ile dene.'
         } else {
             $status.Text = 'Boş token kaydedilmedi.'
@@ -519,8 +586,8 @@ function Show-ProfileManager([string]$focusId) {
         Save-ApiSettings
     }.GetNewClosure())
     $tokenClear.Add_Click({
-        if ($script:apiSettings.providers -and $script:apiSettings.providers.ContainsKey('github')) {
-            $script:apiSettings.providers.Remove('github')
+        if ($settings.providers -and $settings.providers.ContainsKey('github')) {
+            $settings.providers.Remove('github')
         }
         Save-ApiSettings
         $status.Text = 'Güncelleme tokenı silindi.'
@@ -597,7 +664,67 @@ function Show-ProfileManager([string]$focusId) {
         }
     }.GetNewClosure())
 
-    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $deleteBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear, $mediaChk, $audioChk, $delCompBtn))
+    $langBtn.Add_Click({
+        $chosen = if ($langCombo.SelectedIndex -eq 1) { 'en' } else { 'tr' }
+        if ($chosen -eq $editionLang) {
+            $status.Text = 'Seçilen dil sürümü zaten kurulu.'
+            return
+        }
+        $langBtn.Enabled = $false
+        $langBtn.Text = 'İndiriliyor…'
+        $dlg.Refresh()
+        $release = Get-EditionRelease $otherEditionRepo
+        if ($release.error) {
+            $status.Text = 'Dil sürümü indirilemedi: ' + $release.error
+            $langBtn.Text = 'Seçili dil sürümünü indir'
+            $langBtn.Enabled = $true
+            return
+        }
+        try {
+            # Paket kalici tutulur (tools\editions); "Sil" ile bu dosya + kayit kaldirilir.
+            $dir = Get-EditionDownloadDir
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            $downloadPath = Join-Path $dir ("MamidLabs_Setup_" + $chosen + ".exe")
+            $token = Get-UpdateToken
+            $url = if ($token -and $release.apiUrl) { $release.apiUrl } else { $release.downloadUrl }
+            $headers = if ($token -and $release.apiUrl) {
+                @{ 'User-Agent' = 'MamidLabs-Updater'; 'Accept' = 'application/octet-stream'; 'Authorization' = "Bearer $token" }
+            } else { @{ 'User-Agent' = 'MamidLabs-Updater' } }
+            Invoke-WebRequest -Uri $url -Headers $headers -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
+            if ($release.size -and (Get-Item -LiteralPath $downloadPath).Length -ne $release.size) { throw 'İndirilen dosya boyutu uyuşmuyor.' }
+            @{ lang = $chosen; version = [string]$release.version; path = $downloadPath; installedAt = (Get-Date).ToString('o') } |
+                ConvertTo-Json | Set-Content -LiteralPath (Get-EditionRecordPath) -Encoding UTF8
+            $langDeleteBtn.Enabled = $true
+            Start-Process -FilePath $downloadPath
+            $status.Text = 'Dil sürümünün kurulum sihirbazı açıldı; MamidLabs kapanıyor.'
+            $dlg.Close()
+            if ($mainForm) { $mainForm.Close() }
+        } catch {
+            $status.Text = 'Dil sürümü indirilemedi: ' + $_.Exception.Message
+            $langBtn.Text = 'Seçili dil sürümünü indir'
+            $langBtn.Enabled = $true
+        }
+    }.GetNewClosure())
+
+    $langDeleteBtn.Add_Click({
+        $record = Get-EditionRecord
+        if (!$record) { $status.Text = 'Silinecek indirilmiş dil sürümü yok.'; return }
+        try {
+            if ($record.path -and (Test-Path -LiteralPath $record.path -PathType Leaf)) {
+                Remove-Item -LiteralPath $record.path -Force
+            }
+            Remove-Item -LiteralPath (Get-EditionRecordPath) -Force -ErrorAction SilentlyContinue
+            $langDeleteBtn.Enabled = $false
+            $status.Text = 'İndirilen dil sürümü paketi silindi.'
+        } catch {
+            $status.Text = 'Dil sürümü paketi silinemedi: ' + $_.Exception.Message
+        }
+    }.GetNewClosure())
+
+    # Baslangicta "Sil" dügmesi yalnizca indirilmis bir dil paketi varsa etkin olsun.
+    $langDeleteBtn.Enabled = [bool](Get-EditionRecord)
+
+    $dlg.Controls.AddRange(@($list, $detail, $status, $downloadBtn, $switchBtn, $deleteBtn, $updateBtn, $closeBtn, $tokenLabel, $tokenBox, $tokenSave, $tokenClear, $mediaChk, $audioChk, $delCompBtn, $langLabel, $langCombo, $langBtn, $langDeleteBtn))
     $wanted = 0
     if ($focusId) {
         for ($i = 0; $i -lt $catalog.Count; $i++) { if ($catalog[$i].id -eq $focusId) { $wanted = $i; break } }

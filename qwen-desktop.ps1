@@ -111,12 +111,15 @@ $script:currentTurnHasImage = $false
 $script:currentTurnImagePaths = @()
 $script:currentTurnAudioPaths = @()
 $script:micRecording = $false
+# Konusma disi ses olaylari (AST) yakalansin mi? Mikrofon menusundeki "Konusma disi sesler"
+# onay kutusuyla acilir/kapanir; ayarlarda (api.json -> audioEvents) saklanir.
+$script:audioEvents = $true
 $script:currentTurnMultiImageOcr = $false
 $script:multiImageOcrMode = $false
 $script:selectedVideos = New-Object System.Collections.Generic.List[string]
 $script:lastUserVideo = $null
 $script:selectedDocuments = New-Object System.Collections.Generic.List[string]
-# Ses dosyalari (Qwen3-ASR ile dökumlenir; OCR'in gorsel/mesaj esdegeri).
+# Ses dosyalari (whisper.cpp large-v3 ile dökumlenir; OCR'in gorsel/mesaj esdegeri).
 $script:selectedAudio = New-Object System.Collections.Generic.List[string]
 $script:attachedDocuments = New-Object System.Collections.Generic.List[string]
 $script:videoJob = $null
@@ -1161,7 +1164,7 @@ $composer.Controls.Add($send)
 
 # Mikrofon dugmesi: Gönder'in hemen solunda. Mikrofon KIRMIZI iken (kayit surerken)
 # dugmeye basmak kaydi bitirip GONDERIR; kayit yokken kucuk bir menu acar
-# ("Mikrofonu kullan" / "İptal"). Ses eklenince (Qwen3-ASR ile)
+# ("Mikrofonu kullan" / "İptal"). Ses eklenince (whisper.cpp large-v3 ile)
 # otomatik dökumlenir ve bulgular dil modeline verilir (OCR'in ses esdegeri).
 # Sag tik HER durumda menuyu acar; boylece kayit surerken bile "Kaydı iptal et"
 # secilip kayit atilabilir (dosya silinir, gonderilmez).
@@ -1179,6 +1182,14 @@ $composer.Controls.Add($micBtn)
 $micMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $micUse = $micMenu.Items.Add('Mikrofonu kullan')
 [void]$micMenu.Items.Add('-')
+# Konusma disi sesler: isaretli ise AST ses olaylari da yakalanir (varsayilan acik);
+# isaret kaldirilirsa yalnizca Whisper konusmasi dökumlenir.
+$script:audioEvents = if ($null -ne $script:apiSettings.audioEvents) { [bool]$script:apiSettings.audioEvents } else { $true }
+$micEvents = New-Object System.Windows.Forms.ToolStripMenuItem('Konuşma dışı sesler')
+$micEvents.CheckOnClick = $true
+$micEvents.Checked = $script:audioEvents
+[void]$micMenu.Items.Add($micEvents)
+[void]$micMenu.Items.Add('-')
 $micCancel = $micMenu.Items.Add('İptal')
 # Kayit surerken basliklar "Kaydı bitir ve gönder" / "Kaydı iptal et" olur.
 function Show-MicMenu {
@@ -1191,9 +1202,10 @@ function Show-MicMenu {
     }
     $micMenu.Show($micBtn, 0, $micBtn.Height)
 }
-# Sol tik: kayit surerken bitir+gonder; aksi halde menuyu ac.
+# Sol tik: kayit surerken KAYDI IPTAL eder (durur, dosya silinir, hicbir sey gonderilmez);
+# aksi halde menuyu acar. Kaydi bitirip GONDERMEK icin sag tik menusu ya da Gönder kullanilir.
 $micBtn.Add_Click({
-    if ($script:micRecording) { Complete-MicrophoneCapture }
+    if ($script:micRecording) { Cancel-MicrophoneCapture }
     else { Show-MicMenu }
 })
 # Sag tik: her durumda menu (kaydi iptal etme yolu kayit surerken de erisilebilir).
@@ -1204,6 +1216,12 @@ $micBtn.Add_MouseUp({
 $micUse.Add_Click({
     if ($script:micRecording) { Complete-MicrophoneCapture }
     else { Start-MicrophoneCapture }
+})
+$micEvents.Add_Click({
+    $script:audioEvents = [bool]$micEvents.Checked
+    $script:apiSettings.audioEvents = $script:audioEvents
+    Save-ApiSettings
+    $metric.Text = if ($script:audioEvents) { 'Konuşma dışı sesler: açık' } else { 'Konuşma dışı sesler: kapalı' }
 })
 $micCancel.Add_Click({
     if ($script:micRecording) { Cancel-MicrophoneCapture }
@@ -1446,8 +1464,8 @@ function Pick-AudioFile {
 }
 # Mikrofon kaydi (bagimliliksiz): winmm mciSendString ile kaydeder. `open new type waveaudio`
 # Windows VARSAYILAN kayit cihazini (WAVE_MAPPER) kullanir — cihaz secimi gerekmez.
-# Kayit formati cihazin varsayilanidir; qwen3-asr-tools.py bunu 16 kHz mono WAV'a cevirip
-# Qwen3-ASR ile dökumler. Kayit bitince WAV ses eki olarak eklenir ve otomatik gonderilir.
+# Kayit formati cihazin varsayilanidir; whisper-tools.py bunu 16 kHz mono WAV'a cevirip
+# whisper.cpp (large-v3) ile dökumler. Kayit bitince WAV ses eki olarak eklenir ve otomatik gonderilir.
 function Add-MamidMciType {
     if (-not ([System.Management.Automation.PSTypeName]'MamidMci').Type) {
         Add-Type @'
@@ -1470,7 +1488,7 @@ function Start-MicrophoneCapture {
         if ($recCode -ne 0) { throw ('mci record: ' + $recCode) }
         $script:micRecording = $true
         $micBtn.BackColor = [System.Drawing.Color]::FromArgb(180, 60, 60)
-        $metric.Text = 'Kayıt başladı — bitirip göndermek için mikrofon tuşuna bas.'
+        $metric.Text = 'Kayıt başladı — iptal için mikrofon tuşuna bas; göndermek için sağ tık menüsü ya da Gönder.'
     } catch {
         $script:micRecording = $false
         $metric.Text = 'Mikrofon açılamadı: ' + $_.Exception.Message
@@ -2388,6 +2406,7 @@ function Begin-Generation {
         currentImagePath = $(if ($script:currentTurnImagePaths.Count -gt 0) { [string]$script:currentTurnImagePaths[0] } else { '' })
         currentImagePaths = @($script:currentTurnImagePaths)
         currentAudioPaths = @($script:currentTurnAudioPaths)
+        audioEvents = [bool]$script:audioEvents
         multiImageOcr = [bool]($script:currentTurnMultiImageOcr -and $hasOcr)
         multiImageOcrMode = [bool]$script:multiImageOcrMode
         profile = $profile
@@ -2397,7 +2416,7 @@ function Begin-Generation {
         hasSourceVideo = [bool]$script:lastUserVideo
         attachedDocuments = @($script:attachedDocuments.ToArray())
         model = $script:activeModel
-        maxTokens = $(if ($profile -eq 'flash') { 4096 } else { 8192 })
+        maxTokens = 8192
         compact = ($script:contextTokens -gt $script:compactAt)
         contextLimit = $script:ctxLimit
         effort = $null
@@ -2657,14 +2676,14 @@ function Render-JobEvent($jobEvent) {
             $metric.Text = "OCR tamamlandı ($confidence güven)"
         }
         'transcript' {
-            # Eklenen ses dökumlendi (Qwen3-ASR). Dökum baloncukta gösterilir ve dil
+            # Eklenen ses dökumlendi (whisper.cpp). Dökum baloncukta gösterilir ve dil
             # modeli bulgular uzerinden yanit uretir (OCR gibi).
             if ($b) {
                 $b.transcriptText = [string]$jobEvent.text
                 if (![string]::IsNullOrWhiteSpace($b.transcriptText)) { $b.body.Text = $b.transcriptText }
                 $script:dirty = $true
             }
-            $modelLabel = if ($jobEvent.data -and $jobEvent.data.model) { [string]$jobEvent.data.model } else { 'Qwen3-ASR' }
+            $modelLabel = if ($jobEvent.data -and $jobEvent.data.model) { [string]$jobEvent.data.model } else { 'whisper' }
             $metric.Text = "Ses dökümü hazır ($modelLabel)"
         }
         'thinking' {
@@ -2891,7 +2910,7 @@ $send.Add_Click({
         $content += @{ type = 'text'; text = "[Kullanici bir belge ekledi: $doc]" }
     }
     foreach ($aud in $script:selectedAudio) {
-        # Ses, Qwen3-ASR ile dökumlenip metne cevrilecek (OCR/mmproj esdegeri).
+        # Ses, whisper.cpp ile dökumlenip metne cevrilecek (OCR/mmproj esdegeri).
         $content += @{ type = 'text'; text = "[Kullanici bir ses dosyasi ekledi: $([IO.Path]::GetFileName($aud))]" }
     }
     if ($activatingMode) {

@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Tamamen yerel çalışan, çok modlu yapay zekâ çalışma alanı</b><br>
-  Sohbet · Web araması · Belge · OCR · Görsel anlama · Görsel ve video üretimi · Fotoğraf düzenleme
+  Sohbet · Web araması · Belge · OCR · Ses dökümü · Görsel anlama · Görsel ve video üretimi · Fotoğraf düzenleme
 </p>
 
 <p align="center">
@@ -30,7 +30,8 @@
   <a href="#lisans">Lisans</a>
 </p>
 
-MamidLabs; sohbet, web araması, belge okuma ve üretimi, OCR, görsel anlama, görsel ve video
+MamidLabs; sohbet, web araması, belge okuma ve üretimi, OCR, ses dökümü (konuşma + konuşma dışı
+ses olayları), görsel anlama, görsel ve video
 üretimi işlerini tek bir masaüstü penceresinde toplar. Dil, görsel ve video modelleri kullanıcının
 kendi ekran kartında çalışır. İnternet yalnızca kurulum, model indirme, web araması ve isteğe bağlı
 API sağlayıcıları için kullanılır.
@@ -48,6 +49,8 @@ API sağlayıcıları için kullanılır.
 | **Belge okuma** | PDF, Word, Excel, PowerPoint, ZIP ve RAR |
 | **Belge üretimi** | PDF, Word ve PowerPoint; kullanıcı onayıyla |
 | **OCR** | PaddleOCR: görseller GPU'da, taranmış PDF'ler CPU'da |
+| **Ses dökümü** | Whisper large-v3 + Silero VAD; mikrofon kaydı veya ses dosyası kronolojik metne çevrilir |
+| **Konuşma dışı sesler** | AST (AudioSet) ile ayak sesi, kapı gibi olaylar parantez içinde; isteğe bağlı konuşmacı ayrımı |
 | **Görsel anlama** | Dil modeli eklenen görseli doğrudan yorumlar |
 | **Görsel üretimi** | Krea-2 Turbo; yeniden üretim, stil referansı ve istek üzerine gerçekçilik LoRA'sı |
 | **Fotoğraf düzenleme** | Krea 2 Identity Edit: kişinin yüzü korunarak kıyafet, ışık ve arka plan değişir; iki görselle kişiyi sahneye yerleştirir (16 GB profiller) |

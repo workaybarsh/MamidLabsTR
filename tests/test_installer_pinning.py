@@ -22,13 +22,13 @@ def test_runtime_packages_carry_source_and_verified_size():
     assert "Dosya silindi, tekrar calistir." in installer
 
 
-def test_installer_downloads_qwen3_asr_model_files():
-    """Ses dökum motoru Qwen3-ASR'dir. Kurulum model dosyalarini HF'den boyutla dogrulayarak
-    indirir (whisper ikilileri/modeli kaldirildi)."""
+def test_installer_builds_asr_venv_and_prefetches_models():
+    """Ses dökum motoru faster-whisper (Whisper large-v3-tr) + AST'dir. Kurulum venv\\asr
+    olusturur ve modelleri HF onbellegine ceker (whisper.cpp ve Qwen3-ASR kaldirildi)."""
     installer = read_text("scripts/install-mamidlabs.ps1")
-    assert "Qwen/Qwen3-ASR-1.7B-hf" in installer
-    assert "models\\qwen3-asr" in installer
-    assert "'model.safetensors'" in installer
+    assert "venv\\asr" in installer
+    assert "oguzhangokboru/whisper-large-v3-tr" in installer
+    assert "snapshot_download" in installer
     assert "asr       = { Invoke-Asr }" in installer
 
 

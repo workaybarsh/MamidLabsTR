@@ -360,9 +360,10 @@ Assert ([TestMessageBox]::Last -like 'Sohbet kaydedilemedi*') 'Save failure was 
 
 
 def test_microphone_menu_cancel_and_red_mic_send_wiring(tmp_path):
-    """Kayit surerken KIRMIZI mikrofon tiklamasi kaydi bitirip gonderir; "Kaydi iptal et"
-    kaydi atar. Kayit yokken mikrofon menusu acilir ve "Mikrofonu kullan" kaydi baslatir.
-    Sag tik her durumda menuyu acar (kaydi iptal etme yolu kayit surerken de erisilebilir)."""
+    """Kayit surerken KIRMIZI mikrofon tiklamasi kaydi IPTAL eder (dur + dosya silinir).
+    "Kaydi bitir ve gonder" menusu ve "Kaydi iptal et" de dogru calisir. Kayit yokken
+    mikrofon menusu acilir ve "Mikrofonu kullan" kaydi baslatir. Sag tik her durumda menuyu
+    acar."""
     run_ps(tmp_path, r"""
 Add-Type -AssemblyName System.Windows.Forms
 $script:micRecording = $false
@@ -386,14 +387,17 @@ Assert ($script:started -and !$script:completed) 'Idle use item did not start re
 & (Get-Handler '$micCancel' 'Add_Click')
 Assert (!$script:cancelled -and $script:menuClosed) 'Idle cancel cancelled a recording'
 
-# --- Kayit surerken ---
+# --- Kayit surerken: kirmizi mikrofon tiklamasi IPTAL eder ---
 $script:menuShown=$false; $script:menuClosed=$false
 $script:micRecording = $true
 Show-MicMenu
 Assert ($micUse.Text -eq 'Kaydı bitir ve gönder' -and $micCancel.Text -eq 'Kaydı iptal et') 'Recording menu labels wrong'
 $script:menuShown=$false
 & (Get-Handler '$micBtn' 'Add_Click')
-Assert ($script:completed -and !$script:menuShown) 'Red mic click did not finish+send'
+Assert ($script:cancelled -and !$script:menuShown) 'Red mic click did not cancel the recording'
+$script:cancelled=$false
+& (Get-Handler '$micUse' 'Add_Click')
+Assert ($script:completed) 'Recording use item did not finish+send'
 & (Get-Handler '$micCancel' 'Add_Click')
 Assert ($script:cancelled) 'Recording cancel item did not cancel'
 

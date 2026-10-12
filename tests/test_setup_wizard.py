@@ -229,6 +229,15 @@ def test_eula_exists_and_covers_ownership():
     assert len(eula) > 1500
 
 
+def test_wizard_offers_turkish_and_english_language_choice():
+    """Kurulum sihirbazi Turkce ve Ingilizce arayuz sunar; TR surumunde varsayilan Turkce,
+    ENG surumunde Ingilizce (ilk [Languages] satiri)."""
+    iss = read_text(ROOT / "packaging" / "windows" / "mamidlabs.iss")
+    assert '[Languages]' in iss
+    assert 'Name: "turkish"; MessagesFile: "compiler:Languages\\Turkish.isl"' in iss
+    assert 'Name: "english"; MessagesFile: "compiler:Default.isl"' in iss
+
+
 def test_wizard_optional_components_are_default_on_and_passed_as_skips():
     """Görsel/video, ses ve OCR isteğe bağlıdır; hepsi VARSAYILAN SEÇİLİ gelir (unchecked yok).
     İşaret kaldırılınca kuruluma -SkipMedia / -SkipAudio geçirilir."""

@@ -165,7 +165,7 @@ function Convert-ProviderRequest([hashtable]$body, [string]$provider) {
     # thinking gonderilmez: Opus 5.5 ve Fable 5/5.1 'disabled' degerini 400 ile reddeder,
     # Opus 5 de yuksek effort'ta reddeder. Alan yoksa yeni modeller uyarlamali dusunur,
     # eskiler dusunmeden calisir. max_tokens dusunce + yanitin toplam siniri oldugu icin
-    # FLASH'in 4096'si yeni modellerde yaniti yarida keser; alt sinir 16000.
+    # yerel profillerin cikti tavani (8192) yeni modellerde yaniti yarida keser; alt sinir 16000.
     $request.max_tokens = [math]::Max([int]$body.max_tokens, 16000)
     $system = [Collections.Generic.List[string]]::new()
     $messages = [Collections.Generic.List[object]]::new()

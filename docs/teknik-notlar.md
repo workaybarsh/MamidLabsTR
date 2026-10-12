@@ -50,7 +50,7 @@ Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-qwen-desktop.vbs`
 | Profil | Model | Bağlam | Reasoning | max_tokens | Ölçülen hız |
 |---|---|---|---|---|---|
 | MAX (derin) | Qwen3.8 27B IQ4_XS | 32K | `xhigh` | 8192 | ~42–58 token/s |
-| FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 4096 | ~42–58 token/s |
+| FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 8192 | ~42-58 token/s |
 | LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 8192 | ~97 token/s (16 GB'ta) |
 
 MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, flash-attn açık,
@@ -492,6 +492,27 @@ siler (ikisi de onay ister). Ana tasarım değişmez.
   ComfyUI çıktıları yalnızca kendi çıktı klasörü içinde ve beklenen uzantılarda kabul edilir.
 - Eklenen görsel, video ve belgelerde boyut sınırları vardır. Bu sınırlar kötü amaçlı dosyaların
   bellek veya disk tüketimini azaltır; model üretiminin kendisini sınırlamaz.
+
+## Ses dökümü (Whisper + ses olayları)
+
+Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. Hat
+`agent/transcriber/` paketindedir ve `venv\asr` içinde çalışır:
+
+- **Konuşma:** `faster-whisper` **large-v3** (Türkçe için `oguzhangokboru/whisper-large-v3-tr`).
+  Silero VAD konuşma dışı aralıkları Whisper'a hiç vermez; `condition_on_previous_text=False` ve
+  `no_speech`/`log_prob`/`compression_ratio` eşikleri ile düşük sıcaklık yedeği halüsinasyonu azaltır.
+- **Konuşma dışı sesler:** AST (`MIT/ast-finetuned-audioset-10-10-0.4593`) olayları Türkçe etikete
+  çevirir (ayak sesleri, kapı, alkış…). Speech etiketleri elenir. Varsayılan **açık**; mikrofon
+  menüsündeki **"Konuşma dışı sesler"** onay kutusuyla kapatılır (`api.json → audioEvents`).
+- **Konuşmacı ayrımı:** pyannote (HF token gerekir; yoksa atlanır).
+- **Çıktı** kronolojik ve zaman damgasızdır: `(ayak sesleri)` / `Konuşmacı: ...` satırları.
+- **Profiller:** `config.py` GPU toplam VRAM'ine bakar. **PC2 (≥ 14 GB):** `float16`, modeller aynı
+  anda. **PC1 (< 14 GB):** `int8_float16`, modeller sırayla ve uzun kayıtlar 30 dk'lık parçalara
+  bölünür (`torch.cuda.empty_cache()` ile her model iş bitince boşaltılır).
+- **CPU / GPU seçimi:** GPU'da dökum, yerel dil modelinin VRAM'den boşaltılıp geri yüklenmesini
+  gerektirir (swap). Bu yüzden kısa kayıtlarda CPU, uzun kayıtlarda GPU daha kârlıdır; eşik
+  ölçümle belirlenir ve `agent/transcriber/config.py` içindeki `DEFAULT_CPU_MAX_SECONDS` ile
+  ayarlanır (bkz. AGENTS bölüm 5 ve aşağıdaki AR-GE notu).
 
 ## Düzeltmeleri doğrulama
 
