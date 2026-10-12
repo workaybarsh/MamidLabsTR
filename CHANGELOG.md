@@ -91,6 +91,17 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   düşünme süresini kısıtlamamasını söyler. Önceki 300 token'lik bütçe kaldırıldı.
 
 ### Düzeltilen
+- **Blok LaTeX artık okunur metne çevrilir.** `Convert-MathText`, basit regex'in çözemediği blok
+  yapıları **dengeleyen bir ayrıştırıcıyla** (`Read-MathGroup`/`Read-MathAtom`/`Expand-MathCommands`)
+  işler: iç içe/kümeli ve kaçışlı `\{ \}` parantezli `\frac{A}{B}`, `\sqrt{X}` / `\sqrt[n]{X}`,
+  `\boxed{X}`/`\fbox{X}` (kutu yerine `[ X ]`), `\textbf`/`\textit`/`\mathrm`/`\text`/`\operatorname`
+  (içerik), `\left`/`\right` (sade parantez), `\overline`/`\bar`/`\vec`/`\hat` (birleşik işaret) ve
+  `\begin`/`\end`. Örnek: `\boxed{\frac{\pi^5(89+72\sqrt3)}{3888}}` → `[ (π⁵(89+72√(3)))/3888 ]`.
+  Mevcut glif tablosu, kimya `\ce`/`\pu` ve para birimi `$` davranışı korunur.
+- **Sistem istemine sabit "kanıtlı ve iki kez doğrula" talimatı.** `Get-SystemPrompt`'a (tura özel
+  değil; KV önbelleği bozulmaz) doğru/kanıtlı cevap, çok adımlı matematik/cebir/mantıkta adımları ve
+  sembolik/sayısal **ara sonuçları en az iki kez kontrol** ve **uydurma test/teorem/kaynak adı
+  kullanmama** talimatı eklendi; LITE derin-düşünme satırı bununla birleştirildi (tekrar yok).
 - **Ses dökümü: LITE CPU/GPU politikası ve GPU çalışma zamanı DLL'leri netleştirildi; transcribe
   zaman aşımı kayıt süresine bağlandı.** (1) LITE ASR artık kayıt `LITE_CPU_MAX_SECONDS` (15 sn)
   süresinden **kısa VE** sistem RAM'i yetiyorsa **CPU co-resident** kullanır

@@ -33,7 +33,11 @@ def run_convert(samples) -> str:
     if not pwsh:
         pytest.skip("PowerShell 7 is unavailable")
     src = read_text("qwen-desktop.ps1")
-    fns = extract_functions(src, ["Convert-MathText", "Convert-ToSuperscript", "Convert-ToSubscript"])
+    fns = extract_functions(src, [
+        "Read-MathGroup", "Read-MathAtom", "Add-MathAccent",
+        "Convert-ToSuperscript", "Convert-ToSubscript", "Expand-MathCommands",
+        "Convert-MathText",
+    ])
     # Python ciktiyi UTF-8 cozer; konsol kod sayfasi farkli olabilir (cp1254). Sabitle.
     prelude = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n"
     blocks = []
@@ -100,3 +104,104 @@ def test_plain_arrow_outside_ce_is_not_converted():
     out = run_convert(["sozluk a->b biciminde ve x <- y"])
     assert "a->b" in out
     assert "x <- y" in out
+
+
+def test_nested_fraction_groups_are_balanced():
+    """Blok \\frac ic ice/kumeli parantezli olabilir; regex + `[^{}]*` bunu cozemiyordu.
+    Dengeleyen ayristirici ic ice kumeleri ve kacisli \\{ \\} karakterlerini dogru isler."""
+    out = run_convert([
+        r"\frac{\pi^5 (89+72\sqrt{3})}{3888}",
+        r"\frac{\{a\}}{b}",
+    ])
+    # Ham LaTeX kalintisi olmamali; kesir '/' ile okunur olmali.
+    assert "\\frac" not in out
+    assert "\\sqrt" not in out
+    assert "3888" in out
+    assert "\u03c0" in out and "\u221a" in out  # π, √
+    assert "/" in out
+    # Kacisli kume parantezleri icerik olarak korunur (kacis kaldirilir).
+    assert "({a})/b" in out
+
+
+def test_boxed_and_fbox_become_readable_text():
+    """\\boxed/\\fbox kutu yerine duz metne (koseli parantezle) cevrilir; icerigi de cozulur."""
+    out = run_convert([
+        r"\boxed{x=5}",
+        r"\fbox{E}",
+        r"\boxed{\frac{\pi^5(89+72\sqrt3)}{3888}}",
+    ])
+    assert "\\boxed" not in out and "\\fbox" not in out
+    assert "\\frac" not in out and "\\sqrt" not in out
+    assert "[ x=5 ]" in out
+    assert "[ E ]" in out
+    assert "3888" in out and "\u03c0" in out and "\u221a" in out
+
+
+def test_text_wrappers_keep_their_content():
+    """\\textbf/\\textit/\\mathrm/\\text/\\operatorname sarmalayicilari icerikle degisir."""
+    out = run_convert([
+        r"\textbf{Kalin} \textit{egik} \mathrm{d}x \text{duz} \operatorname{sgn}(x)",
+    ])
+    for cmd in ("\\textbf", "\\textit", "\\mathrm", "\\text", "\\operatorname"):
+        assert cmd not in out, f"ham komut kaldi: {cmd}"
+    assert "Kalin" in out and "egik" in out
+    assert "dx" in out and "duz" in out and "sgn(x)" in out
+
+
+def test_sqrt_nested_and_root_index():
+    """\\sqrt{X} -> √(X); ic ice \\sqrt ve \\sqrt[n]{X} -> ⁿ√(X)."""
+    out = run_convert([
+        r"\sqrt{1+x^2}",
+        r"\sqrt[3]{8}",
+        r"\sqrt{\frac{a}{b}}",
+    ])
+    assert "\\sqrt" not in out
+    assert "\u221a" in out          # √
+    assert "\u00b3" in out          # ³ kok derecesi
+    assert "1+x\u00b2" in out        # x²
+    assert "\u221a(a/b)" in out      # ic ice kesir
+
+
+def test_left_right_delimiters_are_simplified():
+    """\\left/\\right sade paranteze indirilir; \\{ \\} kacislari { } olur."""
+    out = run_convert([
+        r"\left( \frac{a}{b} \right)",
+        r"\left\{ x \right\}",
+    ])
+    assert "\\left" not in out and "\\right" not in out
+    assert "a/b" in out
+    assert "( a/b )" in out
+    assert "{ x }" in out
+
+
+def test_integral_and_sum_limits_become_unicode():
+    """\\int_0^\\infty -> ∫₀^∞; alt/ust sinirlar Unicode'a cevrilir; ^/\\_ kalmaz (∞ haric)."""
+    out = run_convert([
+        r"\int_0^\infty e^{-x}\,dx",
+        r"\sum_{n=1}^{\infty} \frac{1}{n^2}",
+    ])
+    assert "\u222b" in out and "\u2211" in out   # ∫, ∑
+    assert "\u2080" in out and "\u221e" in out   # ₀, ∞
+    assert "\\int" not in out and "\\sum" not in out and "\\frac" not in out
+    assert "_{" not in out and "_0" not in out
+    assert "^{" not in out
+
+
+def test_greek_letters_and_operator_symbols_expanded():
+    """Yunan harfleri ve \\cdot/\\times/\\pm/\\approx/\\neq/\\leq/\\geq glifleri."""
+    out = run_convert([
+        r"\zeta(s) = \sum \frac{1}{n^s}",
+        r"a \cdot b \times c \pm d \approx e \neq f \leq g \geq h",
+    ])
+    for glyph in ("\u03b6", "\u00b7", "\u00d7", "\u00b1", "\u2248", "\u2260", "\u2264", "\u2265"):
+        assert glyph in out, f"eksik glif: {glyph!r}"
+    assert "\\zeta" not in out
+
+
+def test_accents_overline_vec_hat():
+    """\\overline/\\bar ust cizgi; \\vec ok; \\hat sapka birlestirici isaretle eklenir."""
+    out = run_convert([r"\overline{AB}", r"\vec{v}", r"\hat{x}", r"\bar{z}"])
+    assert "\u0305" in out          # combining overline
+    assert "\u20d7" in out          # combining right arrow above
+    assert "\u0302" in out          # combining circumflex
+    assert "\\overline" not in out and "\\vec" not in out and "\\hat" not in out

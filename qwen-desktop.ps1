@@ -357,6 +357,165 @@ function Convert-ToSubscript([string]$t) {
     return $sb.ToString()
 }
 
+# --- Blok LaTeX -> okunur metin yardimcilari -------------------------------------------
+# Basit regex ic ice kumeleri (\frac{A}{B} icinde kume) ve kacisli \{ \} karakterlerini
+# dogru ayiramiyordu; bu yuzden DENGELEYEN bir ayristirici kullanilir.
+
+# $s[$open] '{' ise eslesen '}' konumunu bulur. Kacisli \{ ve \} derinlik SAYILMAZ.
+function Read-MathGroup([string]$s, [int]$open) {
+    if ($open -lt 0 -or $open -ge $s.Length -or $s[$open] -ne '{') { return $null }
+    $depth = 0
+    $i = $open
+    $sb = New-Object Text.StringBuilder
+    while ($i -lt $s.Length) {
+        $ch = $s[$i]
+        if ($ch -eq '\' -and ($i + 1) -lt $s.Length) {
+            [void]$sb.Append($ch); [void]$sb.Append($s[$i + 1]); $i += 2; continue
+        }
+        if ($ch -eq '{') {
+            $depth++
+            if ($depth -gt 1) { [void]$sb.Append($ch) }
+        } elseif ($ch -eq '}') {
+            $depth--
+            if ($depth -eq 0) { return [pscustomobject]@{ End = $i + 1; Inner = $sb.ToString() } }
+            [void]$sb.Append($ch)
+        } else { [void]$sb.Append($ch) }
+        $i++
+    }
+    return $null
+}
+
+# $s[$pos]'tan itibaren bir LaTeX argumani okur: {..} kumesi ya da tek karakter/komut.
+function Read-MathAtom([string]$s, [int]$pos) {
+    while ($pos -lt $s.Length -and $s[$pos] -eq ' ') { $pos++ }
+    if ($pos -ge $s.Length) { return [pscustomobject]@{ End = $pos; Text = '' } }
+    if ($s[$pos] -eq '{') {
+        $g = Read-MathGroup $s $pos
+        if ($g) { return [pscustomobject]@{ End = $g.End; Text = $g.Inner } }
+        return [pscustomobject]@{ End = $pos + 1; Text = '{' }
+    }
+    if ($s[$pos] -eq '\' -and ($pos + 1) -lt $s.Length -and [char]::IsLetter($s[$pos + 1])) {
+        $j = $pos + 1
+        while ($j -lt $s.Length -and [char]::IsLetter($s[$j])) { $j++ }
+        return [pscustomobject]@{ End = $j; Text = $s.Substring($pos, $j - $pos) }
+    }
+    return [pscustomobject]@{ End = $pos + 1; Text = [string]$s[$pos] }
+}
+
+# Birlestirici (combining) isaret her karakterin ardina eklenir (A ustune cizgi -> A + U+0305).
+function Add-MathAccent([string]$text, [string]$mark) {
+    if ([string]::IsNullOrEmpty($text)) { return $text }
+    $sb = New-Object Text.StringBuilder
+    foreach ($ch in $text.ToCharArray()) {
+        [void]$sb.Append($ch)
+        if ($ch -ne ' ') { [void]$sb.Append($mark) }
+    }
+    return $sb.ToString()
+}
+
+# Blok LaTeX komutlarini islemsel cozer: \frac{..}{..}, \sqrt[n]{..}, \boxed{..},
+# \textbf{..} vb., \left/\right, \overline/\vec/\hat, \begin/\end. Icerik ONCE ozyinelemeli
+# genisletilir (ic ice yapilar dogru cozulur). Bilinmeyen komutlar aynen birakilir; glif
+# tablosu onlari sonra Unicode'a cevirir.
+function Expand-MathCommands([string]$s) {
+    if ([string]::IsNullOrEmpty($s)) { return $s }
+    $sb = New-Object Text.StringBuilder
+    $n = $s.Length
+    $i = 0
+    while ($i -lt $n) {
+        $ch = $s[$i]
+        if ($ch -ne '\') { [void]$sb.Append($ch); $i++; continue }
+        if (($i + 1) -ge $n -or -not [char]::IsLetter($s[$i + 1])) {
+            if (($i + 1) -lt $n) { [void]$sb.Append($ch); [void]$sb.Append($s[$i + 1]); $i += 2 }
+            else { [void]$sb.Append($ch); $i++ }
+            continue
+        }
+        $j = $i + 1
+        while ($j -lt $n -and [char]::IsLetter($s[$j])) { $j++ }
+        $name = $s.Substring($i + 1, $j - $i - 1)
+        $i = $j
+        if ($name -eq 'frac' -or $name -eq 'dfrac' -or $name -eq 'tfrac') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            $a2 = Read-MathAtom $s $i; $i = $a2.End
+            if ($a1.Text -eq '' -and $a2.Text -eq '') { [void]$sb.Append('\' + $name); continue }
+            $ea = Expand-MathCommands $a1.Text
+            $eb = Expand-MathCommands $a2.Text
+            $na = if ($ea -match '^[A-Za-z0-9]+$') { $ea } else { '(' + $ea + ')' }
+            $nb = if ($eb -match '^[A-Za-z0-9]+$') { $eb } else { '(' + $eb + ')' }
+            [void]$sb.Append($na + '/' + $nb)
+        }
+        elseif ($name -eq 'sqrt') {
+            $idx = $null
+            while ($i -lt $n -and $s[$i] -eq ' ') { $i++ }
+            if ($i -lt $n -and $s[$i] -eq '[') {
+                $close = $s.IndexOf(']', $i + 1)
+                if ($close -ge 0) { $idx = $s.Substring($i + 1, $close - $i - 1); $i = $close + 1 }
+            }
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            $ea = Expand-MathCommands $a1.Text
+            if ($idx) {
+                $sup = Convert-ToSuperscript (Expand-MathCommands $idx)
+                if ($sup) { [void]$sb.Append($sup) } else { [void]$sb.Append('^(' + $idx + ')') }
+            }
+            [void]$sb.Append('√(' + $ea + ')')
+        }
+        elseif ($name -eq 'boxed' -or $name -eq 'fbox') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append('[ ' + (Expand-MathCommands $a1.Text) + ' ]')
+        }
+        elseif ($name -eq 'textbf' -or $name -eq 'textit' -or $name -eq 'texttt' -or $name -eq 'textsf' -or $name -eq 'textrm' -or $name -eq 'textnormal' -or $name -eq 'textup' -or $name -eq 'emph' -or $name -eq 'text' -or $name -eq 'mathrm' -or $name -eq 'mathbf' -or $name -eq 'mathit' -or $name -eq 'mathsf' -or $name -eq 'mathtt' -or $name -eq 'mathcal' -or $name -eq 'mathbb' -or $name -eq 'operatorname' -or $name -eq 'mbox' -or $name -eq 'hbox') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Expand-MathCommands $a1.Text))
+        }
+        elseif ($name -eq 'overline' -or $name -eq 'bar') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0305)))
+        }
+        elseif ($name -eq 'underline') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0332)))
+        }
+        elseif ($name -eq 'vec') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x20d7)))
+        }
+        elseif ($name -eq 'hat') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0302)))
+        }
+        elseif ($name -eq 'tilde') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0303)))
+        }
+        elseif ($name -eq 'dot') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0307)))
+        }
+        elseif ($name -eq 'ddot') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+            [void]$sb.Append((Add-MathAccent (Expand-MathCommands $a1.Text) ([char]0x0308)))
+        }
+        elseif ($name -eq 'begin' -or $name -eq 'end') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+        }
+        elseif ($name -eq 'quad') { [void]$sb.Append('   ') }
+        elseif ($name -eq 'qquad') { [void]$sb.Append('     ') }
+        elseif ($name -eq 'phantom' -or $name -eq 'hphantom' -or $name -eq 'vphantom') {
+            $a1 = Read-MathAtom $s $i; $i = $a1.End
+        }
+        elseif ($name -eq 'left' -or $name -eq 'right') {
+            if ($i -lt $n -and $s[$i] -eq '.') { $i++ }
+        }
+        elseif ($name -eq 'big' -or $name -eq 'Big' -or $name -eq 'bigg' -or $name -eq 'Bigg' -or $name -eq 'bigl' -or $name -eq 'bigr' -or $name -eq 'Bigl' -or $name -eq 'Bigr' -or $name -eq 'biggl' -or $name -eq 'biggr' -or $name -eq 'Biggl' -or $name -eq 'Biggr' -or $name -eq 'displaystyle' -or $name -eq 'textstyle' -or $name -eq 'scriptstyle' -or $name -eq 'limits' -or $name -eq 'nolimits' -or $name -eq 'middle') {
+            # boyut/parantez komutlari: atilir
+        }
+        else {
+            [void]$sb.Append('\'); [void]$sb.Append($name)
+        }
+    }
+    return $sb.ToString()
+}
+
 function Convert-MathText([string]$text) {
     if ([string]::IsNullOrEmpty($text)) { return $text }
     $s = $text
@@ -365,22 +524,6 @@ function Convert-MathText([string]$text) {
     if ($s -match '\\[a-zA-Z]+|\$\$') { $s = $s.Replace('$', '') }
     # Gosteri/parantez sinirlayicilari
     $s = $s -replace '\\\[', ' ' -replace '\\\]', ' ' -replace '\\\(', ' ' -replace '\\\)', ' '
-    # Kesirler (basit/ic ice olmayan): \frac{a}{b} (\dfrac, \tfrac dahil) -> a/b.
-    # Basit tek-terim (d, dx, x, 2 gibi) parantez almaz; aksi halde (a)/(b).
-    for ($k = 0; $k -lt 3; $k++) {
-        $s = [regex]::Replace($s, '\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}', {
-            param($m)
-            $a = $m.Groups[1].Value.Trim(); $b = $m.Groups[2].Value.Trim()
-            $na = if ($a -match '^[A-Za-z0-9]+$') { $a } else { '(' + $a + ')' }
-            $nb = if ($b -match '^[A-Za-z0-9]+$') { $b } else { '(' + $b + ')' }
-            return $na + '/' + $nb
-        })
-    }
-    # Kok ve cerceve
-    for ($k = 0; $k -lt 3; $k++) {
-        $s = $s -replace '\\sqrt\s*\{([^{}]*)\}', '√($1)'
-        $s = $s -replace '\\boxed\s*\{([^{}]*)\}', '[ $1 ]'
-    }
     # Kimya (mhchem) ve fizik birimleri: \ce{...} / \pu{...} icerigini okunur hale getir.
     # Oklar (<->, <=>, ->, <-) ve element sayilari (H2O -> H2O) yalnizca \ce icinde
     # donusturulur; boylece kod bloklarindaki '->' gibi metinler bozulmaz.
@@ -395,6 +538,11 @@ function Convert-MathText([string]$text) {
         })
         return $inner
     })
+    # Blok yapilar: \frac (ic ice/kumeli parantezli), \sqrt[n]{}, \boxed/\fbox,
+    # \textbf/\textit/\mathrm/\text/\operatorname, \left/\right, \overline/\vec/\hat,
+    # \begin/\end. Dengeleyen ayristirici ile cozulur (bkz. Expand-MathCommands); basit
+    # regex ic ice kume ve kacisli \{ \} durumunda yetersiz kaliyordu.
+    $s = Expand-MathCommands $s
     # Metin sarmalayicilari icerigiyle degistir
     $s = $s -replace '\\(text|mathrm|mathbf|mathit|operatorname|mbox)\s*\{([^{}]*)\}', '$2'
     # Boyut/parantez komutlarini at
@@ -2162,12 +2310,15 @@ function Get-SystemPrompt {
     $lines = @()
     $lines += 'Sen MamidLabs asistanisin. Turkce, dogrudan ve net konus. Sohbet modeli yerel veya API olabilir; araclar kullanicinin bilgisayarinda calisir.'
     $lines += "Bugunun tarihi: $(Get-Date -Format 'yyyy-MM-dd')."
+    # Sabit (tura ozel OLMAYAN) dogrulama talimati: onek degismedigi icin KV onbellegi
+    # bozulmaz. Model kanitli/dogru cevap versin ve cok adimli islerde iki kez kontrol etsin.
+    $lines += 'Kanitli ve dogru cevap ver: emin olmadigin bir seyi kesinmis gibi sunma, bilmedigini soyle. Ozellikle matematik, cebir, mantik ve cok adimli sorularda adimlarini ve sembolik/sayisal ARA SONUCLARI en az IKI KEZ kontrol et; gerekirse farkli bir yoldan dogrula. Var oldugundan emin olmadigin test, teorem, ozdeslik veya kaynak adi KULLANMA.'
     # LITE (kucuk 9B model): dusunme acik ve SINIRSIZ (sunucuda butce yok). Modeli derin ve
     # adim adim akil yurutmeye tesvik ederiz; düşünme suresini kisitlamasi istenmez, isi
     # bitene kadar (lazim oldugu kadar) dusunsun. Bu satir profile gore sabittir; onek
     # degismedigi icin KV onbellegi bozulmaz (yalnizca LITE profilinde eklenir).
     if ([string]$script:apiSettings.localProfile -eq 'lite') {
-        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle. Düşünme suresini KISITLAMA: gerektigi kadar uzun ve derin dusun; gerekirse birden fazla yaklasim dene, ara sonuclari ve varsayimlari kontrol et, hatayi bulursan geri don ve duzelt. Yeterince emin oldugunda dusunme adimlarini kisaca ortaya koy ve net, eksiksiz, dogru yaniti ver.'
+        $lines += 'Derin ve dikkatli dusun: yanit vermeden once problemi parcala, adim adim akil yurut, varsayimlarini sinirla ve en dogru sonuca ulasmaya calis. Matematik, mantik, planlama, kod ve cok adimli sorularda hizli cevap yerine DOGRU cevabi hedefle. Düşünme suresini KISITLAMA: gerektigi kadar uzun ve derin dusun; gerekirse birden fazla yaklasim dene ve hatayi bulursan geri don ve duzelt. Yeterince emin oldugunda dusunme adimlarini kisaca ortaya koy ve net, eksiksiz, dogru yaniti ver.'
     }
     if ($netChip.Checked) { $lines += 'Internet erisimin var: guncel bilgi gerektiginde search_web ve fetch_page araclarini kullan.' }
     else { $lines += 'Internet erisimin KAPALI; web aramasi yapamazsin.' }

@@ -229,6 +229,9 @@ def test_lite_system_prompt_encourages_deep_reasoning():
     assert "$script:apiSettings.localProfile -eq 'lite'" in block
     # Dusunme ozelligini kapatmaz; yalnizca yonlendirir.
     assert "enable_thinking" not in desktop
+    # Sabit (tum profiller) dogrulama talimati: iki kez kontrol + uydurma ad yasagi.
+    assert "en az IKI KEZ kontrol et" in desktop
+    assert "teorem, ozdeslik veya kaynak adi KULLANMA" in desktop
 
 
 # ------------------------------------------------------------------ medya yolu
