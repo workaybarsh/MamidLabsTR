@@ -5,8 +5,8 @@ PowerShell'den sürmek için kullanılan yardımcılar. Tam arayüz testleri bun
 
 | Dosya | İçerik |
 |---|---|
-| `ui.ps1` | UI Automation: `Get-Window`, `Show-Tree`, `Find-El`, `Click-Name`, `Set-Text`, `Save-Shot`; Inno düğmeleri için `Click-Pane` / `Click-Hwnd` (BM_CLICK) |
-| `win32.ps1` | Salt Win32: `Find-Top`, `Kids-Text`, `Shot-Hwnd`, `Click-Btn` (PostMessage, bloklamaz) |
+| `ui.ps1` | UI Automation: `Get-Window`, `Show-Tree`, `Find-El`, `Click-Name`, `Set-Text`, `Save-Shot`; Inno düğmeleri için `Click-Pane` / `Click-Hwnd` (BM_CLICK); dosya seçme diyaloğu için `Set-FileDialogTarget` / `Dismiss-FileDialogError` |
+| `win32.ps1` | Salt Win32: `Find-Top`, `Kids-Text`, `Shot-Hwnd`, `Click-Btn` (PostMessage, bloklamaz); `[FileDlg]` sınıfı (dosya seçme diyaloğu kutu/P-Invoke yardımcıları) |
 
 Kullanım (Windows PowerShell 5.1):
 
@@ -46,3 +46,16 @@ Ekran görüntüleri `%TEMP%\claude\ui\shots\` altına yazılır.
   tuzak), düğmenin HWND'sini bul ve `win32.ps1`'deki `Click-Btn` (PostMessage, bloklamayan) ile
   tekrar dene — pencere sunucu tarafında zaten açılmış olabilir, istemci tarafı bekleyen çağrı
   sadece zaman aşımına uğramıştır.
+- **Dosya seçiciye tam yol yazma → geçersiz karakter hatası; önce klasöre git, sonra yalnızca
+  dosya adını yaz.** Vista+ ortak "Aç/Kaydet" diyaloğunda dosya-adı kutusuna (`GetDlgItem` 1148 →
+  `ComboBoxEx32`→`ComboBox`→`Edit`) tam yolu `SetWindowText` ile yazmak Windows 11'de
+  **"Dosya adında aşağıdaki karakterler bulunamaz: \\ / : * ? \" < > |"** hatasına yol açar (Windows
+  bunu "Adı Değiştir/Sakla" sanır). Çözüm `Set-FileDialogTarget`: (1) diyaloğu hedef klasöre
+  yönlendir — tercihen adres çubuğunun düzenlenebilir `Edit`'i (`AutomationId` **41477**, bazı
+  sürümlerde 1001; UIA'da `AutomationId` "1001" = adres Toolbar'ı, adı "Adres: …"), olmazsa
+  dosya-adı kutusuna **klasör** yolunu yaz + `Enter`; (2) dosya-adı kutusunu temizleyip **yalnızca
+  dosya adını** (`Split-Path -Leaf`) yaz; (3) `Aç`/`Kaydet` (kontrol kimliği **1**) ile kabul et;
+  (4) hata penceresi (#32770, "karakterler bulunamaz") çıkarsa OK'a basıp kapat ve yalnızca-dosya-adı
+  ile yeniden dene. Yazmadan önce `Thread.AttachThreadInput` + `SetFocus` ile odağı ver; gezinmeyi
+  adres çubuğu metninden doğrula. Kısa (8.3) yolları `GetLongPathName` ile uzuna çevir; diyalog
+  kısa yolla gezinmeyebilir.

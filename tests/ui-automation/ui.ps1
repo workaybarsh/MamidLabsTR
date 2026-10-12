@@ -119,4 +119,130 @@ function Click-Pane($root, [string]$name, [int]$timeoutSec = 30) {
 function Set-HwndText($el, [string]$text) {
     [void][Msg]::SendMessage([IntPtr]$el.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, $text)
 }
+
+# ---------------------------------------------------------------- dosya secme diyalogu
+# TUZAK: Vista+ ortak "Ac/Kaydet" diyalogunda dosya-adi kutusuna TAM YOL yazmak
+# Windows 11'de "Dosya adinda asagidaki karakterler bulunamaz: \ / : * ? \" < > |"
+# hatasina yol acar (Windows bunu "Ada Degistir/Sakla" sanir). Dogru sira:
+#   1) diyalogu hedef KLASORE yonlendir (adres cubugu Edit'i; olmazsa dosya-adi
+#      kutusuna KLASOR yolunu yaz + Enter),
+#   2) dosya-adi kutusunu temizle ve YALNIZCA dosya adini (Split-Path -Leaf) yaz,
+#   3) kabul et (Ac/Kaydet = kontrol kimligi 1),
+#   4) hata penceresi (#32770, "karakterler bulunamaz") cikarsa OK'a bas, kapat ve
+#      yalnizca-dosya-adi ile yeniden dene. Hata kullaniciya/teste yansimaz.
+# Win32 alt yapisi: win32.ps1'deki [FileDlg] sinifi.
+
+# Diyalogun adres cubugundaki guncel klasor adini doner (gezinme dogrulamasi icin).
+function Get-FileDialogAddressName {
+    param([IntPtr]$dialog)
+    $d = [Windows.Automation.AutomationElement]::FromHandle($dialog)
+    foreach ($e in $d.FindAll($TS::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
+        $c = $e.Current
+        if ($c.AutomationId -eq '1001' -and -not $c.IsOffscreen -and $c.Name) { return $c.Name }
+    }
+    return ''
+}
+
+# Diyalogu hedef klasore yonlendirir. Once adres cubugu Edit'i (varsa), olmazsa
+# dosya-adi kutusuna KLASOR yolunu yazip Enter ile gider. Gezinme dogrulanirsa $true.
+function Move-FileDialogToFolder {
+    param([IntPtr]$dialog, [string]$folder)
+    if (-not $folder) { return $true }
+    $folder = [FileDlg]::LongPath(([IO.Path]::GetFullPath($folder)))
+    $leafName = Split-Path -Leaf $folder
+    $targets = @([FileDlg]::AddressEdit($dialog), [FileDlg]::FileNameEdit($dialog))
+    foreach ($ctl in $targets) {
+        if ($ctl -eq [IntPtr]::Zero) { continue }
+        [FileDlg]::FocusIn($dialog, $ctl)
+        Start-Sleep -Milliseconds 150
+        [FileDlg]::SetTextValue($ctl, '')
+        Start-Sleep -Milliseconds 120
+        [FileDlg]::SetTextValue($ctl, $folder)
+        Start-Sleep -Milliseconds 200
+        [FileDlg]::PressEnter($ctl)
+        Start-Sleep -Milliseconds 1400
+        if ((Get-FileDialogAddressName $dialog) -like "*$leafName*") { return $true }
+    }
+    return $false
+}
+
+# Dosya-adi kutusunu temizleyip YALNIZCA verilen adi yazar (tam yol yazmaz).
+function Set-FileDialogNameOnly {
+    param([IntPtr]$dialog, [string]$name)
+    $edit = [FileDlg]::FileNameEdit($dialog)
+    if ($edit -eq [IntPtr]::Zero) { throw 'Dosya adi kutusu bulunamadi.' }
+    [FileDlg]::FocusIn($dialog, $edit)
+    Start-Sleep -Milliseconds 120
+    [FileDlg]::SetTextValue($edit, '')
+    Start-Sleep -Milliseconds 120
+    [FileDlg]::SetTextValue($edit, $name)
+    Start-Sleep -Milliseconds 200
+}
+
+# Diyalogu kabul eder (Ac/Kaydet = kontrol kimligi 1).
+function Accept-FileDialog {
+    param([IntPtr]$dialog)
+    [FileDlg]::ClickButton($dialog, 1)
+}
+
+# Popup (#32770) metnini UIA'dan toplar (GetWindowText capraz surecte bos donebilir).
+function Get-FileDialogPopupText {
+    param([IntPtr]$h)
+    $parts = @()
+    try {
+        $d = [Windows.Automation.AutomationElement]::FromHandle($h)
+        if ($d.Current.Name) { $parts += $d.Current.Name }
+        foreach ($e in $d.FindAll($TS::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
+            $c = $e.Current
+            if (-not $c.IsOffscreen -and $c.Name) { $parts += $c.Name }
+        }
+    } catch {}
+    return ($parts -join ' ')
+}
+
+# Aciklama hata penceresini (#32770) bulup OK'a basar ve kapatir. Kapattiysa $true.
+function Dismiss-FileDialogError {
+    param([IntPtr]$dialog, [int]$appPid = 0, [string]$Pattern = 'karakterler bulunamaz|following characters|belirtilen karakter|cannot contain')
+    foreach ($h in [FileDlg]::Tops()) {
+        if ($h -eq $dialog) { continue }
+        if ([FileDlg]::Cls($h) -notmatch '32770') { continue }
+        if ($appPid -gt 0) { $p = 0; [void][W32]::GetWindowThreadProcessId($h, [ref]$p); if ($p -ne $appPid) { continue } }
+        if ((Get-FileDialogPopupText $h) -match $Pattern) {
+            [FileDlg]::ClickButton($h, 1)
+            Start-Sleep -Milliseconds 200
+            [FileDlg]::PressEnter($h)
+            Start-Sleep -Milliseconds 400
+            return $true
+        }
+    }
+    return $false
+}
+
+# Acik bir HWND'nin hala yasadigini gosterir.
+function Test-WindowExists {
+    param([IntPtr]$h)
+    return ([FileDlg]::Tops() -contains $h)
+}
+
+# ANA AKIS: diyalogu hedef dosyaya yonlendir ve sec. Hata penceresi cikarsa kapatip
+# yalnizca dosya adi ile yeniden dener. Diyalog kapanirsa $true.
+function Set-FileDialogTarget {
+    param([IntPtr]$dialog, [string]$path, [int]$appPid = 0)
+    if ($dialog -eq [IntPtr]::Zero) { throw 'Set-FileDialogTarget: gecersiz diyalog.' }
+    $full = [FileDlg]::LongPath(([IO.Path]::GetFullPath($path)))
+    $folder = Split-Path -Parent $full
+    $leaf = Split-Path -Leaf $full
+    [void](Move-FileDialogToFolder $dialog $folder)
+    for ($i = 0; $i -lt 2; $i++) {
+        Set-FileDialogNameOnly $dialog $leaf
+        Accept-FileDialog $dialog
+        Start-Sleep -Milliseconds 900
+        if (-not (Test-WindowExists $dialog)) { return $true }
+        if (Dismiss-FileDialogError $dialog $appPid) {
+            Start-Sleep -Milliseconds 400
+            [void](Move-FileDialogToFolder $dialog $folder)
+        } else { break }
+    }
+    return $false
+}
 function Get-Wizard { Get-Window ([int](Get-Content (Join-Path $env:TEMP 'claude\ui\wizard-pid.txt'))) '*' 10 }
