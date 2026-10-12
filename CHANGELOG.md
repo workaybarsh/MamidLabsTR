@@ -97,10 +97,15 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   (`('cpu', False)`; dil modeli VRAM'de kalır, ses modeli CPU/sistem RAM'inde koşar; swap yok),
   uzun kayıtta ya da RAM yetersizken **GPU + mecburi swap** (`('cuda', True)`). CPU yolu hiçbir
   zaman zorlama değildir: seçilen cihaz başarısız olursa CPU yedeğine düşülür, GPU yoksa son çare
-  olarak kalır. PRO davranışı değişmedi (20 sn). Ölçüm hükmü: LITE co-resident RAM'e
-  **SIĞIYOR** (llama-server VRAM'deyken ASR CPU dökümü OOM'suz başarılı; ASR CPU hattı tepe
-  commit ~3.775 MiB); bu yüzden LITE `audio_ram_mib` 5.120 → **3.584 MiB** (PRO 5.120'de
-  kalır) ve LITE CPU dalı artık seçilebiliyor (5.120 ile her zaman swap'a düşüyordu). (2) `requirements\asr.txt`'e `nvidia-cublas-cu12`
+  olarak kalır. PRO davranışı değişmedi (20 sn). **Ölçüm hükmü** (iki bağımsız ölçüm çelişti;
+  DAHA KESİN olan ölçüm-2 = LM + ASR CPU'yu BİRLİKTE gerçekten koşturan): LITE co-resident
+  **SIĞMIYOR** — fiziksel RAM 15,25 GB < gereksinim ~16,1 GB; marj sıfır/negatif (tepe
+  ~15.127/15.611 MB, yalnız ~489 MB boş); OOM olmasa da LM'in ~6,1 GB model sayfası geri
+  kazanılabilir önbellekten atılıp **bir sonraki sohbet turunda diskten yeniden okunuyor**.
+  Bu yüzden LITE `audio_ram_mib` **5.120 MiB'de** (PRO ile AYNI güvenli kapı) tutulur; LM
+  yüklüyken `choose_plan` CPU dalını SEÇMEZ → **GPU + swap** (kullanıcı kuralı: RAM'e sığıyorsa
+  co-resident, sığmıyorsa VRAM swap). Bol RAM'li makinede kısa kayıt yine CPU co-resident
+  olabilir. (2) `requirements\asr.txt`'e `nvidia-cublas-cu12`
   + `nvidia-cudnn-cu12` eklendi (CTranslate2 4.x Windows'ta `cublas64_12.dll` / `cudnn_*64_9.dll`
   arar; torch'un cu130 tekerlekleri `cublas64_13.dll` getirir) ve `asr.py`
   `_add_cuda_dll_dirs` ile `site-packages\nvidia\*\bin` dizinlerini DLL arama yoluna ekler; **GPU

@@ -74,15 +74,16 @@ DEFAULT_AUDIO_VRAM_MIB = 4096
 # (~0,8 GB) + parca/cozumleme tamponlari (30 dk float32 ~0,15 GB; parcali dökum).
 DEFAULT_AUDIO_RAM_MIB = 5120
 
-# LITE (8 GB kart) CPU co-resident ses hatti RAM esigi. Olculdu (llama-server VRAM'de
-# yukluyken, bu makinede): ASR CPU hatti tepe commit ~3.775 MiB / tepe WS ~3.292 MiB;
-# private ~2.870 MiB. 5.120 MiB'lik kotu-senaryo payi LITE'ta CPU dalini ASLA actirmiyordu
-# (available RAM < 5.120). Bu yuzden LITE icin esik 3.584 MiB'e cekildi (olculen tepeye
-# yakin, hafif pay; Windows mmap onbellegini kirptigindan ampirik olarak SIGIYOR). Esik
-# "available RAM" ile karsilastirildigi icin tarayici/OCR/comfyKeepAlive ile RAM sikisirsa
-# choose_plan otomatik olarak swap'a duser (guvenli yedek korunur). PRO esigi
-# (DEFAULT_AUDIO_RAM_MIB) DEGISMEZ.
-LITE_AUDIO_RAM_MIB = 3584
+# LITE (8 GB kart) CPU co-resident ses hatti RAM esigi. IKI OLCUM CELISTI; daha KESIN olan
+# (LM + ASR CPU'yu BIRLIKTE gercekten kosturan olcum-2) sonucu: co-resident **SIGMIYOR**.
+# Fiziksel RAM 15,25 GB; LM yukluyken gereksinim ~16,1 GB (marj sifir/negatif; tepe
+# ~15.127/15.611 MB, yalniz ~489 MB bos). OOM olmasa bile LM'in ~6,1 GB model sayfasi geri
+# kazanilabilir onbellekten atilip bir SONRAKI sohbet turunda diskten yeniden okunuyor
+# (yavaslama). Bu yuzden LITE, PRO ile AYNI guvenli kapiyi kullanir: esik **5.120 MiB**
+# (gercek ASR ihtiyaci ~3,8 GB olsa da, dil modeliyle BIRLIKTE ~16 GB gerektiginden guvenli
+# kapi budur). LM yukluyken (bu makinede) choose_plan CPU dalini SECMEZ -> GPU + swap;
+# bol RAM'li bir makinede kisa kayit yine CPU co-resident olabilir.
+LITE_AUDIO_RAM_MIB = DEFAULT_AUDIO_RAM_MIB
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,8 @@ PROFILES = {
         # RAM'inde kosar; swap YOK). Uzun kayit ya da RAM yetersizliginde GPU + mecburi swap
         # (swap maliyeti ~9-14 sn olsa da GPU dokumu cok daha hizli oldugu icin toplam sure
         # daha kisa; bkz. choose_plan). Esik LITE_CPU_MAX_SECONDS (15 sn); CPU dali icin
-        # aranan sistem RAM'i LITE_AUDIO_RAM_MIB (3.584 MiB; olculen tepe ~3.775 MiB).
+        # aranan sistem RAM'i LITE_AUDIO_RAM_MIB (5.120 MiB; olcum-2: LM ile BIRLIKTE
+        # co-resident SIGMIYOR -> bu makinede pratikte GPU + swap).
         cpu_max_seconds=LITE_CPU_MAX_SECONDS,
         audio_ram_mib=LITE_AUDIO_RAM_MIB,
     ),
@@ -256,7 +258,7 @@ def choose_plan(profile: Profile, duration_seconds: float | None = None,
       2) Sigmazsa ve CPU co-resident kosulu saglaniyorsa -> ('cpu', False): dil modeli VRAM'de
          KALIR, ses modeli CPU/sistem RAM'inde kosar (swap YOK; yavastir). Kosul: kayit
          `esik` saniyeden KISA **VE** ses hatti sistem RAM'ine sigiyor (`audio_ram_mib`;
-         LITE 3.584 MiB, PRO 5.120 MiB).
+         LITE ve PRO 5.120 MiB).
          Kisa kayitta swap maliyeti dökum kazancindan buyuktur. Esik: `cpu_max_seconds` /
          `profile.cpu_max_seconds` / `DEFAULT_CPU_MAX_SECONDS` (LITE 15 sn, PRO 20 sn).
       3) Aksi halde (kayit UZUN ya da RAM yetmiyor) -> ('cuda', True): GPU dökumu. Dil modeli

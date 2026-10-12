@@ -168,24 +168,24 @@ def test_choose_plan_priority_vram_then_ram_then_swap():
 
 def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
     """LITE politikasi (esik: cpu_max_seconds = LITE_CPU_MAX_SECONDS = 15 sn; CPU dali icin
-    sistem RAM esigi LITE_AUDIO_RAM_MIB = 3.584 MiB, olculen tepe commit ~3.775 MiB): VRAM
-    yetmezse CPU co-resident YALNIZCA kayit esikten KISA VE sistem RAM'i yetiyorsa secilir
-    (('cpu', False); dil modeli VRAM'de kalir, ses modeli CPU'da kosar, swap YOK). UZUN kayit
-    ya da RAM yetersizligi -> GPU + mecburi swap (('cuda', True))."""
+    sistem RAM esigi LITE_AUDIO_RAM_MIB = 5.120 MiB, PRO ile AYNI). Olcum-2 (LM + ASR CPU'yu
+    BIRLIKTE kosturdu) sonucu: co-resident **SIGMIYOR** (fiziksel 15,25 GB < gereksinim
+    ~16,1 GB; LM sayfalari geri kazanilabilir onbellekten atiliyor). Bu yuzden VRAM yetmezse
+    CPU co-resident YALNIZCA kayit esikten KISA VE sistem RAM'i BOL ise secilir
+    (('cpu', False)); dusuk RAM'de ya da uzun kayitta GPU + mecburi swap (('cuda', True))."""
     from transcriber import config
 
     profile = config.select_profile(total_mib=8000)
     threshold = profile.cpu_max_seconds
     assert threshold == config.LITE_CPU_MAX_SECONDS
-    # LITE'in CPU dali icin RAM esigi olculen degere cekildi; PRO esigi degismedi.
-    assert profile.audio_ram_mib == config.LITE_AUDIO_RAM_MIB
-    assert config.LITE_AUDIO_RAM_MIB < config.DEFAULT_AUDIO_RAM_MIB
+    # Olcum-2: LITE co-resident SIGMIYOR -> guvenli kapi PRO ile ayni (5.120 MiB).
+    assert profile.audio_ram_mib == config.LITE_AUDIO_RAM_MIB == config.DEFAULT_AUDIO_RAM_MIB
     assert config.select_profile(total_mib=16311).audio_ram_mib == config.DEFAULT_AUDIO_RAM_MIB
     ram_ok = profile.audio_ram_mib          # tam esik "yetiyor" sayilir
     # Bos VRAM yeter -> GPU, swap YOK (onceki kural korunur).
     assert config.choose_plan(profile, vram_free_mib=profile.audio_vram_mib,
                              ram_free_mib=0) == ("cuda", False)
-    # KISA kayit + RAM yeter -> CPU co-resident, swap YOK.
+    # KISA kayit + BOL RAM -> CPU co-resident, swap YOK.
     assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
                              ram_free_mib=ram_ok) == ("cpu", False)
     assert config.choose_plan(profile, duration_seconds=threshold, vram_free_mib=0,
@@ -195,9 +195,12 @@ def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
                              ram_free_mib=ram_ok) == ("cuda", True)
     assert config.choose_plan(profile, duration_seconds=3600, vram_free_mib=0,
                              ram_free_mib=ram_ok) == ("cuda", True)
-    # KISA ama RAM YETMIYOR (esik alti) -> mecburi swap.
+    # KISA ama RAM YETMIYOR -> mecburi swap. Bu makinedeki tipik deger (LM yukluyken
+    # free_ram ~2.957 MiB) tam da bu dala duser -> GPU + swap (dogru davranis).
     assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
                              ram_free_mib=ram_ok - 1) == ("cuda", True)
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
+                             ram_free_mib=2957) == ("cuda", True)
 
 
 def test_choose_plan_without_local_model_never_swaps():
