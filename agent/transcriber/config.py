@@ -23,9 +23,18 @@ VRAM_THRESHOLD_MIB = 14000
 #
 #     GPU_döküm + swap_maliyeti > CPU_döküm  ise  CPU secilir.
 #
-# Esik SURESI asagidaki sabittir; AR-GE olcum sonucu gelince yalnizca bu satir guncellenir
-# (ya da profil bazinda `Profile.cpu_max_seconds` ile gecersiz kilinir).
-DEFAULT_CPU_MAX_SECONDS = 240.0  # 4 dakika
+# Esik SURESI asagidaki sabittir; olcum degisirse yalnizca bu satir guncellenir (ya da profil
+# bazinda `Profile.cpu_max_seconds` ile gecersiz kilinir).
+#
+# AR-GE olcumu (RTX 5060 Ti 16 GB, Whisper large-v3-tr):
+#   CPU(d)  = 5,0  + 0,908*d   (model yukleme 5 sn; dokum ~gercek zamanli)
+#   GPU(d)  = 14,0 + 3,3 + 0,079*d   (swap = boşalt 3 + geri yükle 11; model yukleme 3,3)
+#   Kesisim: d = (14 + 3,3 - 5,0) / (0,908 - 0,079) ~= 15 sn
+# Guvenlik payi + ilk-is CUDA bagi icin 20 sn secildi (PC2). LITE swap'i daha kisa olculdu
+# (boşalt 3 + geri yukle 6 = ~9 sn) ve LITE'ta 9B model ~6 sn'de yuklendigi icin esik biraz
+# daha dusuk tutulur (Profile.cpu_max_seconds = 15; bkz. PROFILES). Her iki profilde de
+# "kisa -> CPU, uzun -> GPU + swap" mantigi gecerlidir.
+DEFAULT_CPU_MAX_SECONDS = 20.0
 
 # Tek motor: Whisper large-v3'un Turkce ince ayarli CTranslate2 (float16) surumu.
 DEFAULT_WHISPER_MODEL = 'oguzhangokboru/whisper-large-v3-tr'
@@ -75,6 +84,9 @@ PROFILES = {
         name=PC1, compute_type='int8_float16', load_mode='sequential', chunk_minutes=30,
         whisper_model=DEFAULT_WHISPER_MODEL, events_model=DEFAULT_EVENTS_MODEL,
         language='tr', events=True, diarize=True,
+        # LITE swap'i daha kisa olculdu (9B: boşalt ~3 + geri yukle ~6 = ~9 sn); esik PRO'dan
+        # biraz dusuk (bkz. DEFAULT_CPU_MAX_SECONDS yorumu).
+        cpu_max_seconds=15.0,
     ),
 }
 

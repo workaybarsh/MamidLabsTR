@@ -67,6 +67,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   İndirilen paket `tools\editions` altında saklanır ve **"Dil sürümünü sil"** ile kaldırılabilir.
 
 ### Değişen
+- **Ses dökümünde CPU/GPU seçimi ölçüme göre:** cihaz artık gerçek boş VRAM + sistem RAM'i +
+  kaydın **süresine** göre otomatik seçilir. Ölçülen eşik **PRO ~20 sn**, **LITE ~15 sn**;
+  bu süreden kısa kayıtlarda CPU, uzunlarda GPU (swap) kullanılır. Dil modeli + ses hattı boş
+  VRAM'e birlikte sığıyorsa GPU her zaman (swap yok).
 - **FLASH çıktı tavanı 4096 → 8192:** artık üç profil de (`--predict` ve arayüz `max_tokens`) 8192
   kullanır. Bu bir **tavan**dır, hedef değil: üretim EOS'ta durduğu için normal yanıtların hızı
   değişmez; yalnızca uzun yanıtlarda/düşünmede yanıtın yarıda kesilmesi (boş yanıt) engellenir.

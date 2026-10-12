@@ -74,9 +74,11 @@ def test_choose_device_short_uses_cpu_long_uses_cuda_when_swap_needed():
     from transcriber import config
 
     profile = config.select_profile(total_mib=8000)
-    threshold = config.DEFAULT_CPU_MAX_SECONDS
+    # Etkin esik: profil bazli (LITE 15 sn) varsa o, yoksa varsayilan.
+    threshold = profile.cpu_max_seconds or config.DEFAULT_CPU_MAX_SECONDS
     # Esigin ALTINDA -> CPU (swap maliyeti dökum kazancindan buyuk).
-    assert config.choose_device(60, profile, need_swap=True) == "cpu"
+    assert config.choose_device(threshold - 1, profile, need_swap=True) == "cpu"
+    assert config.choose_device(5, profile, need_swap=True) == "cpu"
     # Sinir degeri -> CPU (<=).
     assert config.choose_device(threshold, profile, need_swap=True) == "cpu"
     # Esigin USTUNDE -> CUDA.
@@ -116,15 +118,14 @@ def test_profile_carries_audio_memory_thresholds():
 
 
 def test_choose_plan_priority_vram_then_ram_then_swap():
-    """Oncelik: (1) birlikte sigar -> GPU swap yok, (2) CPU RAM'e sigar -> CPU swap yok,
-    (3) ikisi de yetmez -> mecburi swap."""
+    """PC2 (CPU dali acik) onceligi: (1) birlikte sigar -> GPU swap yok, (2) CPU RAM'e sigar
+    -> CPU swap yok, (3) ikisi de yetmez -> mecburi swap."""
     from transcriber import config
 
-    profile = config.select_profile(total_mib=8000)
+    profile = config.select_profile(total_mib=16311)
     vram = profile.audio_vram_mib
     ram = profile.audio_ram_mib
-    # 1) Bos VRAM yeter -> GPU, swap YOK (gercek 8 GB LITE'ta dil modeli ~7,5 GB tutar,
-    #    bos ~0,5 GB kalir; bu yuzden bu dal orada TUTMAZ).
+    # 1) Bos VRAM yeter -> GPU, swap YOK.
     assert config.choose_plan(profile, vram_free_mib=vram, ram_free_mib=ram) == ("cuda", False)
     assert config.choose_plan(profile, vram_free_mib=vram + 1000, ram_free_mib=0) == ("cuda", False)
     # 2) VRAM yetmez ama sistem RAM'i yeter -> CPU, swap YOK (yavas, dil modeli yerinde).
@@ -133,6 +134,21 @@ def test_choose_plan_priority_vram_then_ram_then_swap():
     # 3) Ikisi de yetmez -> mecburi VRAM swap (GPU).
     assert config.choose_plan(profile, vram_free_mib=vram - 1, ram_free_mib=ram - 1) == ("cuda", True)
     assert config.choose_plan(profile, vram_free_mib=0, ram_free_mib=0) == ("cuda", True)
+
+
+def test_choose_plan_lite_uses_cpu_branch_for_short_long_uses_gpu():
+    """LITE da ayni birlesik mantigi kullanir (RAM yeterli olcüldü): VRAM yetmez + KISA ->
+    CPU/swap yok, UZUN -> GPU + mecburi swap."""
+    from transcriber import config
+
+    profile = config.select_profile(total_mib=8000)
+    assert config.choose_plan(profile, vram_free_mib=profile.audio_vram_mib,
+                             ram_free_mib=0) == ("cuda", False)
+    threshold = config.DEFAULT_CPU_MAX_SECONDS
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=0,
+                             ram_free_mib=10 ** 6) == ("cpu", False)
+    assert config.choose_plan(profile, duration_seconds=threshold + 1, vram_free_mib=0,
+                             ram_free_mib=10 ** 6) == ("cuda", True)
 
 
 def test_choose_plan_without_local_model_never_swaps():
@@ -157,7 +173,7 @@ def test_choose_plan_uses_duration_short_cpu_long_gpu_when_vram_tight():
                              ram_free_mib=ram) == ("cpu", False)
     assert config.choose_plan(profile, duration_seconds=threshold + 1, vram_free_mib=vram,
                              ram_free_mib=ram) == ("cuda", True)
-    assert config.choose_plan(profile, duration_seconds=30, vram_free_mib=vram,
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=vram,
                              ram_free_mib=ram) == ("cpu", False)
 
 
@@ -316,7 +332,7 @@ def test_run_auto_selects_cpu_for_short_recording(monkeypatch, tmp_path):
     src = tmp_path / "short.wav"
     src.write_bytes(b"")
     capture = {}
-    _patch_transcriber_pipeline(monkeypatch, 30.0, capture)
+    _patch_transcriber_pipeline(monkeypatch, 5.0, capture)
     result = main.run(str(src), profile=config.select_profile(total_mib=8000),
                       device="auto", need_swap=True)
     assert capture["device"] == "cpu"
@@ -389,31 +405,53 @@ def test_worker_accepts_auto_and_need_swap(monkeypatch, tmp_path):
 
 
 def test_worker_plan_action_decides_device_and_swap(monkeypatch, tmp_path):
-    """Isci sozlesmesi: action='plan' olculen bos VRAM/RAM'e gore (device, need_swap) doner."""
+    """Isci sozlesmesi: action='plan' olculen bos VRAM/RAM'e gore (device, need_swap) doner.
+    PC2 profili (CPU dali acik) uzerinden denenir."""
     module = load_worker()
     from transcriber import config
 
-    profile = config.select_profile(total_mib=8000)
+    profile = config.select_profile(total_mib=16311)
     vram, ram = profile.audio_vram_mib, profile.audio_ram_mib
 
     monkeypatch.setattr(config, "free_vram_mib", lambda: vram)
     monkeypatch.setattr(config, "available_ram_mib", lambda: 0)
-    plan = module.plan({"profile": "pc1", "local_model_loaded": True})
+    plan = module.plan({"profile": "pc2", "local_model_loaded": True})
     assert plan["device"] == "cuda" and plan["need_swap"] is False
-    assert plan["profile"] == "pc1" and plan["free_vram_mib"] == vram
+    assert plan["profile"] == "pc2" and plan["free_vram_mib"] == vram
 
     # VRAM yetmez, RAM yeter -> CPU, swap yok.
     monkeypatch.setattr(config, "free_vram_mib", lambda: 0)
     monkeypatch.setattr(config, "available_ram_mib", lambda: ram)
-    plan = module.plan({"profile": "pc1", "local_model_loaded": True})
+    plan = module.plan({"profile": "pc2", "local_model_loaded": True})
     assert plan["device"] == "cpu" and plan["need_swap"] is False
 
     # Ikisi de yetmez -> mecburi swap.
     monkeypatch.setattr(config, "available_ram_mib", lambda: 0)
-    plan = module.plan({"profile": "pc1", "local_model_loaded": True})
+    plan = module.plan({"profile": "pc2", "local_model_loaded": True})
     assert plan["device"] == "cuda" and plan["need_swap"] is True
 
     # Yerel model yuklu degil (API) -> swap yok.
+    plan = module.plan({"profile": "pc2", "local_model_loaded": False})
+    assert plan["device"] == "cuda" and plan["need_swap"] is False
+
+
+def test_lite_profile_uses_shared_plan(monkeypatch, tmp_path):
+    """LITE (8 GB) ayni plani kullanir: RAM yeterli oldugu icin kisa kayit CPU, uzun kayit
+    GPU + swap. Yerel model yoksa (API) GPU zaten bos -> swap gerekmez."""
+    module = load_worker()
+    from transcriber import config, audio
+
+    src = tmp_path / "kayit.wav"
+    src.write_bytes(b"RIFF")
+    monkeypatch.setattr(config, "free_vram_mib", lambda: 0)
+    monkeypatch.setattr(config, "available_ram_mib", lambda: 10 ** 6)
+    monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 5.0)
+    plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
+    assert plan["device"] == "cpu" and plan["need_swap"] is False
+    monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 3600.0)
+    plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
+    assert plan["device"] == "cuda" and plan["need_swap"] is True
+    # Yerel model yoksa (API) GPU zaten bos -> swap gerekmez.
     plan = module.plan({"profile": "pc1", "local_model_loaded": False})
     assert plan["device"] == "cuda" and plan["need_swap"] is False
 
@@ -429,7 +467,7 @@ def test_worker_plan_action_uses_path_duration(monkeypatch, tmp_path):
     src.write_bytes(b"RIFF")
     monkeypatch.setattr(config, "free_vram_mib", lambda: 0)
     monkeypatch.setattr(config, "available_ram_mib", lambda: 10 ** 6)
-    monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 30.0)
+    monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 5.0)
     plan = module.plan({"profile": "pc2", "local_model_loaded": True, "path": str(src)})
     assert plan["device"] == "cpu" and plan["need_swap"] is False
     monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 3600.0)
