@@ -814,6 +814,41 @@ $ok = Set-AudioUnavailableNote $items 'ses.wav' 'CUDA out of memory'
     assert "ses.wav" in out
 
 
+def test_audio_turn_hides_bound_file_tools_unless_file_intent():
+    """Ses eki olan turda bagli-klasor DOSYA araclari SUNULMAZ: ses zaten faster-whisper ile
+    dökumlenip metne cevrilir; kucuk model aksi halde '[Kullanici bir ses dosyasi ekledi: ...]'
+    notunu gorup ses DOSYASINI list_bound_files/read_bound_file/write_bound_file ile
+    aramaya/okumaya/yazmaya kalkip bosa turlar harciyordu (arayuz testinde: liste/yazma
+    dongusu). Kullanici acikca dosya isterse (Test-FileIntent) araclar yine sunulur."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "$audioAttachedThisTurn = @($job.currentAudioPaths" in worker
+    assert "if (!($audioAttachedThisTurn -and !(Test-FileIntent $userText)))" in worker
+    # Uc dosya araci ortak kosula bagli (list + read + write ayni blokta, kosuldan SONRA).
+    guard = worker.split("$audioAttachedThisTurn = @($job.currentAudioPaths")[1]
+    guard = guard.split("if (Test-CommandIntent")[0]
+    assert "list_bound_files" in guard and "read_bound_file" in guard and "write_bound_file" in guard
+
+
+def test_transcript_note_tells_model_not_to_open_the_audio_file(tmp_path):
+    """Basarili dökumde de modele ses DOSYASINI araclarla ACMAMASI soylenir
+    (Set-AudioUnavailableNote ile simetrik); aksi halde 'ekli belge' sanip tur harciyordu.
+    Gercek pwsh ile calistirilir."""
+    worker = read_text("agent/qwen-inference.ps1")
+    fn = _extract_ps_function(worker, "Add-TranscriptToMessages")
+    script = fn + """
+$items = [Collections.ArrayList]::new()
+[void]$items.Add(@{ role = 'user'; content = 'Sesi yaziya cevir.' })
+$ok = Add-TranscriptToMessages $items 'Konusmaci: merhaba' 'ses.wav'
+'OK=' + $ok
+'TEXT=' + [string]$items[0].content
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "OK=True" in out
+    assert "read_bound_file" in out          # "araclarla acmaya calisma" uyarisi
+    assert "ses.wav" in out
+    assert "Konusmaci: merhaba" in out
+
+
 def test_audio_turn_preempts_language_model_loading():
     desktop = read_text("qwen-desktop.ps1")
     assert "function Stop-ModelSwitchForAudio" in desktop

@@ -998,9 +998,18 @@ function Get-ToolDefinitions([hashtable]$job) {
         }
     }
     if ($job.agent) {
-        $defs += @{ type = 'function'; function = @{ name = 'list_bound_files'; description = 'Kullanicinin bagladigi klasordeki dosya ve alt klasorleri listeler.'; parameters = @{ type = 'object'; properties = @{ relative_path = @{ type = 'string' } } } } }
-        $defs += @{ type = 'function'; function = @{ name = 'read_bound_file'; description = 'Bagli klasor icindeki metin dosyasini okur.'; parameters = @{ type = 'object'; required = @('relative_path'); properties = @{ relative_path = @{ type = 'string' } } } } }
-        $defs += @{ type = 'function'; function = @{ name = 'write_bound_file'; description = 'Bagli klasor icine metin dosyasi yazar veya var olani degistirir. Yalnizca kullanici acikca isterse kullan.'; parameters = @{ type = 'object'; required = @('relative_path', 'content'); properties = @{ relative_path = @{ type = 'string' }; content = @{ type = 'string' } } } } }
+        # Ses eki olan turda bagli-klasor DOSYA araclari sunulmaz: ses zaten faster-whisper ile
+        # dökumlenip son kullanici mesajina metin olarak eklenir (bkz. Add-TranscriptToMessages).
+        # Aksi halde kucuk model "[Kullanici bir ses dosyasi ekledi: ...]" notunu gorup ses
+        # DOSYASINI list_bound_files/read_bound_file/write_bound_file ile aramaya/okumaya/yazmaya
+        # kalkiyor ve bosa turlar harciyordu (arayuz testinde: liste/yazma dongusu). Kullanici
+        # acikca bir dosya isterse (Test-FileIntent) araclar yine sunulur.
+        $audioAttachedThisTurn = @($job.currentAudioPaths | Where-Object { $_ }).Count -gt 0
+        if (!($audioAttachedThisTurn -and !(Test-FileIntent $userText))) {
+            $defs += @{ type = 'function'; function = @{ name = 'list_bound_files'; description = 'Kullanicinin bagladigi klasordeki dosya ve alt klasorleri listeler.'; parameters = @{ type = 'object'; properties = @{ relative_path = @{ type = 'string' } } } } }
+            $defs += @{ type = 'function'; function = @{ name = 'read_bound_file'; description = 'Bagli klasor icindeki metin dosyasini okur.'; parameters = @{ type = 'object'; required = @('relative_path'); properties = @{ relative_path = @{ type = 'string' } } } } }
+            $defs += @{ type = 'function'; function = @{ name = 'write_bound_file'; description = 'Bagli klasor icine metin dosyasi yazar veya var olani degistirir. Yalnizca kullanici acikca isterse kullan.'; parameters = @{ type = 'object'; required = @('relative_path', 'content'); properties = @{ relative_path = @{ type = 'string' }; content = @{ type = 'string' } } } } }
+        }
         # run_command YALNIZCA kullanici acikca komut/terminal istediginde sunulur (bkz.
         # Test-CommandIntent). Aksi halde kucuk model web/arama hatasinda absurt komut
         # denemelerine giriyordu; tool hic sunulmazsa cagiramaz.
@@ -1513,7 +1522,10 @@ function Add-TranscriptToMessages([Collections.ArrayList]$items, [string]$transc
     for ($i = $items.Count - 1; $i -ge 0; $i--) {
         $message = $items[$i]
         if ([string]$message.role -ne 'user') { continue }
-        $note = "[Ses dökümü ($fileName)]`n$transcript"
+        $note = "[Ses dökümü ($fileName)]`n$transcript`n`n" +
+            "(Bu bir ses kaydinin dökumudur; yanitini dogrudan bu metne dayandir. Dosyayi " +
+            "read_document/read_bound_file gibi araclarla acmaya calisma; ses dosyasi bagli " +
+            "klasordeki bir belge degildir.)"
         if ($message.content -is [string]) {
             $message.content = [string]$message.content + "`n`n" + $note
         } else {
