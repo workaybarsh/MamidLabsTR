@@ -10,4 +10,6 @@ Moduller:
     merge    zaman damgasina gore birlestirme -> metin
     main     hatti calistirir; txt + json yazar
 """
+# Paket (agent\transcriber) surumu; uygulamanin surumunden (packaging\windows\mamidlabs.iss
+# MyAppVersion) BAGIMSIZDIR, onunla eslesmek zorunda degildir.
 __version__ = '1.0.0'

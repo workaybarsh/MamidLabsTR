@@ -119,7 +119,7 @@ $script:multiImageOcrMode = $false
 $script:selectedVideos = New-Object System.Collections.Generic.List[string]
 $script:lastUserVideo = $null
 $script:selectedDocuments = New-Object System.Collections.Generic.List[string]
-# Ses dosyalari (whisper.cpp large-v3 ile dökumlenir; OCR'in gorsel/mesaj esdegeri).
+# Ses dosyalari (faster-whisper large-v3-tr, agent\transcriber ile dökumlenir; OCR'in gorsel/mesaj esdegeri).
 $script:selectedAudio = New-Object System.Collections.Generic.List[string]
 $script:attachedDocuments = New-Object System.Collections.Generic.List[string]
 $script:videoJob = $null
@@ -1312,7 +1312,7 @@ $composer.Controls.Add($send)
 
 # Mikrofon dugmesi: Gönder'in hemen solunda. Mikrofon KIRMIZI iken (kayit surerken)
 # dugmeye basmak kaydi bitirip GONDERIR; kayit yokken kucuk bir menu acar
-# ("Mikrofonu kullan" / "İptal"). Ses eklenince (whisper.cpp large-v3 ile)
+# ("Mikrofonu kullan" / "İptal"). Ses eklenince (faster-whisper large-v3-tr, agent\transcriber ile)
 # otomatik dökumlenir ve bulgular dil modeline verilir (OCR'in ses esdegeri).
 # Sag tik HER durumda menuyu acar; boylece kayit surerken bile "Kaydı iptal et"
 # secilip kayit atilabilir (dosya silinir, gonderilmez).
@@ -1613,7 +1613,7 @@ function Pick-AudioFile {
 # Mikrofon kaydi (bagimliliksiz): winmm mciSendString ile kaydeder. `open new type waveaudio`
 # Windows VARSAYILAN kayit cihazini (WAVE_MAPPER) kullanir — cihaz secimi gerekmez.
 # Kayit formati cihazin varsayilanidir; whisper-tools.py bunu 16 kHz mono WAV'a cevirip
-# whisper.cpp (large-v3) ile dökumler. Kayit bitince WAV ses eki olarak eklenir ve otomatik gonderilir.
+# faster-whisper large-v3-tr (agent\transcriber) ile dökumler. Kayit bitince WAV ses eki olarak eklenir ve otomatik gonderilir.
 function Add-MamidMciType {
     if (-not ([System.Management.Automation.PSTypeName]'MamidMci').Type) {
         Add-Type @'
@@ -2830,7 +2830,7 @@ function Render-JobEvent($jobEvent) {
             $metric.Text = "OCR tamamlandı ($confidence güven)"
         }
         'transcript' {
-            # Eklenen ses dökumlendi (whisper.cpp). Dökum baloncukta gösterilir ve dil
+            # Eklenen ses dökumlendi (faster-whisper, agent\transcriber). Dökum baloncukta gösterilir ve dil
             # modeli bulgular uzerinden yanit uretir (OCR gibi).
             if ($b) {
                 $b.transcriptText = [string]$jobEvent.text
@@ -3064,7 +3064,7 @@ $send.Add_Click({
         $content += @{ type = 'text'; text = "[Kullanici bir belge ekledi: $doc]" }
     }
     foreach ($aud in $script:selectedAudio) {
-        # Ses, whisper.cpp ile dökumlenip metne cevrilecek (OCR/mmproj esdegeri).
+        # Ses, faster-whisper (agent\transcriber) ile dökumlenip metne cevrilecek (OCR/mmproj esdegeri).
         $content += @{ type = 'text'; text = "[Kullanici bir ses dosyasi ekledi: $([IO.Path]::GetFileName($aud))]" }
     }
     if ($activatingMode) {

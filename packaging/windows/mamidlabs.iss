@@ -9,8 +9,8 @@
 ; karsilama, lisans, klasor, profil raporu, profil secimi, kendi modellerin, API,
 ; ek gorevler, hazir, kurulum, ozet, bitis.
 
-; Surumun tek kaynagi. CI etiketi (v1.0.0) bu degerle karsilastirir; CHANGELOG.md'de
-; ayni numarali bir bolum olmalidir.
+; Surumun tek kaynagi. CI, birakilan etiketi (v<surum>) bu degerle karsilastirir;
+; CHANGELOG.md'de ayni numarali bir bolum olmalidir.
 #define MyAppVersion "1.1.0"
 #define MyAppName "MamidLabs"
 #define MyAppPublisher "workaybarsh"

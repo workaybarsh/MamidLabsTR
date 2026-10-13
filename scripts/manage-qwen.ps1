@@ -26,7 +26,7 @@ if ($Action -notin @('stop', 'closecomfy') -and (Test-Path -LiteralPath $setting
 }
 
 if ($Profile -eq 'lite') {
-    # Varsayilan Q5_K_M'dir (~6,6 GB). Gercek makinede (RTX 4060 Laptop, 8 GB)
+    # Varsayilan Q5_K_M'dir (~6,5 GB + ~0,46 GB MTP basligi). Gercek makinede (RTX 4060 Laptop, 8 GB)
     # 32K baglamla, gorsel projektoru CPU'da olculdu: 7249 MiB VRAM kullanir,
     # 708 MiB bos kalir (mmproj GPU'dayken 7885 MiB / ~72 MiB bos idi) - kullanicinin
     # kabul ettigi bir pay (diger MAX/FLASH profilleri baska makinelerde benzer
@@ -278,7 +278,7 @@ try {
     # ComfyUI yasam dongusu. VARSAYILAN KAPALI: ComfyUI yalnizca gorsel/video uretimi
     # sirasinda calisir, is bitince ve dil modeli yuklenmeden once kapatilir — bosta ne VRAM
     # ne de RAM tutar. Gerekce: LITE hedef makinesi 8 GB VRAM / 16 GB RAM'dir; 9B model zaten
-    # kartin sinirinda (~7,1 GB), ComfyUI baglami (~300 MiB) + masaustu eklenince tasar. 16 GB'lik
+    # kartin sinirinda (~6,5 GB + ~0,46 GB MTP basligi), ComfyUI baglami (~300 MiB) + masaustu eklenince tasar. 16 GB'lik
     # bir kartta LITE ile medya isleri arasinda acik tutmak isteyen `settings/api.json` ->
     # `comfyKeepAlive=true` yazar (o zaman ~27 sn yeniden acilma olmaz). MAX/FLASH (27B) her
     # durumda kapatir. API modunda bu betik cagrilmaz; ComfyUI medya sonrasi acik kalir.
@@ -322,7 +322,7 @@ try {
     # değerleri hâlâ low/xhigh olarak gönderilir.
     $reasoningEffort = if ($Profile -eq 'max') { 'xhigh' } else { 'low' }
     if ($Profile -eq 'lite') {
-        # 8 GB VRAM butcesi: ~6,8 GB agirlik + q4_0 KV cache + hesap tamponu.
+        # 8 GB VRAM butcesi: ~6,5 GB agirlik + ~0,46 GB MTP basligi + q4_0 KV cache + hesap tamponu.
         # Gorsel projektoru CPU'da (--no-mmproj-offload): Q8_0 mmproj (595 MiB)
         # GPU'da 8 GB karta sigmiyordu. Windows masaustu de 0,5-1 GB VRAM tuttugu
         # icin varsayilan 32K baglamdir ($liteCtx yukarida, settings.liteContext

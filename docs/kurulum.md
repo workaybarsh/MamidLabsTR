@@ -24,12 +24,12 @@ Python ve Git önceden kurulu olmalıdır.
 | Sayfa | İş |
 |---|---|
 | Karşılama ve lisans | Tescilli lisans (tüm hakları saklı) |
-| Kurulum klasörü | Varsayılan kullanıcı başına program klasörü (`%LOCALAPPDATA%\Programs\MamidLabs`); istenirse değiştirilebilir. Modeller dahil 40-80 GB, SSD önerilir |
+| Kurulum klasörü | Varsayılan kullanıcı başına program klasörü (`%LOCALAPPDATA%\Programs\MamidLabs`); istenirse değiştirilebilir. Modeller dahil ~58–75 GB, SSD önerilir |
 | Profil raporu | GPU, VRAM, RAM ve boş disk ölçülür; her profil için uygun / sınırda / uygun değil kararı ve öneri (`scripts\profile-report.ps1`) |
 | Model profili | LITE, Qwen3.8 27B (MAX ve FLASH aynı dosyaları kullanır), **şimdi indirme (sonra kuracağım)** ya da **kendi modelim / API hesabım** |
 | Kendi modellerin | Dil (.gguf), görsel (Krea 2 Turbo) ve video (Wan 2.2 TI2V 5B) dosyasını yoluyla seç; kopyalanmaz |
 | API hesabı | İlk açılışta API bağlantıları penceresini aç (anahtar kurulumda istenmez) |
-| Ek görevler | Kurulum sonunda smoke testi, OCR bileşenleri |
+| Ek görevler | Görsel/video üretimi, ses yakalama ve OCR bileşenleri ile kurulum sonunda smoke testi (hepsi varsayılan seçili) |
 
 Kurulum düğmesinden sonra `scripts\setup-run.ps1` arka planda çalışır ve ilerlemeyi sihirbaza
 bildirir: eksik ön koşulları winget ile kurar, `install-mamidlabs.ps1`'i çalıştırır, seçilen profilin modellerini indirir
@@ -73,6 +73,7 @@ Sihirbazı derlemek için: GitHub Actions → **Kurulum paketi** (ya da yerelde 
    | `runtime` | Gömülü PowerShell 7.6.6 |
    | `llama` | llama.cpp b10998 (CUDA 13.4) |
    | `python` | Uygulama ve medya Python ortamları (sürümleri sabit) |
+   | `asr` | Ses dökümü ortamı `venv\asr` (faster-whisper + AST + pyannote; `-SkipAudio` ile atlanır) |
    | `comfyui` | ComfyUI `b0f4b7b`, ComfyUI-GGUF `6ea2651` ve comfyui-krea2edit `86f886d` (fotoğraf düzenleme) |
    | `verify` | Bileşenlerin varlık ve çalışma kontrolü |
 
@@ -120,8 +121,9 @@ geçişi ve video bileşenlerini gerçek modellerle dener:
 ```
 
 Beklenen sonuç: tüm adımlar `[GECTI]`; Identity Edit LoRA'sı kurulu değilse fotoğraf düzenleme
-`[ATLA]` olur. Adımlar `-SkipChat`, `-SkipDocument`, `-SkipOcr`, `-SkipImage`, `-SkipEdit`,
-`-SkipVideo` ile atlanabilir. Sonuç `logs\smoke-test-son.json` dosyasına da yazılır.
+`[ATLA]` olur. Adımlar `-SkipChat`, `-SkipDocument`, `-SkipOcr`, `-SkipChart`, `-SkipImage`,
+`-SkipEdit`, `-SkipMtp`, `-SkipOffline`, `-SkipNetworkSwitch`, `-SkipHistoryResume`,
+`-SkipVideo`, `-SkipUi` ile atlanabilir. Sonuç `logs\smoke-test-son.json` dosyasına da yazılır.
 
 **Medya sonrası model geçişi (8 GB LITE kart):** görsel adımı, uygulamadaki gibi dil modelini
 VRAM'den boşaltıp üretimden sonra geri yükler. Ardından sohbet hızı ilk ölçümle karşılaştırılır.

@@ -22,6 +22,15 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   Sihirbaz kurulumunda mükerrer `MamidLabs` girdisi açılmaz. Kaldırıcı artık `EULA.txt` ve
   `requirements` dizinini de siler; kök gerçekten kaldırılır.
 
+### Belgeler
+- **Doküman tutarlılık geçişi (davranış değişmedi).** `AGENTS.md`, `docs/kurulum.md`,
+  `docs/teknik-notlar.md`, `packaging/windows/mamidlabs.iss` (yorum), `qwen-desktop.ps1` (yorum),
+  `scripts/manage-qwen.ps1` (yorum) ve `agent/transcriber/__init__.py` (yorum) güncel kodla
+  hizalandı: ses motoru açıklamaları `faster-whisper large-v3-tr (agent\transcriber)` olarak
+  düzeltildi, kurulum aşama listesine `asr` ve kullanım satırına `-AppVersion`/`-SkipAudio` eklendi,
+  test sayısı/süresi ile MTP kabul oranı gerçek ölçümlere çekildi ve yinelenen/süperseded notlar
+  tekilleştirildi.
+
 ## [1.0.0] - 2026-10-10
 
 İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms

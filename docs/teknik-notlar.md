@@ -71,8 +71,8 @@ sınırsızca uzatmaya değil).
 9B GGUF'u ise bu başlığı dönüşümde kaybeder; indirme sırasında `agent/mtp_inject.py` ile geri
 eklenir (kaynak: `huihui-ai/Huihui-Qwen3.5-9B-abliterated` MTP tensorleri), bu yüzden
 `--spec-type draft-mtp` LITE'ta da kullanılır. Ayrı bir draft model gerekmez; çıktı kayıpsızdır
-(kabul edilen tokenlar hedef modelle doğrulanır) ve ~2x hız kazancı sağlar (LITE'ta kabul ~0,31–0,96;
-model kartında 27B için Q4_K_M kabul 0,35–0,53). Bayrak yalnızca GGUF gerçekten MTP katmanı
+(kabul edilen tokenlar hedef modelle doğrulanır) ve ~2x hız kazancı sağlar (LITE'ta kabul ~0,93
+(içeriğe bağlı 0,31–0,96); model kartında 27B için Q4_K_M kabul 0,35–0,53). Bayrak yalnızca GGUF gerçekten MTP katmanı
 taşıyorsa eklenir (`Test-GgufHasMtp`); taşımayan modele verilirse llama.cpp "model doesn't contain
 MTP layers" ile açılmaz. Gerekirse `%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine
 `"mtp": false` yazılıp kapatılabilir.
@@ -121,18 +121,16 @@ Bellek bütçesi: RTX 4060 Laptop üzerinde, varsayılan Q5_K_M ve 32K bağlamla
 (mmproj Q8_0) CPU'ya alındıktan sonra ölçüldü — **~7249 / 8188 MiB** (708 MiB boş; projektör
 GPU'dayken ~7885 MiB idi ve yalnızca ~72 MiB kalıyordu). Üretim **içeriğe bağlı ~40–79 tok/s**
 (MTP açık; kabul oranı 0,31–0,96), ön işleme ~270 tok/s. 16 GB'lık bir kartta LITE ~97 tok/s'ye
-çıkar. Daha rahat bir pay istersen aşağıdaki `liteModel` ayarıyla Q4_K_M'e dönebilirsin (~40 tok/s,
-~1,7 GB boş VRAM kalır).
+çıkar. Daha rahat bir VRAM payı istersen `%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json`
+içine `liteModel: "Huihui-Qwen3.5-9B-abliterated.i1-Q4_K_M.gguf"` yazıp dosyayı
+`mradermacher/Huihui-Qwen3.5-9B-abliterated-i1-GGUF` deposundan elle indirip modeller klasörüne
+koyabilirsin (~40 tok/s, ~1,7 GB boş VRAM kalır) — katalog yalnızca Q5_K_M'i otomatik indiriyor.
+Q6_K (~7,4 GB) 8 GB kartta hiç sığmaz (dosyanın kendisi boş VRAM'i aşar).
 
 **Düşünme (sınırsız).** Qwen3.5 şablonu `--reasoning-effort` değerini yok sayar; düşünme açık
 (`--reasoning on`, `--reasoning-format deepseek`) kalır ve **düşünme bütçesi konmaz** — LITE
 lazım olduğu kadar (gerektiği kadar uzun) düşünür, ölçülen sınırsız durumda 1451–2391 token (~50 sn).
-Sistem istemi de modele derin düşünmesini ve düşünme süresini kısıtlamamasını söyler. Daha
-rahat bir VRAM payı istersen `%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine `liteModel:
-"Huihui-Qwen3.5-9B-abliterated.i1-Q4_K_M.gguf"` yazıp dosyayı aynı Hugging Face deposundan
-(`mradermacher/Huihui-Qwen3.5-9B-abliterated-i1-GGUF`) elle indirip modeller klasörüne
-koyabilirsin — katalog yalnızca Q5_K_M'i otomatik indiriyor. Q6_K (~7,4 GB) 8 GB kartta
-hiç sığmaz (dosyanın kendisi boş VRAM'i aşar).
+Sistem istemi de modele derin düşünmesini ve düşünme süresini kısıtlamamasını söyler.
 
 **Beklenti:** Lite'ta sohbet akıcıdır. Görsel üretimi çalışır ama `--lowvram` yüzünden
 16 GB profile göre belirgin yavaştır; ~7,5 GB'lık GGUF diffusion model + ~5,2 GB metin
