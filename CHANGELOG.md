@@ -3,17 +3,13 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
-## [1.1.1] - 2026-10-13
+## [1.0.0] - 2026-10-10
 
-### Düzeltilen
-- **Ses eki + "Ajan" çipi: modele dosya araçları sunulmuyor.** Ses eklenen bir turda ses zaten
-  faster-whisper ile dökümlenip metne çevrildiği hâlde, Ajan çipi açıkken küçük model
-  `list_bound_files`/`read_bound_file`/`write_bound_file` ile ses DOSYASINI aramaya/okumaya/yazmaya
-  kalkıp boşa turlar harcayabiliyordu (arayüz testinde görüldü). Artık ses eki olan turda bu üç
-  araç sunulmaz (kullanıcı açıkça dosya istemedikçe) ve başarılı döküm notuna "dosyayı araçlarla
-  açma, yanıtı doğrudan döküme dayandır" yönlendirmesi eklenir.
-
-## [1.1.0] - 2026-10-13
+İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms
+penceresinde sohbet, web araması, belge okuma/üretimi, OCR, görsel anlama, görsel üretimi, fotoğraf
+düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-server`), görsel/video
+modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
+DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
 ### Değişen
 - **LITE görsel projektörü (mmproj) CPU'ya taşındı:** LITE artık 8 GB VRAM'e sığıyor
@@ -22,6 +18,12 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   okuma projektör CPU'da hafifçe yavaşladı.
 
 ### Düzeltilen
+- **Ses eki + "Ajan" çipi: modele dosya araçları sunulmuyor.** Ses eklenen bir turda ses zaten
+  faster-whisper ile dökümlenip metne çevrildiği hâlde, Ajan çipi açıkken küçük model
+  `list_bound_files`/`read_bound_file`/`write_bound_file` ile ses DOSYASINI aramaya/okumaya/yazmaya
+  kalkıp boşa turlar harcayabiliyordu (arayüz testinde görüldü). Artık ses eki olan turda bu üç
+  araç sunulmaz (kullanıcı açıkça dosya istemedikçe) ve başarılı döküm notuna "dosyayı araçlarla
+  açma, yanıtı doğrudan döküme dayandır" yönlendirmesi eklenir.
 - **Kurulum/güncelleme doğruluk düzeltmeleri.** Betikle (`scripts\install-mamidlabs.ps1`) kurulan
   kopyalarda güncelleme denetimi yerel sürümü okuyabiliyor: `layout` aşaması kaldırma kaydına
   `DisplayVersion` yazar (değer `-AppVersion` ya da `.iss` `MyAppVersion`'dan) ve uygulama içi
@@ -40,14 +42,6 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, s
   düzeltildi, kurulum aşama listesine `asr` ve kullanım satırına `-AppVersion`/`-SkipAudio` eklendi,
   test sayısı/süresi ile MTP kabul oranı gerçek ölçümlere çekildi ve yinelenen/süperseded notlar
   tekilleştirildi.
-
-## [1.0.0] - 2026-10-10
-
-İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms
-penceresinde sohbet, web araması, belge okuma/üretimi, OCR, görsel anlama, görsel üretimi, fotoğraf
-düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-server`), görsel/video
-modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
-DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
 ### Eklenen
 - **Sohbet (yerel + API):** `llama-server` ile yerel sohbet (MAX/FLASH/LITE profilleri; Qwen3.8 27B ve

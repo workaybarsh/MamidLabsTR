@@ -50,7 +50,7 @@ def test_update_available_when_remote_tag_is_newer_than_local():
     out = run_ps(r"""
 function Get-InstalledMamidLabsVersion { '1.0.0' }
 function Invoke-RestMethod {
-    [pscustomobject]@{ tag_name = 'v1.1.0'; assets = @([pscustomobject]@{ name = 'MamidLabs_Setup.exe'; browser_download_url = 'https://example.com/x.exe'; size = 12345 }) }
+    [pscustomobject]@{ tag_name = 'v1.0.1'; assets = @([pscustomobject]@{ name = 'MamidLabs_Setup.exe'; browser_download_url = 'https://example.com/x.exe'; size = 12345 }) }
 }
 $r = Test-MamidLabsUpdateAvailable
 Write-Output ('available:' + $r.available)
@@ -59,7 +59,7 @@ Write-Output ('url:' + $r.downloadUrl)
 Write-Output ('size:' + $r.size)
 """)
     assert "available:True" in out
-    assert "version:1.1.0" in out
+    assert "version:1.0.1" in out
     assert "url:https://example.com/x.exe" in out
     assert "size:12345" in out
 
@@ -91,7 +91,7 @@ def test_missing_setup_asset_is_reported_without_throwing():
     out = run_ps(r"""
 function Get-InstalledMamidLabsVersion { '1.0.0' }
 function Invoke-RestMethod {
-    [pscustomobject]@{ tag_name = 'v1.1.0'; assets = @([pscustomobject]@{ name = 'source.zip'; browser_download_url = 'https://example.com/x.zip'; size = 1 }) }
+    [pscustomobject]@{ tag_name = 'v1.0.1'; assets = @([pscustomobject]@{ name = 'source.zip'; browser_download_url = 'https://example.com/x.zip'; size = 1 }) }
 }
 $r = Test-MamidLabsUpdateAvailable
 Write-Output ('available:' + $r.available)
