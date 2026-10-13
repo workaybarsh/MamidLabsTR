@@ -33,6 +33,11 @@ param(
     [ValidateSet('max', 'flash', 'lite')][string]$Profile = 'lite',
     [string]$Root = (Join-Path $env:LOCALAPPDATA 'Programs\MamidLabs'),
     [string]$Source,
+    # Betik kaldirma kaydina yazilacak surum (MamidLabs-<hash8>\DisplayVersion). Verilmezse
+    # kaynak paketteki packaging\windows\mamidlabs.iss MyAppVersion degeri okunur (surumun
+    # tek kaynagi orasidir; bkz. AGENTS.md). MyAppVersion MAJOR.MINOR.PATCH biciminde
+    # kalmalidir; baska bicim yok sayilir ve DisplayVersion yazilmaz.
+    [string]$AppVersion,
     [switch]$SkipMedia,
     # Ses dökum ortami (venv\asr) medyadan ayridir: -SkipMedia medyayi atlar ama
     # ses yakalamayi atlamaz; yalnizca ses istenmediginde -SkipAudio verilir.
@@ -256,10 +261,53 @@ function Invoke-Preflight {
 }
 
 # ------------------------------------------------------------------- klasorler
+# Surumun tek kaynagi packaging\windows\mamidlabs.iss icindeki MyAppVersion'dir. Betik
+# tabanli kurulumda da ayni deger kaldirma kaydina yazilir; boylece uygulama ici guncelleme
+# denetimi (agent/profile-catalog.ps1 Get-InstalledMamidLabsVersion) betikle kurulmus bir
+# kopyanin surumunu okuyabilir. MyAppVersion MAJOR.MINOR.PATCH biciminde kalmalidir.
+function Get-SourceAppVersion {
+    $iss = Join-Path (Join-Path $Source 'packaging\windows') 'mamidlabs.iss'
+    if (!(Test-Path -LiteralPath $iss -PathType Leaf)) { return $null }
+    $match = [regex]::Match((Get-Content -LiteralPath $iss -Raw), 'MyAppVersion\s+"(\d+\.\d+\.\d+)"')
+    if ($match.Success) { return $match.Groups[1].Value }
+    return $null
+}
+
+# Betigin sahip oldugu program klasorleri kopyalamadan once bosaltilir: repodan silinen
+# dosyalar guncellemede geride kalmasin (Inno ignoreversion / Copy-Item -Force eski dosyayi
+# silmez). Yalnizca program klasorleri; kullanici verisine (settings\, chats\, models\,
+# logs\, outputs\, tools\, venv, ComfyUI) DOKUNULMAZ.
+function Remove-ProgramDir([string]$path) {
+    if (!(Test-Path -LiteralPath $path)) { return }
+    try {
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+    } catch {
+        Write-Warn ('Program klasoru temizlenemedi (eski dosyalar kalabilir): ' + $path + ' -> ' + $_.Exception.Message)
+    }
+}
+
+# Kopyalamadan sonra .iss [Files] ile ayni dislamalari uygular: agent\__pycache__\*, *.pyc
+# ve assets\installer\*. Copy-Item -Exclude ozyinelemeli guvenilir olmadigindan kopya
+# sonrasi temizlenir.
+function Remove-ProgramExcludes([string]$agentDir, [string]$assetsDir) {
+    if ($agentDir -and (Test-Path -LiteralPath $agentDir)) {
+        Get-ChildItem -LiteralPath $agentDir -Recurse -Force -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq '__pycache__' } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+        Get-ChildItem -LiteralPath $agentDir -Recurse -Force -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -eq '.pyc' } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+    }
+    if ($assetsDir) {
+        $installer = Join-Path $assetsDir 'installer'
+        if (Test-Path -LiteralPath $installer) { Remove-Item -LiteralPath $installer -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Invoke-Layout {
     Write-Step 'Klasor duzeni ve program dosyalari'
     $folders = @(
-        'agent', 'scripts', 'assets', 'models', 'logs', 'chats', 'settings',
+        'agent', 'scripts', 'assets', 'requirements', 'models', 'logs', 'chats', 'settings',
         'llama.cpp', 'ComfyUI', 'venv', 'runtime', 'tools',
         'outputs', 'outputs\images', 'outputs\videolar', 'outputs\belgeler',
         'outputs\refs', 'outputs\thumbs', 'outputs\input'
@@ -276,21 +324,49 @@ function Invoke-Layout {
         $_.CommandLine -and $_.CommandLine.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
     if ($running) { throw 'MamidLabs acik; program dosyalari kilitli. Uygulamayi kapatip kurulumu tekrar calistir.' }
 
-    # EULA.txt sihirbazin lisans sayfasinda gosterilir ve .iss [Files] ile kaynak pakete
-    # gomulur; betik tabanli kurulumda da koke ve kurulum-kaynak'e kopyalanmali.
-    foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
-        $from = Join-Path $Source $file
-        if (Test-Path -LiteralPath $from -PathType Leaf) {
-            Copy-Item -LiteralPath $from -Destination (Join-Path $Root $file) -Force
+    # Betigin sahip oldugu program klasorleri kopyalamadan once temizlenir: repodan silinen
+    # dosyalar guncellemede geride kalmasin. Kaynak kokun KENDISI ise (ornegin kurulu kopyadan
+    # -Source verilmeden calistirilirsa) kaynagi silmemek ve kendi uzerine kopyalamamak icin
+    # atlanir. Kaynagin kokun yalnizca ICINDE olmasi (sihirbazin {kok}\kurulum-kaynak paketi)
+    # atlama nedeni DEGILDIR; aksi halde program dosyalari koke hic kopyalanmaz ve taze kurulum
+    # bos kalir. Bu yuzden karsilastirma yalnizca ESITLIKtir (ENG'deki $sameRoot gibi).
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $sourceFull = [IO.Path]::GetFullPath($Source).TrimEnd('\')
+    $sourceInsideRoot = ($sourceFull -ieq $rootFull)
+    if ($sourceInsideRoot) {
+        # Kaynak, kurulum kokunun kendisi (kurulu kopyadan -Source verilmeden calistirilir):
+        # program dosyalari zaten yerinde; ayni yola kopyalama "kendi uzerine yazilamaz"
+        # hatasi verir. Klasorler ve kaldirma kaydi yine tazelenir.
+        Write-Skip 'Kaynak kurulum kokunun kendisi; program dosyalari zaten yerinde'
+    } else {
+        foreach ($folder in @('agent', 'scripts', 'assets', 'requirements')) {
+            Remove-ProgramDir (Join-Path $Root $folder)
         }
-    }
-    foreach ($folder in @('agent', 'scripts', 'assets')) {
-        $from = Join-Path $Source $folder
-        if (Test-Path -LiteralPath $from) {
-            Copy-Item -LiteralPath $from -Destination $Root -Recurse -Force
+
+        # EULA.txt sihirbazin lisans sayfasinda gosterilir ve .iss [Files] ile kaynak pakete
+        # gomulur; betik tabanli kurulumda da koke ve kurulum-kaynak'e kopyalanmali.
+        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
+            $from = Join-Path $Source $file
+            if (Test-Path -LiteralPath $from -PathType Leaf) {
+                Copy-Item -LiteralPath $from -Destination (Join-Path $Root $file) -Force
+            }
         }
+        foreach ($folder in @('agent', 'scripts', 'assets')) {
+            $from = Join-Path $Source $folder
+            if (Test-Path -LiteralPath $from) {
+                Copy-Item -LiteralPath $from -Destination $Root -Recurse -Force
+            }
+        }
+        # requirements kokte de bulunmali: AGENTS.md'deki belgelenen guncelleme komutu
+        # (install-mamidlabs.ps1 -Stage layout, -Source verilmeden) bagimliliklari kokten okur.
+        $requirements = Join-Path $Source 'requirements'
+        if (Test-Path -LiteralPath $requirements) {
+            Copy-Item -LiteralPath $requirements -Destination $Root -Recurse -Force
+        }
+        # .iss [Files] ile ayni dislamalar: agent onbellekleri ve sihirbaz varliklari koke girmez.
+        Remove-ProgramExcludes (Join-Path $Root 'agent') (Join-Path $Root 'assets')
+        Write-Ok ('Program dosyalari kopyalandi -> ' + $Root)
     }
-    Write-Ok ('Program dosyalari kopyalandi -> ' + $Root)
 
     # Sihirbazla kurulmus bir kok, program kaynagini {kok}\kurulum-kaynak altinda da tutar;
     # Inno iptal/geri alma ve yeniden kurulum bunu kullanir. Betik tabanli guncelleme
@@ -298,29 +374,42 @@ function Invoke-Layout {
     # kumesiyle tazelenir. Betikle yapilan kurulumda (klasor yoksa) bosuna olusturulmaz.
     $kaynak = Join-Path $Root 'kurulum-kaynak'
     if (Test-Path -LiteralPath $kaynak -PathType Container) {
-        # Ayni ust dosya listesi (EULA.txt dahil) kaynak pakete de yazilir.
-        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
-            $from = Join-Path $Source $file
-            if (Test-Path -LiteralPath $from -PathType Leaf) { Copy-Item -LiteralPath $from -Destination $kaynak -Force }
-        }
-        foreach ($folder in @('agent', 'scripts', 'requirements')) {
-            $from = Join-Path $Source $folder
-            if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $kaynak -Recurse -Force }
-        }
-        $assets = Join-Path $Source 'assets'
-        if (Test-Path -LiteralPath $assets) {
-            # assets\installer yalnizca sihirbaz derlemesinde kullanilir; .iss da disarida birakir.
-            New-Item -ItemType Directory -Path (Join-Path $kaynak 'assets') -Force | Out-Null
-            Get-ChildItem -LiteralPath $assets -Force | Where-Object { $_.Name -ne 'installer' } | ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $kaynak 'assets') -Recurse -Force
+        # Kaynak paketin KENDISI zaten kaynaksa (sihirbaz: -Source {kok}\kurulum-kaynak) tazeleme
+        # anlamsizdir; ust dosyalari/klasorleri kendi uzerine kopyalamak "kendi uzerine
+        # yazilamaz" hatasi verir ve paketi bosaltip bozardi. Bu durumda tazeleme atlanir.
+        $kaynakFull = [IO.Path]::GetFullPath($kaynak).TrimEnd('\')
+        if ($sourceFull -ine $kaynakFull) {
+            # Repodan silinen dosyalar kaynak pakette de kalmasin diye tazelenen klasorler once
+            # bosaltilir (program klasorleri; kullanici verisi bu pakette tutulmaz).
+            foreach ($folder in @('agent', 'scripts', 'requirements', 'assets')) {
+                Remove-ProgramDir (Join-Path $kaynak $folder)
             }
+            # Ayni ust dosya listesi (EULA.txt dahil) kaynak pakete de yazilir.
+            foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
+                $from = Join-Path $Source $file
+                if (Test-Path -LiteralPath $from -PathType Leaf) { Copy-Item -LiteralPath $from -Destination $kaynak -Force }
+            }
+            foreach ($folder in @('agent', 'scripts', 'requirements')) {
+                $from = Join-Path $Source $folder
+                if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $kaynak -Recurse -Force }
+            }
+            $assets = Join-Path $Source 'assets'
+            if (Test-Path -LiteralPath $assets) {
+                # assets\installer yalnizca sihirbaz derlemesinde kullanilir; .iss da disarida birakir.
+                New-Item -ItemType Directory -Path (Join-Path $kaynak 'assets') -Force | Out-Null
+                Get-ChildItem -LiteralPath $assets -Force | Where-Object { $_.Name -ne 'installer' } | ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $kaynak 'assets') -Recurse -Force
+                }
+            }
+            # .iss ile ayni dislamalar kaynak pakette de uygulanir.
+            Remove-ProgramExcludes (Join-Path $kaynak 'agent') (Join-Path $kaynak 'assets')
+            $doc = Join-Path $Source 'docs\kurulum.md'
+            if (Test-Path -LiteralPath $doc -PathType Leaf) {
+                New-Item -ItemType Directory -Path (Join-Path $kaynak 'docs') -Force | Out-Null
+                Copy-Item -LiteralPath $doc -Destination (Join-Path $kaynak 'docs\kurulum.md') -Force
+            }
+            Write-Ok ('Kurulum kaynak paketi tazelendi -> ' + $kaynak)
         }
-        $doc = Join-Path $Source 'docs\kurulum.md'
-        if (Test-Path -LiteralPath $doc -PathType Leaf) {
-            New-Item -ItemType Directory -Path (Join-Path $kaynak 'docs') -Force | Out-Null
-            Copy-Item -LiteralPath $doc -Destination (Join-Path $kaynak 'docs\kurulum.md') -Force
-        }
-        Write-Ok ('Kurulum kaynak paketi tazelendi -> ' + $kaynak)
     }
 
     # Masaustu kisayolu: cift tikla ac, konsol penceresi acmadan calisir. MamidLabs.lnk
@@ -355,18 +444,36 @@ function Invoke-Layout {
     # Ayarlar > Uygulamalar listesinde gorunur; "Kaldir" uninstall-mamidlabs.ps1'i calistirir.
     if ($NoUninstallEntry) { return }
     try {
-        $key = Join-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' (Get-UninstallKeyName $Root)
-        $uninstaller = Join-Path $Root 'scripts\uninstall-mamidlabs.ps1'
-        $command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '" -Root "' + $Root + '"'
-        New-Item -Path $key -Force | Out-Null
-        $values = @{
-            DisplayName = 'MamidLabs (' + $Root + ')'
-            Publisher = 'workaybarsh'; InstallLocation = $Root; UninstallString = $command
-            DisplayIcon = (Join-Path $Root 'assets\icons\mamidlabs.ico'); URLInfoAbout = 'https://github.com/workaybarsh/MamidLabsTR'
+        $version = if ($AppVersion) { $AppVersion } else { Get-SourceAppVersion }
+        $uninstallBase = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+        # Sihirbaz (Inno) bu kok icin zaten {AppId}_is1 kaydini yazdiysa ikinci bir betik
+        # kaydi acma; aksi halde Ayarlar > Uygulamalar'da mukerrer MamidLabs girdisi gorunur.
+        $wizardOwnsThisRoot = $false
+        foreach ($item in @(Get-ChildItem -LiteralPath $uninstallBase -ErrorAction SilentlyContinue)) {
+            if ($item.PSChildName -notlike '*_is1') { continue }
+            $props = Get-ItemProperty -LiteralPath $item.PSPath -ErrorAction SilentlyContinue
+            if (!$props -or ![string]$props.InstallLocation) { continue }
+            try { $location = [IO.Path]::GetFullPath([string]$props.InstallLocation).TrimEnd('\') } catch { continue }
+            if ($location -ieq $rootFull) { $wizardOwnsThisRoot = $true; break }
         }
-        foreach ($name in $values.Keys) { Set-ItemProperty -Path $key -Name $name -Value $values[$name] }
-        foreach ($name in @('NoModify', 'NoRepair')) { Set-ItemProperty -Path $key -Name $name -Value 1 -Type DWord }
-        Write-Ok 'Windows kaldirma kaydi yazildi (Ayarlar > Uygulamalar > MamidLabs)'
+        if ($wizardOwnsThisRoot) {
+            Write-Skip 'Windows kaldirma kaydi sihirbaz tarafindan zaten yazilmis'
+        } else {
+            $key = Join-Path $uninstallBase (Get-UninstallKeyName $Root)
+            $uninstaller = Join-Path $Root 'scripts\uninstall-mamidlabs.ps1'
+            $command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $uninstaller + '" -Root "' + $Root + '"'
+            New-Item -Path $key -Force | Out-Null
+            $values = @{
+                DisplayName = 'MamidLabs (' + $Root + ')'
+                Publisher = 'workaybarsh'; InstallLocation = $Root; UninstallString = $command
+                DisplayIcon = (Join-Path $Root 'assets\icons\mamidlabs.ico'); URLInfoAbout = 'https://github.com/workaybarsh/MamidLabsTR'
+            }
+            # Uygulama ici guncelleme denetimi bu surumu {AppId}_is1 yoksa buradan okur.
+            if ($version) { $values['DisplayVersion'] = $version }
+            foreach ($name in $values.Keys) { Set-ItemProperty -Path $key -Name $name -Value $values[$name] }
+            foreach ($name in @('NoModify', 'NoRepair')) { Set-ItemProperty -Path $key -Name $name -Value 1 -Type DWord }
+            Write-Ok 'Windows kaldirma kaydi yazildi (Ayarlar > Uygulamalar > MamidLabs)'
+        }
     } catch {
         Write-Warn ('Kaldirma kaydi yazilamadi: ' + $_.Exception.Message)
     }

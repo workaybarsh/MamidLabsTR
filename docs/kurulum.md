@@ -103,6 +103,9 @@ ayarlar ve modeller korunur.
    %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File C:\MamidLabs-src\scripts\install-mamidlabs.ps1 -Profile lite
    ```
    - `settings\` ve `chats\` klasörlerine dokunulmaz; program dosyaları yeniden kopyalanır.
+   - Yalnızca program dosyalarını tazelemek için tam kurulum yerine
+     `install-mamidlabs.ps1 -Stage layout` yeterlidir: repodan silinen dosyalar temizlenir,
+     `requirements\` köke kopyalanır ve kaldırma kaydına sürüm yazılır.
    - ComfyUI ve ComfyUI-GGUF sabit sürümde değilse sabit sürüme getirilir. Yerel değişiklikler
      önce `%LOCALAPPDATA%\Programs\MamidLabs\tools\yedek\` altına `.patch` olarak yedeklenir.
 3. Uygulamada **Eksikleri indir** ile yeni model dosyalarını tamamlayın.
@@ -176,7 +179,7 @@ Kaldırıcı Windows PowerShell 5.1 ile çalışır; gömülü PowerShell 7 de s
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\manage-qwen.ps1 -Action stop
 ```
 
-`-Action` değerleri: `start`, `switch`, `stop`. Profil değerleri: `max`, `flash`, `lite`.
+`-Action` değerleri: `start`, `switch`, `stop`, `closecomfy`. Profil değerleri: `max`, `flash`, `lite`.
 
 ## Sorun giderme
 

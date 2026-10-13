@@ -1,9 +1,10 @@
 """VRAM'e gore is kabulu (manage-qwen.ps1 Test-MemoryBudget).
 
-Gereken bellek = model dosyasi (+ LITE'ta projektor) + guvenlik payi. Bos VRAM
-yetmezse once bostaki ComfyUI kapatilip yeniden olculur; yine yetmezse llama-server
-baslatilmaz ve kullaniciya acik bir hata gosterilir. Aksi halde katmanlar Windows'un
-paylasilan bellegine tasar ve sohbet kat kat yavaslar.
+Gereken bellek = model dosyasi + guvenlik payi; gorsel projektoru (mmproj) artik
+uc profilde de CPU'da (--no-mmproj-offload) oldugundan VRAM butcesine girmez. Bos
+VRAM yetmezse once bostaki ComfyUI kapatilip yeniden olculur; yine yetmezse
+llama-server baslatilmaz ve kullaniciya acik bir hata gosterilir. Aksi halde
+katmanlar Windows'un paylasilan bellegine tasar ve sohbet kat kat yavaslar.
 """
 from pathlib import Path
 
@@ -82,10 +83,11 @@ def test_start_action_accepts_skip_memory_check_switch():
 
 
 def test_memory_budget_tolerates_small_overflow_for_mtp_grown_lite():
-    """MTP basligi eklenince LITE modeli ~464 MiB buyur; 8 GB kartta kontrol artik
-    'sigmaz' deyip modeli hic acmiyordu ("Model islemi basarisiz"). Gercekte llama.cpp
-    buyuk gomme tensorunu CPU'da tutup kucuk asimi kaldirir (olculdu: ~165 MiB asimda
-    model yuklendi, ~41 tok/s). LITE'ta kucuk asim engellenmemeli."""
+    """MTP basligi LITE modelini ~464 MiB buyutur; 8 GB kartta kontrol 'sigmaz' deyip
+    modeli hic acmiyordu ("Model islemi basarisiz"). Gercekte llama.cpp buyuk gomme
+    tensorunu CPU'da tutup kucuk asimi kaldirir. Projektor CPU'ya alininca (~636 MiB
+    VRAM bosalir) model 7249/8188 MiB'ye yerlesir (708 MiB bos) ve asim olmadan yuklenir;
+    LITE'ta kucuk asim yine de engellenmemeli."""
     manager = read_text("scripts/manage-qwen.ps1")
     assert "$toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }" in manager
     assert "if ($freeMiB -lt ($neededMiB - $toleranceMiB))" in manager
@@ -109,10 +111,10 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
 
 def test_max_budget_fits_a_16_gb_card():
     """RTX 5060 Ti 16 GB'ta ölçüldü: temiz GPU'da (ComfyUI kapalı) 27B model 15244 MiB
-    boş VRAM ile yüklendi ve ~45 tok/s çalıştı; dosya 14600 MiB olduğundan gerçek pay
-    ~600 MiB'dır. Eski 800/1000 MiB paylar (eşik 15400/15600) bu durumu yanlış reddedip
-    "Model işlemi başarısız" hatası veriyordu. Asıl koruma paydan çok ComfyUI'nin her
-    zaman kapatılmasıdır: başka bir CUDA bağlamı varken 15290 MiB boş VRAM bile taşıp
+    boş VRAM ile yüklendi ve ~44–58 tok/s (MTP açık) çalıştı; dosya 14600 MiB olduğundan
+    gerçek pay ~600 MiB'dır. Eski 800/1000 MiB paylar (eşik 15400/15600) bu durumu yanlış
+    reddedip "Model işlemi başarısız" hatası veriyordu. Asıl koruma paydan çok ComfyUI'nin
+    her zaman kapatılmasıdır: başka bir CUDA bağlamı varken 15290 MiB boş VRAM bile taşıp
     ~6 tok/s'ye düşürüyordu."""
     import re
 
@@ -122,7 +124,7 @@ def test_max_budget_fits_a_16_gb_card():
     overhead = int(match.group(2))  # else dali = MAX/FLASH
     assert overhead == 600
     max_model_mib = 14600
-    measured_free_ok = 15244  # temiz GPU'da 45 tok/s ile yuklendi
+    measured_free_ok = 15244  # temiz GPU'da ~44-58 tok/s (MTP acik) ile yuklendi
     needed = max_model_mib + overhead  # 15200
     # Model bu boş değerle yüklenebilmeli...
     assert needed <= measured_free_ok
@@ -145,10 +147,16 @@ def test_lite_budget_is_not_tightened_by_the_max_fix():
     assert "{ 1024 } else { 0 }" in tol
 
 
-def test_max_projector_runs_on_cpu_and_stays_out_of_vram_budget():
-    """mmproj F16 GPU'da 1133 MiB ister; dil modeliyle birlikte 16 GB karti
-    tasirip paylasilan bellege dusuruyordu (sohbet 19,6 tok/s, gorsel 56 sn).
-    CPU'da: sohbet 24,8 tok/s, gorsel 30 sn."""
+def test_projector_runs_on_cpu_and_stays_out_of_vram_budget():
+    """MAX/FLASH: mmproj F16 GPU'da 1133 MiB ister; dil modeliyle birlikte 16 GB
+    karti tasirip paylasilan bellege dusuruyordu (sohbet 19,6 tok/s, gorsel 56 sn).
+    CPU'da: sohbet 24,8 tok/s, gorsel 30 sn. LITE: Q8_0 mmproj 595 MiB GPU'da
+    8 GB karta sigmiyor ve buyuk gomme tensorunu CPU'ya itiyordu; CPU'da VRAM
+    7249/8188 MiB'ye iner (708 MiB bos), sohbet hizi degismez. Bu yuzden UC
+    profilde de mmproj CPU'da calisir ve VRAM butcesine girmez."""
     manager = read_text("scripts/manage-qwen.ps1")
-    assert "'--mmproj', $projector, '--no-mmproj-offload'" in manager
-    assert "$profileName -eq 'lite' -and $projectorPath" in manager
+    # Iki profil blogunnda da --no-mmproj-offload kullaniliyor (LITE + MAX/FLASH).
+    assert manager.count("'--mmproj', $projector, '--no-mmproj-offload'") >= 2
+    # Lite butcesi artik projektoru model boyutuna EKLEMEZ (CPU'da, VRAM'e girmez).
+    assert "$profileName -eq 'lite' -and $projectorPath" not in manager
+    assert "$modelMiB += [math]::Ceiling((Get-Item -LiteralPath $projectorPath).Length / 1MB)" not in manager

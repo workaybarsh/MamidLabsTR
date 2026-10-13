@@ -27,14 +27,15 @@ if ($Action -notin @('stop', 'closecomfy') -and (Test-Path -LiteralPath $setting
 
 if ($Profile -eq 'lite') {
     # Varsayilan Q5_K_M'dir (~6,6 GB). Gercek makinede (RTX 4060 Laptop, 8 GB)
-    # 32K baglamla olculdu: 7500 MiB VRAM kullanir, ~450-500 MiB bos kalir -
-    # dar ama kullanicinin kabul ettigi bir pay (diger MAX/FLASH profilleri
-    # baska makinelerde benzer paylarla calisiyor). llama.cpp kendi otomatik
-    # sigdirma kontrolu bunu "tam sigmiyor" diye isaretler ama --gpu-layers 99
-    # elle zorlandigi icin yine de yukler; performans dusmez (olculen ~35 tok/s,
-    # Q4'ten yalnizca ~%13 daha yavas). Daha rahat bir pay icin
-    # settings/api.json icindeki liteModel alaniyla Q4_K_M'e (~5,7 GB) donulebilir;
-    # Q6_K (~7,4 GB) 8 GB kartta hic sigmaz (dosyanin kendisi bos VRAM'i asar).
+    # 32K baglamla, gorsel projektoru CPU'da olculdu: 7249 MiB VRAM kullanir,
+    # 708 MiB bos kalir (mmproj GPU'dayken 7885 MiB / ~72 MiB bos idi) - kullanicinin
+    # kabul ettigi bir pay (diger MAX/FLASH profilleri baska makinelerde benzer
+    # paylarla calisiyor). llama.cpp kendi otomatik sigdirma kontrolu bunu tam
+    # sinirda isaretleyebilir ama --gpu-layers 99 elle zorlandigi icin yine de
+    # yukler; sohbet hizi degismez (icerige bagli ~40-79 tok/s). Daha rahat bir pay
+    # icin settings/api.json icindeki liteModel alaniyla Q4_K_M'e (~5,7 GB)
+    # donulebilir; Q6_K (~7,4 GB) 8 GB kartta hic sigmaz (dosyanin kendisi bos
+    # VRAM'i asar).
     $liteFile = 'Huihui-Qwen3.5-9B-abliterated.i1-Q5_K_M.gguf'
     $liteCtx = '32768'
     # Dusunme ACIK ve SINIRSIZDIR: LITE'a düşünme bütçesi konmaz, isi bitene kadar
@@ -83,18 +84,18 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     } catch { return }  # nvidia-smi beklenmedik cikti verirse kontrolu atla, kurulumu engelleme.
     if ($freeMiB -le 0) { return }
     $modelMiB = [math]::Ceiling((Get-Item -LiteralPath $modelPath).Length / 1MB)
-    # Lite'ta gorsel projektoru modelle birlikte VRAM'e yuklenir; MAX/FLASH'ta
-    # --no-mmproj-offload ile CPU'da calisir, VRAM butcesine girmez.
-    if ($profileName -eq 'lite' -and $projectorPath -and (Test-Path -LiteralPath $projectorPath -PathType Leaf)) {
-        $modelMiB += [math]::Ceiling((Get-Item -LiteralPath $projectorPath).Length / 1MB)
-    }
+    # Gorsel projektoru (mmproj) artik UC profilde de CPU'da calisir
+    # (--no-mmproj-offload), bu yuzden VRAM butcesine girmez. LITE'ta Q8_0 mmproj
+    # (595 MiB) 8 GB karta sigmadigi ve llama.cpp'yi buyuk gomme tensorunu CPU'ya
+    # itmeye zorlayip VRAM'i sinirdan tasirdigi icin CPU'ya alindi: ~636 MiB VRAM
+    # bosalir (olcum: 7249/8188 MiB, 708 MiB bos), sohbet hizi degismez
+    # (80/61/40 tok/s - mmproj GPU'dayken de ayniydi), gorsel okuma biraz yavaslar.
     # Gercek olcum (Lite, Q5_K_M, 32K baglam, RTX 4060 Laptop, varsayilan profil):
-    # 6220 MiB'lik dosya yuklendiginde toplam VRAM kullanimi ~7500 MiB'ye ulasti,
-    # kartta ~450-500 MiB bos kaldi - dar ama kullanicinin acikca kabul ettigi bir
-    # pay (baska makinelerde MAX/FLASH de benzer paylarla calisiyor). Bu yuzden
-    # Lite icin pay kucuk tutuldu: cok daha genis bir pay, ayni ambiyans kosullarinda
-    # (tarayici + masaustu ~1,5 GB VRAM tutarken) varsayilan profili sessizce
-    # reddedip kullaniciyi calisan bir kurulumdan mahrum birakirdi.
+    # projektor CPU'ya alindiktan sonra toplam VRAM kullanimi 7249 MiB'dir (708 MiB
+    # bos); mmproj GPU'dayken 7885 MiB idi (~72 MiB bos). Pay yine de kucuk tutuldu:
+    # cok daha genis bir pay, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB
+    # VRAM tutarken) varsayilan profili sessizce reddedip kullaniciyi calisan bir
+    # kurulumdan mahrum birakirdi.
     #
     # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, MTP acik, llama.cpp):
     # temiz GPU'da (ComfyUI kapali) 14600 MiB'lik dosya GPU'da ~15170-15650 MiB yer
@@ -111,15 +112,16 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     #
     # LITE'ta pay BILEREK kucuk (300 MiB) ve tolerans genistir: 8 GB kartta model zaten
     # sinirda calisir; llama.cpp buyuk gomme tensorunu CPU'da tutup kucuk asimi sorunsuz
-    # kaldirir ve ~41 tok/s ile calismaya devam eder (bkz. asagidaki tolerans notu). Pay
-    # burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB VRAM tutarken)
-    # LITE'i bos yere reddedip calisan kurulumu bozardi.
+    # kaldirir ve sohbet hizini korur (icerige bagli ~40-79 tok/s; bkz. asagidaki tolerans
+    # notu). Pay burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB
+    # VRAM tutarken) LITE'i bos yere reddedip calisan kurulumu bozardi.
     $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 600 }
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
-    # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi eklenince dosya ~464 MiB
-    # buyudu; 8 GB kartta ~165 MiB asimda model yine yuklendi ve ~41 tok/s ile calisti.
-    # Bu yuzden LITE icin kucuk asim engellenmez; LITE'ta tolerans genis tutulur.
+    # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi dosyayi ~464 MiB buyutur; 8 GB
+    # kartta model sinirda kalir, ama projektor CPU'da oldugundan artik 7249/8188 MiB'ye
+    # yerlesir (708 MiB bos) ve asim olusmaz. Yine de LITE icin tolerans genis tutulur:
+    # ambiyans/ASR gecisi sirasinda olusabilecek kucuk asim engellenmez.
     # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: 27B model zaten kartin sinirinda calisir
     # ve bir CUDA baglami (ComfyUI) acikken kucuk bir asim bile bir bileseni paylasilan
     # bellege tasiyip uretimi ~6 tok/s'ye dusurur. Bu yuzden olcumden once ComfyUI her
@@ -276,7 +278,7 @@ try {
     # ComfyUI yasam dongusu. VARSAYILAN KAPALI: ComfyUI yalnizca gorsel/video uretimi
     # sirasinda calisir, is bitince ve dil modeli yuklenmeden once kapatilir — bosta ne VRAM
     # ne de RAM tutar. Gerekce: LITE hedef makinesi 8 GB VRAM / 16 GB RAM'dir; 9B model zaten
-    # kartin sinirinda (~7,5 GB), ComfyUI baglami (~300 MiB) + masaustu eklenince tasar. 16 GB'lik
+    # kartin sinirinda (~7,1 GB), ComfyUI baglami (~300 MiB) + masaustu eklenince tasar. 16 GB'lik
     # bir kartta LITE ile medya isleri arasinda acik tutmak isteyen `settings/api.json` ->
     # `comfyKeepAlive=true` yazar (o zaman ~27 sn yeniden acilma olmaz). MAX/FLASH (27B) her
     # durumda kapatir. API modunda bu betik cagrilmaz; ComfyUI medya sonrasi acik kalir.
@@ -320,10 +322,11 @@ try {
     # değerleri hâlâ low/xhigh olarak gönderilir.
     $reasoningEffort = if ($Profile -eq 'max') { 'xhigh' } else { 'low' }
     if ($Profile -eq 'lite') {
-        # 8 GB VRAM butcesi: ~5,7 GB agirlik + q4_0 KV cache + hesap tamponu.
-        # Windows masaustu de 0,5-1 GB VRAM tuttugu icin varsayilan 32K baglamdir
-        # ($liteCtx yukarida, settings.liteContext ile degistirilebilir);
-        # batch kucultulerek tepe VRAM ayrica asagi cekilir.
+        # 8 GB VRAM butcesi: ~6,8 GB agirlik + q4_0 KV cache + hesap tamponu.
+        # Gorsel projektoru CPU'da (--no-mmproj-offload): Q8_0 mmproj (595 MiB)
+        # GPU'da 8 GB karta sigmiyordu. Windows masaustu de 0,5-1 GB VRAM tuttugu
+        # icin varsayilan 32K baglamdir ($liteCtx yukarida, settings.liteContext
+        # ile degistirilebilir); batch kucultulerek tepe VRAM ayrica asagi cekilir.
         $serverArgs = @(
             '--model', $model,
             '--alias', $desiredAlias, '--host', '127.0.0.1', '--port', '8080',
@@ -335,7 +338,10 @@ try {
             '--metrics', '--no-context-shift'
         )
         # Projektor yalnizca klasorde varsa eklenir; yoksa Lite metin-only calisir.
-        if ($projector) { $serverArgs += @('--mmproj', $projector, '--image-min-tokens', '512') }
+        # --no-mmproj-offload: Q8_0 mmproj (595 MiB) 8 GB karta sigmiyor ve buyuk
+        # gomme tensorunu CPU'ya iterek VRAM'i sinirdan tasiriyordu; CPU'da ~636 MiB
+        # VRAM bosalir, sohbet hizi degismez, gorsel okuma yalnizca biraz yavaslar.
+        if ($projector) { $serverArgs += @('--mmproj', $projector, '--no-mmproj-offload', '--image-min-tokens', '512') }
     }
     else {
         # Gorsel projektoru CPU'da (--no-mmproj-offload). mmproj F16 GPU'da agirlik +

@@ -71,7 +71,8 @@ Varsayılan kurulum kökü `%LOCALAPPDATA%\Programs\MamidLabs`.
 
 ```
 agent\ scripts\ assets\          program dosyaları (her kurulumda kaynaktan yeniden kopyalanır)
-qwen-desktop.ps1 launch-qwen-desktop.vbs README.md LICENSE
+requirements\                    Python paket listeleri (kökten güncelleme komutu buradan okur)
+qwen-desktop.ps1 launch-qwen-desktop.vbs README.md LICENSE EULA.txt
 runtime\pwsh\pwsh.exe            gömülü PowerShell 7.6.6 (uygulama YALNIZCA bununla çalışır)
 llama.cpp\b10998\llama-server.exe CUDA 13.4 yapısı
 venv\app\                        uygulama Python'u (araçlar, HF, belge)
@@ -112,7 +113,7 @@ kurulum-kaynak\                  sihirbazın açtığı kaynak paket
 | Süreç | Port | Sahibi | Not |
 |---|---|---|---|
 | `llama-server.exe` | 8080 | `scripts/manage-qwen.ps1` | Mutex `Local\QwenLocalModelControl`; `--alias` ile profil tanınır |
-| ComfyUI (`venv\imagegen\Scripts\python.exe ComfyUI\main.py`) | 8188 | `agent/media-model-swap.ps1` | İşten sonra açık kalır, yalnızca modelleri boşaltır |
+| ComfyUI (`venv\imagegen\Scripts\python.exe ComfyUI\main.py`) | 8188 | `agent/media-model-swap.ps1` | Varsayılan: iş bitince kapatılır (boşta VRAM/RAM tutmaz); `comfyKeepAlive=true` (LITE) ile açık kalır |
 | Uygulama | — | `pwsh.exe … qwen-desktop.ps1` | İşçiler aynı süreçte `Start-ThreadJob` runspace'leri |
 
 **Profiller** (`manage-qwen.ps1`, alias'lar `model-registry.ps1` ile birebir aynı olmalı):
@@ -121,7 +122,7 @@ kurulum-kaynak\                  sihirbazın açtığı kaynak paket
 |---|---|---|---|
 | MAX | `qwen3.8-27b-max` | Qwen3.8 27B IQ4_XS + mmproj F16 | `--no-mmproj-offload` (projektör CPU'da), ctx 32768, predict 8192, `--reasoning-effort xhigh`, q4_0 KV, batch 512/256, `--spec-type draft-mtp` |
 | FLASH | `qwen3.8-27b-flash` | aynı dosyalar | predict 8192, `--reasoning-effort low`, `--spec-type draft-mtp` |
-| LITE | `qwen3.5-9b-lite` | Huihui-Qwen3.5 9B Q5_K_M + mmproj Q8_0 | ctx 32768, predict **8192** (düşünme tokenları çıktı bütçesini paylaştığından 3072 küçüktü), düşünme açık ve **sınırsız** (`--reasoning-budget` verilmez), batch 256/128, projektör GPU'da, `--spec-type draft-mtp` (indirmede eklenir). Sistem istemi yeterince düşünüp **YANITINI DE YAZMAYI** söyler (düşünmeyi sınırsızca uzatmaya teşvik etmez); zor soruda düşünme bütçeyi yese bile görünür yanıt **düşünme-kapalı kurtarmayla** (`enable_thinking=$false`) garanti edilir |
+| LITE | `qwen3.5-9b-lite` | Huihui-Qwen3.5 9B Q5_K_M + mmproj Q8_0 | ctx 32768, predict **8192** (düşünme tokenları çıktı bütçesini paylaştığından 3072 küçüktü), düşünme açık ve **sınırsız** (`--reasoning-budget` verilmez), batch 256/128, projektör CPU'da (`--no-mmproj-offload`), `--spec-type draft-mtp` (indirmede eklenir). Sistem istemi yeterince düşünüp **YANITINI DE YAZMAYI** söyler (düşünmeyi sınırsızca uzatmaya teşvik etmez); zor soruda düşünme bütçeyi yese bile görünür yanıt **düşünme-kapalı kurtarmayla** (`enable_thinking=$false`) garanti edilir |
 
 **MTP (Multi-Token Prediction).** Qwen3.8 27B GGUF'u gömülü bir MTP/nextn draft başlığı taşır
 (`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`); LITE'ın 9B GGUF'u ise bu başlığı dönüşümde
@@ -139,8 +140,9 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası (+ LITE'ta mmproj) + **600 MiB**
-(LITE'ta 300 MiB). **ComfyUI yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
+**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası + **600 MiB**
+(LITE'ta 300 MiB); görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
+olduğundan bütçeye girmez. **ComfyUI yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
 **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil modeli yüklenmeden önce
 kapatılır — böylece **boşta ne VRAM ne de RAM tutar** (boşta ComfyUI ~300 MiB CUDA bağlamı + süreç
 RAM'i tutuyordu; `comfyKeepAlive` varsayılanı `false`). Medya gerektiğinde yeniden açılır (~27 sn).
@@ -276,6 +278,15 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
   olur. Paket boyutları doğrulanır. `-Root` varsayılanı `%LOCALAPPDATA%\Programs\MamidLabs`.
   `layout`, Inno ile kurulmuş bir kökte varsa `kurulum-kaynak` (sihirbazın açtığı kaynak paketi;
   iptal/geri alma ve yeniden kurulum için) da tazeler; betik kurulumunda oluşturmaz.
+  `layout` ayrıca sahip olduğu program klasörlerini (`agent\`, `scripts\`, `assets\`, `requirements\`)
+  **kopyalamadan önce boşaltır**: repodan silinen dosyalar güncellemede geride kalmaz (Inno
+  `ignoreversion` / `Copy-Item -Force` eski dosyayı silmez). `agent\__pycache__\*`, `*.pyc` ve
+  `assets\installer\*` .iss ile aynı biçimde dışarıda bırakılır. `requirements\` artık kökte de
+  bulunur; böylece `-Source` verilmeden (kurulu kopyadan) çalıştırılan güncelleme komutu
+  bağımlılıkları bulur. Kaldırma kaydına `DisplayVersion` yazılır (değer, verilmezse kaynak
+  paketteki `.iss` `MyAppVersion`'dan okunur; `-AppVersion` ile geçersiz kılınabilir) ve bu köke
+  işaret eden bir Inno `{AppId}_is1` kaydı varsa ikinci bir `MamidLabs-<hash8>` kaydı **açılmaz**
+  (mükerrer girdi olmaz).
 - Sabit sürümler: PowerShell 7.6.6, llama.cpp b10998 (CUDA 13.4), ComfyUI `b0f4b7b`, ComfyUI-GGUF
   `6ea2651`, comfyui-krea2edit `86f886d`, torch cu130.
 - Disk eşikleri (`profile-report.ps1` ve `install-mamidlabs.ps1`, birebir aynı): LITE 58 GB,
@@ -308,7 +319,9 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
 - **Uygulama içinden güncelleme:** Profiller penceresinde "Bu profile geç"in yanında "Güncellemeleri
   denetle" düğmesi (`agent/profile-catalog.ps1` `Test-MamidLabsUpdateAvailable`,
   `Get-InstalledMamidLabsVersion`). GitHub `releases/latest` sürümünü, Inno'nun kaldırma kaydındaki
-  (`{AppId}_is1\DisplayVersion`) yerel sürümle karşılaştırır. Üç hâlli: boşta → denetle →
+  (`{AppId}_is1\DisplayVersion`) yerel sürümle karşılaştırır. Inno kaydı yoksa (betik tabanlı
+  kurulum) betiğin yazdığı `MamidLabs-<hash8>` kaydındaki `DisplayVersion`'a, `InstallLocation`/
+  `DisplayName` ile bu kuruluma ait olduğu doğrulanarak düşülür. Üç hâlli: boşta → denetle →
   güncelleme varsa "Şimdi güncelle" (kurulum dosyasını `%TEMP%`'e indirir, boyutunu doğrular,
   başlatır ve **ana pencereyi kapatır**, tuzak 21); yoksa "Güncelsiniz" ya da hata metni, 3 sn
   sonra kendini sıfırlar. Sonuç ayrıca pencerenin durum satırına yazılır. Yerel sürüm okunamazsa
@@ -343,7 +356,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~320 test, ~115 sn; ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~435 test, ~170 sn; ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -485,7 +498,9 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
 - [ ] ENG deposunda da aynı değişiklik gerekiyor mu? Tanımlayıcılar orada İngilizcedir.
 - [ ] Sürüm çıkarılacaksa: `.iss` `MyAppVersion`, CHANGELOG bölümü ve `v<sürüm>` etiketi aynı mı?
 - [ ] Kurulu kopyayı güncellemek için uygulamayı kapat, sonra
-      `install-mamidlabs.ps1 -Stage layout` çalıştır.
+      `install-mamidlabs.ps1 -Stage layout` çalıştır. Bu komut artık `-Source` verilmeden de
+      çalışır (`requirements\` kökte); program klasörleri kopyalamadan önce boşaltıldığı için
+      repodan silinen dosyalar geride kalmaz ve kaldırma kaydına sürüm yazılır.
 
 ## 16. Değişiklik günlüğü
 
@@ -493,6 +508,9 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-13 | **Kurulum/güncelleme doğruluk boşlukları (altı düzeltme).** (1) **Betik kurulumu ⇄ uygulama içi güncelleme uyumu:** `Invoke-Layout` kaldırma kaydına `DisplayVersion` yazar (değer `-AppVersion` ya da kaynak paketteki `.iss` `MyAppVersion`'dan, `MyAppVersion "x.y.z"`; yalnızca MAJOR.MINOR.PATCH kabul edilir) ve `Get-InstalledMamidLabsVersion` Inno `{AppId}_is1` kaydı yoksa betiğin `MamidLabs-<hash8>` kaydına `InstallLocation`/`DisplayName` eşleşmesiyle düşer. (2) **Bayat dosya temizliği:** `layout` sahip olduğu program klasörlerini (`agent\`, `scripts\`, `assets\`, `requirements\`) kopyalamadan önce boşaltır (kaynak kökün kendisiyse — kurulu kopyadan `-Source` verilmeden çalıştırılırsa — atlanır; kaynağın kökün yalnızca **içinde** olması, yani sihirbazın `{kok}\kurulum-kaynak` paketi, atlama nedeni **değildir**, aksi halde taze kuruluma program dosyaları hiç kopyalanmazdı); aynısı `kurulum-kaynak` tazelemesi için geçerlidir, böylece repodan silinen dosyalar (Inno `ignoreversion`, `Copy-Item -Force`) kalıcı olmaz. Kullanıcı verisine (`settings\`, `chats\`, `models\`, `logs\`, `outputs\`, `tools\`, venv, `ComfyUI`) dokunulmaz. (3) **`requirements\` kökte:** kök klasör+kopya listesine eklendi; belgelenen `install-mamidlabs.ps1 -Stage layout` komutu artık `-Source` verilmeden de çalışır. (4) **`.iss` ⇄ betik kopya uyumu:** `agent\__pycache__\*`, `*.pyc` ve `assets\installer\*` betik kopyasında ve kaynak pakette de dışlanır. (5) **Mükerrer kayıt engeli:** bu köke işaret eden bir `_is1` kaydı varsa betik ikinci kaydı açmaz; `MyAppVersion` yalnızca `x.y.z` iken okunur (aksi halde `DisplayVersion` yazılmaz — sessiz bozulma yerine). (6) **Kaldırıcı:** `EULA.txt` ve `requirements` `$programEntries`'e eklendi; `.iss` `[UninstallDelete]`'e `EULA.txt` ve `requirements` eklendi, böylece kök gerçekten silinir. | scripts/install-mamidlabs.ps1, scripts/uninstall-mamidlabs.ps1, agent/profile-catalog.ps1, packaging/windows/mamidlabs.iss, tests/test_uninstall.py, tests/test_install_update_gaps.py, tests/test_profile_update_check.py, AGENTS.md, CHANGELOG.md |
+| 2026-10-13 | **LITE görsel projektörü (mmproj) CPU'ya taşındı; model artık 8 GB VRAM'e sığıyor.** LITE'ta Q8_0 mmproj (595 MiB) GPU'da 8 GB karta sığmıyor, llama.cpp'yi büyük gömme tensorünü CPU'ya itmeye zorlayıp VRAM'i sınırdan taşırıyordu (7885/8188 MiB, yalnızca 72 MiB boş). LITE sunucu argümanlarına `--no-mmproj-offload` eklendi ve `Test-MemoryBudget` LITE'ta artık projektör boyutunu model dosyasına eklemiyor; böylece üç profilde de mmproj CPU'da çalışır ve VRAM bütçesine girmez. Ölçüm: kullanılan VRAM **7885 → 7249 / 8188 MiB**, boş alan **72 → 708 MiB**; sohbet hızı değişmedi (içeriğe bağlı ~40–79 tok/s, 16 GB'ta ~97), görsel okuma yalnızca projektör CPU'da olduğu için hafifçe yavaşladı (görsel anlama çalışmaya devam eder). | scripts/manage-qwen.ps1, tests/test_lite_profile.py, tests/test_memory_admission.py, docs/teknik-notlar.md, agent/model-registry.ps1, AGENTS.md, CHANGELOG.md |
+| 2026-10-13 | **Doküman tutarlılığı: `docs/teknik-notlar.md` güncel kodla hizalandı.** MTP bölümü düzeltildi: LITE'ın 9B GGUF'u dönüşümde MTP başlığını kaybeder ve indirme sırasında `agent/mtp_inject.py` ile geri eklenir, bu yüzden `--spec-type draft-mtp` LITE'ta da kullanılır (§5 ile aynı). LITE bellek bütçesi **7885/8188 MiB** (mmproj GPU'da) ve hızı **içeriğe bağlı ~40–79 tok/s** (16 GB'ta ~97) olarak güncellendi; LITE satırındaki `reasoning` değeri `low` yerine **sınırsız** yapıldı. ComfyUI yaşam döngüsü `comfyKeepAlive` **varsayılanı `false`** (yalnızca medya üretiminde çalışır, boşta VRAM/RAM tutmaz) olarak düzeltildi; aynı düzeltmeler `README.md`, `docs/kurulum.md` ve `CHANGELOG.md`'ye uygulandı. `agent/profiles.json` MAX/FLASH özet hızları ~42–58 tok/s'ye çekildi; `docs/kurulum.md` `-Action` listesine `closecomfy` eklendi. §12 test sayısı/süresi gerçek değere (~435 test, ~170 sn; 433 geçti, 4 atlandı) çekildi. | docs/teknik-notlar.md, README.md, CHANGELOG.md, docs/kurulum.md, agent/profiles.json, AGENTS.md |
 | 2026-10-12 | **Zor soruda boş görünür yanıt regresyonu düzeltildi: düşünme tüm çıktı bütçesini yiyordu.** Uçtan uca matematik testinde LITE (9B) zor bir integral sorusunda **8192 tokenın tamamını** (~159,7 sn) düşünmeye harcayıp görünür yanıt üretmedi; baloncukta yalnızca "İntegral" kaldı (`logs\qwen-lite.stderr.log`: `eval 159714 ms / 8192 tokens`, `n_tokens 11990`). Kök neden: düşünme "sınırsız", çıktı tavanı `--predict 8192` ve arayüz `maxTokens 8192` **aynı bütçeyi** paylaşır; "adımları İKİ KEZ kontrol et" talimatı düşünmeyi daha da uzatıyordu ve mevcut boş-yanıt yedeği de aynı 8192'ye takılıyordu. (1) **Düşünme-kapalı kurtarma (asıl garanti):** yeni `Set-NoThinkingRequest` istek gövdesine `chat_template_kwargs = @{ enable_thinking = $false }` koyar (LITE `reasoning_effort`u yok saydığı için tek garantili yol); kurtarma mesajına `/no_think` de eklenir, model doğrudan yanıtı yazar. Tetikleyici genişletildi: görünür yanıt **boşsa** VEYA çıktı tavanında kesilip (`finishReason='length'`) kırık kısa metin bıraktıysa kurtarma çalışır. (2) **Sistem istemi yumuşatıldı (TR+ENG):** "en az İKİ KEZ kontrol et" → "kritik adımları tekrar gözden geçir AMA YANITINI DA MUTLAKA YAZ; çok uzun düşünüp yanıtsız kalma"; LITE derin-düşünme satırı da düşünmeyi sınırsızca uzatmaya teşvik etmeyecek biçimde güncellendi. (3) **Bütçe kararı:** düşünme sınırsız olduğundan `--predict`i artırmak yanıtı **garanti etmez**, yalnızca düşünmeyi uzatıp gecikmeyi büyütür (ölçüm: 8192 token = 159,7 sn); bu yüzden (a) yerine (b) [garanti kurtarma] seçildi, KV/bağlam taşması yaratılmadı. Yeni regresyon testleri: `test_empty_answer_recovery_disables_thinking` (statik+gerçek pwsh), sistem istemi yumuşatma iddiaları. | agent/qwen-inference.ps1, qwen-desktop.ps1, tests/test_transcriber.py, tests/test_lite_profile.py, tests/test_qwen_contracts.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-12 | **Blok LaTeX → okunur metin + sabit "kanıtlı/iki kez doğrula" sistem talimatı (uçtan uca matematik testinde bulundu).** (1) `Convert-MathText` artık **dengeleyen** bir ayrıştırıcıyla (`Read-MathGroup`/`Read-MathAtom`/`Add-MathAccent`/`Expand-MathCommands`) blok yapıları çözer; basit regex iç içe kumeler ve kaçışlı `\{ \}` yüzünden ham `\frac`/`\boxed` bırakıyordu (nihai kutulu sonuç bile `boxed{...}` görünüyordu). Desteklenen: iç içe/kümeli ve kaçışlı `\frac{A}{B}` → `(A)/(B)`, `\sqrt{X}`/`\sqrt[n]{X}` → `√(X)`/`ⁿ√(X)`, `\boxed`/`\fbox` → `[ X ]`, `\textbf`/`\textit`/`\mathrm`/`\text`/`\operatorname` → içerik, `\left`/`\right` → sade parantez, `\overline`/`\bar`/`\vec`/`\hat` → birleşik işaret, `\begin`/`\end` atılır. Örnek: `\boxed{\frac{\pi^5(89+72\sqrt3)}{3888}}` → `[ (π⁵(89+72√(3)))/3888 ]`. Glif tablosu, `\ce`/`\pu` ve para birimi `$` korunur. (2) `Get-SystemPrompt`'a SABİT (tura özel değil; KV önbelleği bozulmaz) doğrulama satırı: kanıtlı/doğru cevap + çok adımlı matematik/cebir/mantıkta adımları ve sembolik/sayısal **ara sonuçları en az iki kez kontrol** + **uydurma test/teorem/kaynak adı yasağı**; LITE derin-düşünme satırı bununla birleştirildi (tekrar yok). Testler genişletildi; TR 432 / ENG 431 geçti. | qwen-desktop.ps1, tests/test_math_render.py, tests/test_qwen_contracts.py, tests/test_lite_profile.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-12 | **Ses dökümü: LITE CPU/GPU politikası (kısa+RAM→CPU co-resident, uzun ya da RAM yetersiz→GPU+swap), GPU çalışma zamanı DLL'leri ve transcribe zaman aşımı.** (1) `config.py`: `LITE_CPU_MAX_SECONDS=15` sabiti ve `choose_plan` — LITE'ta CPU co-resident YALNIZCA kayıt eşikten KISA **VE** ses hattı sistem RAM'ine sığıyorsa (`audio_ram_mib`=5120 MiB) seçilir (`('cpu', False)`); uzun kayıt ya da RAM yetersizliğinde `('cuda', True)` (mecburi swap). PRO (20 sn) değişmedi; CPU hiçbir zaman zorlama değil (GPU yoksa son çare). Ölçüm hükmü (iki bağımsız ölçüm çelişti; daha KESİN olan ölçüm-2 = LM + ASR CPU'yu BİRLİKTE koşturan): LITE co-resident **SIĞMIYOR** (fiziksel 15,25 GB < gereksinim ~16,1 GB; marj sıfır/negatif, tepe ~15.127/15.611 MB; OOM yok ama LM'in ~6,1 GB model sayfası geri kazanılabilir önbellekten atılıp bir SONRAKİ sohbet turunda diskten okunuyor). Bu yüzden LITE `audio_ram_mib` **5.120 MiB** (`LITE_AUDIO_RAM_MIB`, PRO ile AYNI güvenli kapı) tutulur; LM yüklüyken `choose_plan` CPU dalını SEÇMEZ → GPU + swap; bol RAM'li makinede kısa kayıt yine CPU co-resident olabilir. Swap durum metni de gerçeğe uyduruldu (dil modeli RAM'e taşınmaz; `manage-qwen -Action stop` ile SÜREÇ kapatılır). (2) `requirements/asr.txt`'e `nvidia-cublas-cu12` + `nvidia-cudnn-cu12` (CTranslate2 4.x `cublas64_12.dll`/`cudnn_*64_9.dll` arar; torch cu130'da yok) → **GPU ASR artık çalışıyor**; `asr.py` `_add_cuda_dll_dirs` DLL dizinlerini ekler. (3) `qwen-inference.ps1`: `Get-AudioTimeoutSeconds` + transcribe isteğine `timeoutSeconds` (`max(600,d*4+300)`≤3600). TR+ENG testler güncellendi. | agent/transcriber/config.py, agent/qwen-inference.ps1, requirements/asr.txt, tests/test_transcriber.py, tests/test_requirements_files.py, AGENTS.md, CHANGELOG.md |

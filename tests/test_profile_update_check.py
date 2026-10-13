@@ -127,6 +127,19 @@ def test_update_check_uses_this_editions_own_app_id_and_repository():
     assert "releases/latest" in catalog
 
 
+def test_installed_version_falls_back_to_script_uninstall_key():
+    """Inno ({AppId}_is1) kaydi yoksa betik tabanli kurulumun MamidLabs-<hash8> kaydindan
+    okunmali; aksi halde betikle kurulmus kopyada yerel surum hep bilinmez olur ve her
+    denetimde guncelleme onerilir."""
+    catalog = read_text("agent/profile-catalog.ps1")
+    assert "function Get-ScriptUninstallVersion" in catalog
+    assert "Get-ScriptUninstallVersion -InstallRoot $root" in catalog
+    # Girdi bu kuruluma ait mi diye InstallLocation/DisplayName ile eslesir.
+    assert "InstallLocation" in catalog
+    assert "DisplayName" in catalog
+    assert "MamidLabs-*" in catalog
+
+
 def test_profile_manager_wires_up_the_three_state_update_button():
     catalog = read_text("agent/profile-catalog.ps1")
     assert "$updateBtn = [Windows.Forms.Button]::new()" in catalog

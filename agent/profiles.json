@@ -5,7 +5,7 @@
       "id": "max",
       "label": "Qwen3.8 MAX",
       "hardware": "16 GB VRAM / 32 GB RAM",
-      "summary": "Derin akıl yürütme, 32K bağlam, görsel okuma açık. Ölçülen hız ~25 tok/s.",
+      "summary": "Derin akıl yürütme, 32K bağlam, görsel okuma açık. Ölçülen hız ~42–58 tok/s (MTP açık).",
       "files": [
         {
           "label": "Dil modeli (Qwen3.8 27B IQ4_XS)",
@@ -101,7 +101,7 @@
       "id": "flash",
       "label": "Qwen3.8 27B",
       "hardware": "16 GB VRAM / 32 GB RAM",
-      "summary": "MAX ile aynı dosyalar, daha kısa düşünme çabası. Ölçülen hız ~23-24 tok/s.",
+      "summary": "MAX ile aynı dosyalar, daha kısa düşünme çabası. Ölçülen hız ~42–58 tok/s (MTP açık).",
       "files": [
         {
           "label": "Dil modeli (Qwen3.8 27B IQ4_XS)",

@@ -118,7 +118,8 @@ function Start-OrReuseComfy([string]$python, [string]$comfyDir, [string]$comfyOu
     )
     if ($lite) { $comfyArgs += '--lowvram' }
     if ($hasExtra) { $comfyArgs += @('--extra-model-paths-config', $extraPaths) }
-    # ComfyUI isler arasinda acik kaldigi icin cagiranin borusunu devralmamali.
+    # ComfyUI (comfyKeepAlive ile) isler arasinda acik kalabildigi icin cagiranin
+    # borusunu devralmamali.
     $comfy = Start-DetachedProcess $python $comfyArgs $comfyDir `
         (Join-Path $logs 'comfyui.stdout.log') (Join-Path $logs 'comfyui.stderr.log')
     $Shared.Process = $comfy

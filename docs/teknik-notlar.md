@@ -51,7 +51,7 @@ Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-qwen-desktop.vbs`
 |---|---|---|---|---|---|
 | MAX (derin) | Qwen3.8 27B IQ4_XS | 32K | `xhigh` | 8192 | ~42–58 token/s |
 | FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 8192 | ~42-58 token/s |
-| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | `low` | 8192 | ~97 token/s (16 GB'ta) |
+| LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | sınırsız (bütçe yok) | 8192 | ~40–79 token/s (8 GB) · ~97 token/s (16 GB) |
 
 MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, flash-attn açık,
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta
@@ -67,11 +67,15 @@ eder**; sistem istemi de modeli yeterince düşünüp **yanıtını da yazmaya**
 sınırsızca uzatmaya değil).
 
 **MTP (Multi-Token Prediction).** MAX/FLASH, Qwen3.8 27B GGUF'unun gömülü MTP/nextn draft başlığıyla
-(`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`) `--spec-type draft-mtp` ile başlar. Ayrı bir
-draft model gerekmez; çıktı kayıpsızdır (kabul edilen tokenlar hedef modelle doğrulanır) ve
-~1,2–1,5x hız kazancı beklenir (model kartında Q4_K_M için kabul 0,35–0,53, ortalama kabul uzunluğu
-2,05–2,58). LITE modelinde MTP katmanı yoktur; orada eklenmez. Gerekirse
-`%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine `"mtp": false` yazılıp kapatılabilir.
+(`qwen35.nextn_predict_layers = 1`, `blk.64.nextn.*`) `--spec-type draft-mtp` ile başlar. LITE'ın
+9B GGUF'u ise bu başlığı dönüşümde kaybeder; indirme sırasında `agent/mtp_inject.py` ile geri
+eklenir (kaynak: `huihui-ai/Huihui-Qwen3.5-9B-abliterated` MTP tensorleri), bu yüzden
+`--spec-type draft-mtp` LITE'ta da kullanılır. Ayrı bir draft model gerekmez; çıktı kayıpsızdır
+(kabul edilen tokenlar hedef modelle doğrulanır) ve ~2x hız kazancı sağlar (LITE'ta kabul ~0,31–0,96;
+model kartında 27B için Q4_K_M kabul 0,35–0,53). Bayrak yalnızca GGUF gerçekten MTP katmanı
+taşıyorsa eklenir (`Test-GgufHasMtp`); taşımayan modele verilirse llama.cpp "model doesn't contain
+MTP layers" ile açılmaz. Gerekirse `%LOCALAPPDATA%\Programs\MamidLabs\settings\api.json` içine
+`"mtp": false` yazılıp kapatılabilir.
 
 ### 16 GB bellek bütçesi (MAX/FLASH)
 
@@ -89,10 +93,13 @@ Görsel projektör GPU'da ağırlık ve hesap tamponuyla 1.133 MiB daha istiyord
 aşıp ~420 MiB paylaşılan belleğe taşıyordu. Projektör CPU'ya alınınca sohbet 19,6'dan 25,0 tok/s'ye,
 tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-qwen.ps1` içindeki bellek kontrolü
 model dosyası + 600 MiB ister. **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
-varsayılan `true`): ComfyUI açık tutulur, medya işleri arasında yeniden açılmaz. Bu **taşma
-yapmaz** (ölçüldü: GPU tampon yerleşimi iki durumda da aynı; graph splits 2), yalnızca sohbet
-~%11 yavaşlar (49,7 → 44,2 tok/s). `false` ile tam hız. Yer yetmezse (kuyruk boşsa) kapatılıp
-yeniden ölçülür.
+varsayılan `false`): ComfyUI **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil
+modeli yüklenmeden önce kapatılır, böylece boşta ne VRAM ne RAM tutar (boşta ComfyUI ~300 MiB CUDA
+bağlamı + süreç RAM'i tutuyordu). Medya gerektiğinde yeniden açılır (~27 sn). MAX/FLASH'ta dil
+modeli yüklenmeden önce **her zaman** kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri
+arasında açık tutulabilir (o zaman taşma yapmaz — ölçüldü: GPU tampon yerleşimi iki durumda da
+aynı; graph splits 2 — yalnızca sohbet ~%11 yavaşlar, 49,7 → 44,2 tok/s). Yer yetmezse (kuyruk
+boşsa) kapatılıp yeniden ölçülür.
 
 ### Lite profili (8 GB VRAM / 16 GB RAM)
 
@@ -103,19 +110,19 @@ medya hattını küçültür:
 |---|---|---|
 | Dil modeli | Qwen3.8 27B IQ4_XS (~15 GB) | Huihui-Qwen3.5 9B Q5_K_M (~6,6 GB) |
 | Bağlam | 32K | 32K |
-| Görsel okuma (mmproj) | F16, CPU'da | Q8_0, GPU'da |
+| Görsel okuma (mmproj) | F16, CPU'da | Q8_0, CPU'da |
 | Görsel üretimi | Krea-2 Turbo (fp8, ~13,1 GB) | Krea-2 Turbo GGUF Q4_K_M (~7,5 GB, `ComfyUI-GGUF` custom node ile) |
 | Stil referansı / gerçekçilik | LoRA ile | LoRA ile (MAX/FLASH ile aynı dosyalar) |
 | Düşünme | sınırsız | sınırsız (düşünme açık, bütçe yok) |
 | Video | 832×480, 5 sn'ye kadar | 832×480 tavan, 3 sn tavan |
 | ComfyUI | normal | `--lowvram` (ağırlıklar RAM'den katman katman akar) |
 
-Bellek bütçesi: RTX 4060 Laptop üzerinde, varsayılan Q5_K_M ve 32K bağlamla ölçüldü —
-**~7500 / 8188 MiB** (~450–500 MiB boş kalır; dar ama kullanılabilir bir pay — llama.cpp'nin
-kendi otomatik sığdırma kontrolü bunu "tam sığmıyor" diye işaretler ama `--gpu-layers 99`
-elle zorlandığı için yine de yükler), üretim **~35 tok/s**, ön işleme ~270 tok/s. Daha rahat
-bir pay istersen aşağıdaki `liteModel` ayarıyla Q4_K_M'e dönebilirsin (~40 tok/s, ~1,7 GB boş
-VRAM kalır).
+Bellek bütçesi: RTX 4060 Laptop üzerinde, varsayılan Q5_K_M ve 32K bağlamla, görsel projektörü
+(mmproj Q8_0) CPU'ya alındıktan sonra ölçüldü — **~7249 / 8188 MiB** (708 MiB boş; projektör
+GPU'dayken ~7885 MiB idi ve yalnızca ~72 MiB kalıyordu). Üretim **içeriğe bağlı ~40–79 tok/s**
+(MTP açık; kabul oranı 0,31–0,96), ön işleme ~270 tok/s. 16 GB'lık bir kartta LITE ~97 tok/s'ye
+çıkar. Daha rahat bir pay istersen aşağıdaki `liteModel` ayarıyla Q4_K_M'e dönebilirsin (~40 tok/s,
+~1,7 GB boş VRAM kalır).
 
 **Düşünme (sınırsız).** Qwen3.5 şablonu `--reasoning-effort` değerini yok sayar; düşünme açık
 (`--reasoning on`, `--reasoning-format deepseek`) kalır ve **düşünme bütçesi konmaz** — LITE
@@ -363,10 +370,10 @@ düşer. `scripts\smoke-test.ps1` iki yolu da (`-SkipOcr` ile atlanabilir) doğr
 1. Dil modeli görsel promptunu **İngilizce** yazar (`generate_image` aracı).
 2. llama-server durdurulur → VRAM boşalır (model dosyası Windows dosya önbelleğinde kalır).
 3. ComfyUI + Krea-2 Turbo yüklenir, görsel üretilir (8 adım, cfg 1, euler/simple).
-4. ComfyUI'deki modeller boşaltılır ama süreç açık kalır (boşta ~130–370 MiB VRAM; bellek
-   yetmezse ve kuyruğu boşsa kapatılır),
-   dil modeli geri yüklenir, sohbet kaldığı yerden devam eder. Sonraki görsel/video
-   ComfyUI'yi yeniden açmakla (~15-20 sn) uğraşmaz; hata veya iptalde süreç kapatılır.
+4. ComfyUI'deki modeller boşaltılır ve süreç varsayılan olarak kapatılır (boşta ne VRAM ne RAM
+   tutar); `comfyKeepAlive=true` (yalnızca LITE) ile süreç açık tutulur (boşta ~130–370 MiB VRAM).
+   Dil modeli geri yüklenir, sohbet kaldığı yerden devam eder. Kapatıldıysa sonraki görsel/video
+   için ComfyUI yeniden açılır (~27 sn); hata veya iptalde süreç yine kapatılır.
 
 Ölçüm (RTX 5060 Ti 16 GB): üretim **25–58 sn**, arayüzde uçtan uca **60–95 sn** (dil modelinin
 boşaltılıp geri yüklenmesi dahil). LITE (RTX 4060 Laptop): uçtan uca 68–139 sn; gerçekçilik

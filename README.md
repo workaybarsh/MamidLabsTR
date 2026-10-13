@@ -49,7 +49,7 @@ API sağlayıcıları için kullanılır.
 | **Belge okuma** | PDF, Word, Excel, PowerPoint, ZIP ve RAR |
 | **Belge üretimi** | PDF, Word ve PowerPoint; kullanıcı onayıyla |
 | **OCR** | PaddleOCR: görseller GPU'da, taranmış PDF'ler CPU'da |
-| **Ses dökümü** | Whisper large-v3 + Silero VAD; mikrofon kaydı veya ses dosyası kronolojik metne çevrilir |
+| **Ses dökümü** | faster-whisper large-v3-tr + Silero VAD; mikrofon kaydı veya ses dosyası kronolojik metne çevrilir |
 | **Konuşma dışı sesler** | AST (AudioSet) ile ayak sesi, kapı gibi olaylar parantez içinde; isteğe bağlı konuşmacı ayrımı |
 | **Görsel anlama** | Dil modeli eklenen görseli doğrudan yorumlar |
 | **Görsel üretimi** | Krea-2 Turbo; yeniden üretim, stil referansı ve istek üzerine gerçekçilik LoRA'sı |
@@ -127,8 +127,9 @@ flowchart TD
 ```
 
 Temel ilke: aynı anda yalnızca bir ağır model VRAM'de bulunur. Görsel ya da video isteğinde dil
-modeli durdurulur, üretimden sonra yeniden yüklenir. ComfyUI işler arasında açık kalır; bellek
-yetmezse ve kuyruğu boşsa kapatılır.
+modeli durdurulur, üretimden sonra yeniden yüklenir. ComfyUI varsayılan olarak yalnızca medya
+üretimi sırasında çalışır (boşta ne VRAM ne RAM tutar); LITE'ta `comfyKeepAlive=true` ile medya
+işleri arasında açık tutulabilir.
 
 ## Güvenlik
 

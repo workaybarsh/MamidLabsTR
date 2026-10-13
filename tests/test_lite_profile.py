@@ -58,10 +58,11 @@ def test_alias_table_is_reachable_when_only_functions_are_loaded():
 def test_lite_stays_within_eight_gigabyte_budget():
     """32K baglam gercek donanimda (RTX 4060 Laptop) olculdu. Q4_K_M ile VRAM
     kullanimi 6198 MiB (1759 MiB bos kalir, rahat pay). Kullanici Q5_K_M'i
-    varsayilan yapmayi tercih etti: 7500 MiB (~450-500 MiB bos kalir, dar ama
-    kabul edilen bir pay - llama.cpp kendi otomatik sigdirma kontrolu bunu
-    "tam sigmiyor" diye isaretler ama --gpu-layers 99 elle zorlandigi icin
-    yine de yukler; performans dusmez (~35 tok/s, Q4'ten yalnizca ~%13 yavas)."""
+    varsayilan yapmayi tercih etti. Gorsel projektoru (Q8_0 mmproj, 595 MiB)
+    CPU'ya alindiktan sonra VRAM kullanimi 7249/8188 MiB'dir (708 MiB bos);
+    mmproj GPU'dayken 7885 MiB idi (~72 MiB bos) ve llama.cpp buyuk gomme
+    tensorunu CPU'ya itiyordu. Sohbet hizi degismez (~40-79 tok/s, MTP kabulune
+    gore), gorsel okuma yalnizca biraz yavaslar."""
     manager = read_text("scripts/manage-qwen.ps1")
     lite_block = manager.split("if ($Profile -eq 'lite') {", 1)[1]
 
@@ -71,7 +72,8 @@ def test_lite_stays_within_eight_gigabyte_budget():
     assert "'--batch-size', '256', '--ubatch-size', '128'" in manager
     # Projektör yoksa Lite metin-only çalışmalı, hata vermemeli.
     assert "$Profile -ne 'lite' -and !(Test-Path -LiteralPath $projector" in manager
-    assert "if ($projector) { $serverArgs += @('--mmproj', $projector" in manager
+    # Lite projektoru CPU'da tutulmali; GPU'da 8 GB karta sigmiyor.
+    assert "if ($projector) { $serverArgs += @('--mmproj', $projector, '--no-mmproj-offload'" in manager
 
 
 def test_settings_are_loaded_before_the_profile_reads_them():

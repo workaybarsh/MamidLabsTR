@@ -212,6 +212,41 @@ function Get-InstalledMamidLabsVersion {
             } catch { }
         }
     }
+    # Sihirbazsiz (betik tabanli) kurulumda Inno'nun {AppId}_is1 kaydi yoktur; betik kendi
+    # MamidLabs-<hash8> kaydina DisplayVersion yazar (scripts/install-mamidlabs.ps1
+    # Invoke-Layout). Inno kaydi bulunamazsa bu yedege dusulur.
+    return (Get-ScriptUninstallVersion -InstallRoot $root)
+}
+
+# Inno disinda (betik tabanli) kurulumun yazdigi MamidLabs-<hash8> kaldirma kaydindan
+# surumu okur. Girdi bu kuruluma ait mi diye InstallLocation/DisplayName ile eslesir;
+# boylece baska bir koke kurulu kopyanin surumu yanlislikla okunmaz.
+function Get-ScriptUninstallVersion {
+    param(
+        [string]$InstallRoot,
+        [string[]]$RegistryPaths = @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+        )
+    )
+    $expected = $null
+    if ($InstallRoot) { $expected = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\') }
+    foreach ($base in $RegistryPaths) {
+        if (!(Test-Path -LiteralPath $base)) { continue }
+        foreach ($item in @(Get-ChildItem -LiteralPath $base -ErrorAction SilentlyContinue)) {
+            if ($item.PSChildName -notlike 'MamidLabs-*') { continue }
+            $props = Get-ItemProperty -LiteralPath $item.PSPath -ErrorAction SilentlyContinue
+            if (!$props -or [string]$props.DisplayName -notlike 'MamidLabs*') { continue }
+            if ($expected) {
+                $location = ([string]$props.InstallLocation).TrimEnd('\')
+                $isThis = ($location -ieq $expected) -or
+                          (([string]$props.DisplayName).IndexOf($expected, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+                if (!$isThis) { continue }
+            }
+            $v = [string]$props.DisplayVersion
+            if ($v) { return $v }
+        }
+    }
     return $null
 }
 

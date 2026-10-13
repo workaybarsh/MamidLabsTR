@@ -3,6 +3,25 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [1.1.0] - 2026-10-13
+
+### Değişen
+- **LITE görsel projektörü (mmproj) CPU'ya taşındı:** LITE artık 8 GB VRAM'e sığıyor
+  (kullanılan 7885 → 7249 MiB, boş alan 72 → 708 MiB). Üç profilde de mmproj CPU'da çalışır ve
+  VRAM bütçesine girmez; sohbet hızı değişmedi (içeriğe bağlı ~40–79 tok/s), yalnızca görsel
+  okuma projektör CPU'da hafifçe yavaşladı.
+
+### Düzeltilen
+- **Kurulum/güncelleme doğruluk düzeltmeleri.** Betikle (`scripts\install-mamidlabs.ps1`) kurulan
+  kopyalarda güncelleme denetimi yerel sürümü okuyabiliyor: `layout` aşaması kaldırma kaydına
+  `DisplayVersion` yazar (değer `-AppVersion` ya da `.iss` `MyAppVersion`'dan) ve uygulama içi
+  denetim Inno kaydı yoksa bu kayda düşer. Güncelleme artık repodan silinen dosyaları geride
+  bırakmaz: `agent\`, `scripts\`, `assets\` ve `requirements\` (ve `kurulum-kaynak` kopyası)
+  kopyalamadan önce boşaltılır, kullanıcı verisi korunur. `requirements\` köke eklendiği için
+  belgelenen `install-mamidlabs.ps1 -Stage layout` komutu `-Source` verilmeden de çalışır.
+  Sihirbaz kurulumunda mükerrer `MamidLabs` girdisi açılmaz. Kaldırıcı artık `EULA.txt` ve
+  `requirements` dizinini de siler; kök gerçekten kaldırılır.
+
 ## [1.0.0] - 2026-10-10
 
 İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms
@@ -17,8 +36,9 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   gerekmez, çıktı kayıpsız). OpenAI, Claude, Gemini, DeepSeek ve OpenAI uyumlu özel uçlar.
 - **Medya üretimi (yerel, ComfyUI):** metinden görsel (Krea-2 Turbo), görselden yeniden üretim, stil
   referansı, kimlik korumalı fotoğraf düzenleme (Krea 2 Identity Edit; MAX/FLASH) ve video üretimi
-  (Wan 2.2 TI2V 5B). ComfyUI medya işleri arasında açık tutulur ve tek sağlıklı örnekle dil modeliyle
-  birlikte çalışır (ölçüldü 61-62 tok/s); kaçak/mükerrer örnek yükleme öncesi temizlenir.
+  (Wan 2.2 TI2V 5B). ComfyUI varsayılan olarak yalnızca medya üretimi sırasında çalışır (iş bitince
+  kapatılır; boşta ne VRAM ne RAM tutar); LITE'ta `comfyKeepAlive=true` ile medya işleri arasında
+  açık tutulabilir. Kaçak/mükerrer örnek yükleme öncesi temizlenir.
 - **Belge ve OCR:** PDF/Word/Excel/PowerPoint/ZIP/RAR okuma, PDF/DOCX/PPTX üretimi; PaddleOCR ile
   görsel ve PDF OCR.
 - **Ses dökümü (Whisper + ses olayları):** sohbete eklenen ses dosyası veya mikrofon kaydı otomatik
@@ -204,7 +224,8 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   beklemesi artık iptal isteğine uyar; arayüz uzun süre "Durduruluyor" durumunda kalmaz.
 - **ComfyUI yaşam döngüsü profile duyarlı yapıldı:** MAX/FLASH (27B) profillerinde dil modeli yüklenmeden
   önce ComfyUI her zaman kapatılır (aksi halde 16 GB kartta MTP draft taşıp sohbet aralıklı ~6-7 tok/s'ye
-  düşüyordu); LITE'ta ComfyUI açık kalır ve medya işleri arasında yeniden açılmaz.
+  düşüyordu); LITE'ta varsayılan olarak kapatılır, `comfyKeepAlive=true` ile medya işleri arasında açık
+  tutulabilir.
 - **`custom` (OpenAI uyumlu özel uç) sohbette çalışmıyordu:** taban adres yalnızca arayüz ayarında
   tutuluyordu; işçi ayarları okumadığı için `custom` istekleri "taban adresi gir" ile duruyordu
   (yalnızca ayar penceresindeki doğrulama çalışıyordu). Masaüstü artık `baseUrl` + ayarları işçiye

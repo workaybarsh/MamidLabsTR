@@ -36,8 +36,8 @@ function Update-ProviderSelection {
     try {
         $modelChoice.Items.Clear()
         # Lite, 8 GB VRAM / 16 GB RAM makineler icin ayri 9B modeli kullanir. 32K baglam
-        # gercek makinede olculdu: varsayilan Q5_K_M ile ~7500 MiB VRAM (8 GB kartta
-        # ~450-500 MiB bos kalir - dar ama kullanilabilir).
+        # gercek makinede olculdu: varsayilan Q5_K_M (mmproj CPU'da, --no-mmproj-offload)
+        # ile ~7249 MiB VRAM (8 GB kartta ~708 MiB bos kalir - dar ama kullanilabilir).
         # Yalnizca dil modeli dosyalari diskte olan profiller listelenir (ComfyUI medya
         # modelleri haric - -SkipMedia ile kurulmus olabilir, sohbet icin gerekmezler);
         # aksi halde MAX kurulu bir PC'de LITE de (ya da tersi) secilebilir gorunuyordu,

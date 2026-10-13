@@ -34,12 +34,14 @@ def ps(command, timeout=60):
 
 def make_install(base: Path) -> Path:
     root = base / "MamidLabsKur"
-    for folder in ("agent", "scripts", "assets", "models", "logs", "llama.cpp", "ComfyUI/models/loras", "venv/imagegen/Lib",
+    for folder in ("agent", "scripts", "assets", "requirements", "models", "logs", "llama.cpp", "ComfyUI/models/loras", "venv/imagegen/Lib",
                    "runtime/pwsh", "tools/pip-cache", "tools/hf-home", "chats", "outputs/images", "settings"):
         (root / folder).mkdir(parents=True, exist_ok=True)
     (root / "agent/profiles.json").write_text("{}", encoding="utf-8")
     (root / "qwen-desktop.ps1").write_text("# app", encoding="utf-8")
     (root / "launch-qwen-desktop.vbs").write_text("' launcher", encoding="utf-8")
+    (root / "EULA.txt").write_text("lisans", encoding="utf-8")
+    (root / "requirements/app.txt").write_text("pytest", encoding="utf-8")
     (root / "models/model.gguf").write_bytes(b"x" * 1024)
     (root / "chats/sohbet.json").write_text("{}", encoding="utf-8")
     (root / "outputs/images/a.png").write_bytes(b"png")
@@ -195,3 +197,26 @@ def test_wizard_uninstaller_runs_the_script_and_no_longer_deletes_foreign_shortc
 def test_uninstaller_is_ascii_for_windows_powershell_51():
     # 5.1 BOM'suz dosyayi ANSI okur; Turkce karakter sessizce bozulurdu.
     SCRIPT.read_bytes().decode("ascii")
+
+
+def test_uninstaller_removes_eula_and_requirements_so_the_root_is_removed(tmp_path):
+    """Kokte EULA.txt ve requirements\\ kalirsa klasor bosalmaz ve kaldirma "tam" olmaz;
+    ikisi de $programEntries icinde olmali."""
+    root = make_install(tmp_path)
+    assert (root / "EULA.txt").exists()
+    assert (root / "requirements/app.txt").exists()
+    result = run_uninstall(root, tmp_path / "Desktop", "-Yes")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not root.exists(), result.stdout
+
+
+def test_program_entries_include_eula_and_requirements():
+    script = SCRIPT.read_text(encoding="ascii")
+    entries = script.split("$programEntries = @(")[1].split(")")[0]
+    assert "'EULA.txt'" in entries
+    assert "'requirements'" in entries
+
+
+def test_iss_uninstall_delete_removes_eula():
+    iss = (ROOT / "packaging/windows/mamidlabs.iss").read_text(encoding="utf-8-sig")
+    assert 'Type: files; Name: "{app}\\EULA.txt"' in iss
