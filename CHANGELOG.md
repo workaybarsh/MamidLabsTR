@@ -22,6 +22,7 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   dışlanır). Kullanıcı verisine dokunulmaz.
 
 ### Düzeltilen
+- **Sistem isteminde uydurma test/teorem/kaynak adı yasağı geri getirildi.** "Sert anti-uydurma" yeniden yazımı sabit istemden bu talimatı düşürmüştü (testler yakaladı); yeniden eklendi.
 - **Sert anti-uydurma katmanı.** (1) Güncel/zaman duyarlı bilgi isteyen geniş bir küme (hava durumu,
   haber, fiyat/kur, "en son çıkan", skor, bugün/yarın, 20xx yılı…); web erişimi yoksa (arama
   başarısız ya da İnternet kapalı) bu soruların **model metni gösterilmez**, yalnızca "bu bilgi
