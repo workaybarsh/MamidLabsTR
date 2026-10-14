@@ -126,6 +126,10 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # ve bir CUDA baglami (ComfyUI) acikken kucuk bir asim bile bir bileseni paylasilan
     # bellege tasiyip uretimi ~6 tok/s'ye dusurur. Bu yuzden olcumden once ComfyUI her
     # zaman kapatilir (bkz. asagidaki akis); toleransla asim kabul edilmez.
+    # Olcum (RTX 5060 Ti): 15244 MiB bos VRAM'de 27B TAM sigdi ve ~45 tok/s ile calisti;
+    # 15095 MiB'de ise tasip ~30 tok/s'ye dustu. Yani esik (15200) tam-sigma siniridir;
+    # kucuk bir asim bile TASMA demektir, kabul edilmez. Tarayici gibi GPU kullanan
+    # masaustu uygulamalari kapatilinca bos alan artar ve model tam sigar.
     $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
