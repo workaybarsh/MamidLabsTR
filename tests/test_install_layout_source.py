@@ -23,8 +23,9 @@ def test_layout_refreshes_existing_wizard_source_package():
     # Ayni [Files] kumesi kopyalanir (kurulum-kaynak alt paketi).
     assert "foreach ($folder in @('agent', 'scripts', 'requirements'))" in script
     assert "Join-Path $Source 'docs\\kurulum.md'" in script
-    # assets\installer disarida birakilir (.iss ile ayni).
-    assert "Where-Object { $_.Name -ne 'installer' }" in script
+    # assets\installer da dahil tum assets kopyalanir (kurulu program dosyalari repoyla birebir ayni).
+    assert "Get-ChildItem -LiteralPath $assets -Force | ForEach-Object" in script
+    assert "Where-Object { $_.Name -ne 'installer' }" not in script
     # Tazeleme bildirilir; sessizce yapilmaz.
     assert "Kurulum kaynak paketi tazelendi" in script
 

@@ -5,7 +5,7 @@ Altı duzeltmeyi kapsar:
    Get-ScriptUninstallVersion yedegi).
 2. Guncellemede bayat dosya temizligi (program klasorleri kopyalamadan once bosaltilir).
 3. requirements\\ kokte (belgelenen -Stage layout komutu -Source verilmeden calisir).
-4. .iss ile ayni dislamalar (agent\\__pycache__\\*, *.pyc, assets\\installer\\*).
+4. .iss ile ayni dislama (agent\\__pycache__\\*, *.pyc; assets\\installer artik dahil).
 5. Sihirbaz kaydi varken mukerrer betik kaydi acilmaz.
 6. Kaldiricinin EULA.txt/requirements girdileri (test_uninstall.py'de ayrica).
 """
@@ -82,8 +82,8 @@ def test_layout_prunes_owned_program_dirs_before_copying():
 def test_layout_applies_the_same_excludes_as_the_iss():
     script = read_text("scripts/install-mamidlabs.ps1")
     assert "function Remove-ProgramExcludes" in script
-    assert "Remove-ProgramExcludes (Join-Path $Root 'agent') (Join-Path $Root 'assets')" in script
-    assert "Remove-ProgramExcludes (Join-Path $kaynak 'agent') (Join-Path $kaynak 'assets')" in script
+    assert "Remove-ProgramExcludes (Join-Path $Root 'agent')" in script
+    assert "Remove-ProgramExcludes (Join-Path $kaynak 'agent')" in script
 
 
 def test_layout_writes_display_version_and_accepts_app_version_override():
@@ -200,7 +200,7 @@ def test_remove_program_excludes_leaves_real_files(tmp_path):
     (assets / "icons").mkdir()
     (assets / "icons/a.ico").write_bytes(b"x")
     body = f"""
-Remove-ProgramExcludes '{agent}' '{assets}'
+Remove-ProgramExcludes '{agent}'
 Write-Output ('pycache:' + (Test-Path -LiteralPath '{agent}\\transcriber\\__pycache__'))
 Write-Output ('oldpyc:' + (Test-Path -LiteralPath '{agent}\\old.pyc'))
 Write-Output ('keep:' + (Test-Path -LiteralPath '{agent}\\transcriber\\keep.py'))
@@ -211,7 +211,7 @@ Write-Output ('icons:' + (Test-Path -LiteralPath '{assets}\\icons\\a.ico'))
     assert "pycache:False" in out
     assert "oldpyc:False" in out
     assert "keep:True" in out
-    assert "installer:False" in out
+    assert "installer:True" in out
     assert "icons:True" in out
 
 

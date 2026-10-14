@@ -93,7 +93,7 @@ Source: "..\..\LICENSE"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\EULA.txt"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\agent\*"; DestDir: "{app}\kurulum-kaynak\agent"; Excludes: "__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\scripts\*"; DestDir: "{app}\kurulum-kaynak\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\assets\*"; DestDir: "{app}\kurulum-kaynak\assets"; Excludes: "installer\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\assets\*"; DestDir: "{app}\kurulum-kaynak\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\requirements\*"; DestDir: "{app}\kurulum-kaynak\requirements"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\docs\kurulum.md"; DestDir: "{app}\kurulum-kaynak\docs"; Flags: ignoreversion
 ; Profil raporu kurulumdan ONCE, gecici klasorden calisir.

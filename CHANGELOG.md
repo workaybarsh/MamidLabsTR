@@ -16,6 +16,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   (kullanılan 7885 → 7249 MiB, boş alan 72 → 708 MiB). Üç profilde de mmproj CPU'da çalışır ve
   VRAM bütçesine girmez; sohbet hızı değişmedi (içeriğe bağlı ~40–79 tok/s), yalnızca görsel
   okuma projektör CPU'da hafifçe yavaşladı.
+- **Kurulum artık `assets\installer\*` (sihirbaz görselleri) dahil tüm program dosyalarını köke
+  kopyalar;** böylece kurulu program dosyaları repoyla birebir aynıdır. Daha önce bu dosyalar `.iss`
+  ve betik tarafından dışlanıyordu; artık dışlanmaz (yalnızca `agent\__pycache__\*` ve `*.pyc`
+  dışlanır). Kullanıcı verisine dokunulmaz.
 
 ### Düzeltilen
 - **Sert anti-uydurma katmanı.** (1) Güncel/zaman duyarlı bilgi isteyen geniş bir küme (hava durumu,

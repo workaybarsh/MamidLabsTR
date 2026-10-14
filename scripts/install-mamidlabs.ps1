@@ -286,10 +286,11 @@ function Remove-ProgramDir([string]$path) {
     }
 }
 
-# Kopyalamadan sonra .iss [Files] ile ayni dislamalari uygular: agent\__pycache__\*, *.pyc
-# ve assets\installer\*. Copy-Item -Exclude ozyinelemeli guvenilir olmadigindan kopya
-# sonrasi temizlenir.
-function Remove-ProgramExcludes([string]$agentDir, [string]$assetsDir) {
+# Kopyalamadan sonra .iss [Files] ile ayni dislamayi uygular: agent\__pycache__\*, *.pyc.
+# Copy-Item -Exclude ozyinelemeli guvenilir olmadigindan kopya sonrasi temizlenir.
+# assets\installer (sihirbaz gorselleri) artik DISLANMAZ: kurulu program dosyalari repoyla
+# birebir ayni olsun diye oldugu gibi kopyalanir.
+function Remove-ProgramExcludes([string]$agentDir) {
     if ($agentDir -and (Test-Path -LiteralPath $agentDir)) {
         Get-ChildItem -LiteralPath $agentDir -Recurse -Force -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -eq '__pycache__' } |
@@ -297,10 +298,6 @@ function Remove-ProgramExcludes([string]$agentDir, [string]$assetsDir) {
         Get-ChildItem -LiteralPath $agentDir -Recurse -Force -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -eq '.pyc' } |
             ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
-    }
-    if ($assetsDir) {
-        $installer = Join-Path $assetsDir 'installer'
-        if (Test-Path -LiteralPath $installer) { Remove-Item -LiteralPath $installer -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -363,8 +360,9 @@ function Invoke-Layout {
         if (Test-Path -LiteralPath $requirements) {
             Copy-Item -LiteralPath $requirements -Destination $Root -Recurse -Force
         }
-        # .iss [Files] ile ayni dislamalar: agent onbellekleri ve sihirbaz varliklari koke girmez.
-        Remove-ProgramExcludes (Join-Path $Root 'agent') (Join-Path $Root 'assets')
+        # .iss [Files] ile ayni dislama: agent onbellekleri koke girmez. assets\installer da
+        # (repoyla birebir aynilik icin) koke kopyalanir.
+        Remove-ProgramExcludes (Join-Path $Root 'agent')
         Write-Ok ('Program dosyalari kopyalandi -> ' + $Root)
     }
 
@@ -395,14 +393,15 @@ function Invoke-Layout {
             }
             $assets = Join-Path $Source 'assets'
             if (Test-Path -LiteralPath $assets) {
-                # assets\installer yalnizca sihirbaz derlemesinde kullanilir; .iss da disarida birakir.
+                # assets\installer (sihirbaz gorselleri) de dahil tum assets kopyalanir; kurulu
+                # program dosyalari repoyla birebir ayni kalsin.
                 New-Item -ItemType Directory -Path (Join-Path $kaynak 'assets') -Force | Out-Null
-                Get-ChildItem -LiteralPath $assets -Force | Where-Object { $_.Name -ne 'installer' } | ForEach-Object {
+                Get-ChildItem -LiteralPath $assets -Force | ForEach-Object {
                     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $kaynak 'assets') -Recurse -Force
                 }
             }
-            # .iss ile ayni dislamalar kaynak pakette de uygulanir.
-            Remove-ProgramExcludes (Join-Path $kaynak 'agent') (Join-Path $kaynak 'assets')
+            # .iss ile ayni dislama (agent onbellekleri) kaynak pakette de uygulanir.
+            Remove-ProgramExcludes (Join-Path $kaynak 'agent')
             $doc = Join-Path $Source 'docs\kurulum.md'
             if (Test-Path -LiteralPath $doc -PathType Leaf) {
                 New-Item -ItemType Directory -Path (Join-Path $kaynak 'docs') -Force | Out-Null
