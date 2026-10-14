@@ -18,6 +18,12 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   okuma projektör CPU'da hafifçe yavaşladı.
 
 ### Düzeltilen
+- **Akış yarıda kesilirse anlaşılır mesaj; net cevap verilemiyorsa tahmin/uydurma yok.** Bir tur
+  **görünür yanıt üretmeden** (yalnızca düşünme birikmişken) koparsa bu artık hata sayılmaz; düşünme
+  kapatılarak yanıt doğrudan istenir (boş-yanıt kurtarma yolu). Başka bir kopma/hatada
+  `Get-FriendlyErrorMessage` ham .NET/HTTP mesajını (ör. "The response ended prematurely.
+  (ResponseEnded)") sade Türkçeye çevirir. Ayrıca sistem istemi, net/kesin bir cevap veremiyorsa
+  **tahmin yürütmemesini ve uydurmamasını**, neyi bilmediğini kısaca söylemesini ister.
 - **Uydurma tamamen engellendi; istenmeyen üretim ve araç döngüleri kapatıldı.** Uydurma eğilimini
   ortadan kaldırmak için nihai yanıt deterministik olarak güvenli hâle getirilir:
   - **Güncel bilgi** (hava durumu, haber, fiyat, "en son çıkan model"…) isteyen bir turda web

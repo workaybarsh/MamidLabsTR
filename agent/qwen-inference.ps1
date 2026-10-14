@@ -656,6 +656,22 @@ function Get-FinalAnswer([string]$text, [string]$userText, [bool]$internetOn) {
     return (Add-WebFailureNote $text)
 }
 
+# Ham .NET/HTTP istisna mesajlarini (or. "The response ended prematurely. (ResponseEnded)")
+# kullaniciya gosterilecek sade Turkce mesaja cevirir; taninmayan mesaj aynen doner.
+function Get-FriendlyErrorMessage([string]$message) {
+    if ([string]::IsNullOrWhiteSpace($message)) { return 'Beklenmeyen bir hata olustu. Lutfen tekrar dene.' }
+    if ($message -match '(?i)ended prematurely|ResponseEnded|response ended|forcibly closed|connection (was )?closed|baglanti.*kapat|bağlantı.*kapat') {
+        return 'Model yanıtı yarıda kesildi. Lütfen mesajı tekrar gönder.'
+    }
+    if ($message -match '(?i)timed? ?out|timeout|zaman aşımı|zaman asimi') {
+        return 'İstek zaman aşımına uğradı. Lütfen tekrar dene.'
+    }
+    if ($message -match '(?i)actively refused|connection refused|baglanti kurulamadi|bağlantı kurulamadı|cannot connect') {
+        return 'Yerel model sunucusuna ulaşılamadı. Model hazır olduğunda tekrar dene.'
+    }
+    return $message
+}
+
 # Komut calistirma niyeti. run_command araci YALNIZCA kullanici acikca komut/terminal
 # istediginde sunulur. Aksi halde model (ozellikle kucuk LITE) web/arama hatasinda absurt
 # komut denemelerine giriyordu; tool hic sunulmazsa cagiramaz. Sistem/terminal komutlari
@@ -1351,7 +1367,7 @@ function Invoke-ChatCompletion([hashtable]$body, [hashtable]$shared, [bool]$emit
         # zaten geldiyse yanit TAMAMLANMISTIR; baglantinin hemen ardindan kapanmasi
         # normaldir ve hata sayilmaz. Gercek (iceriksiz/aracsiz/tamamlanmamis) kopmalar
         # yine hata olarak bildirilir.
-        $usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0
+        $usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0 -or ![string]::IsNullOrWhiteSpace($result.reasoning)
         # local + custom: yanit uretildikten sonra (finish_reason/icerik/arac cagrisi)
         # baglanti koptuysa bu HATA degildir; cevabin altina '[Hata]' eklenmez. Uzak
         # saglayicilarda davranis KORUNUR (yalnizca local/custom toleranslidir).
@@ -2147,7 +2163,7 @@ try {
     if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.' }
     else {
         $cause = $_.Exception.GetBaseException()
-        $message = $cause.Message
+        $message = Get-FriendlyErrorMessage $cause.Message
         if ($cause -is [OperationCanceledException]) { $message = 'Yerel model istegi zaman asimina ugradi.' }
         Emit 'error' $message
     }

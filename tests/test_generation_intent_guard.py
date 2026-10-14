@@ -156,3 +156,36 @@ def test_final_answer_blocks_fabrication_and_empty(tmp_path):
     assert got["normal"] == "kediler memelidir"
     assert "üretilemedi" in got["empty"]
     assert "grafik.png" in got["empty_file"]
+
+
+def test_friendly_error_message_maps_raw_dotnet(tmp_path):
+    """Ham .NET/HTTP hata mesajlari (or. 'The response ended prematurely.') kullaniciya
+    sade Turkce mesaj olarak gosterilir; taninmayan mesaj aynen doner."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("pwsh bulunamadi")
+    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    fn = extract_function(desktop, "Get-FriendlyErrorMessage")
+    raw = _ps_quote("The response ended prematurely. (ResponseEnded)")
+    unknown = _ps_quote("Beklenmedik ozel hata")
+    body = (
+        "$ErrorActionPreference = 'Stop'\n" + fn + "\n"
+        "$r = [ordered]@{}\n"
+        f"$r['premature'] = Get-FriendlyErrorMessage {raw}\n"
+        f"$r['unknown'] = Get-FriendlyErrorMessage {unknown}\n"
+        f"$r['empty'] = Get-FriendlyErrorMessage ''\n"
+        "$r | ConvertTo-Json -Compress -EscapeHandling EscapeNonAscii\n"
+    )
+    script = tmp_path / "friendly.ps1"
+    script.write_text(body, encoding="utf-8-sig")
+    proc = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)],
+                          capture_output=True, encoding="utf-8", errors="replace", check=False)
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    got = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert "yarıda kesildi" in got["premature"] and "prematurely" not in got["premature"]
+    assert got["unknown"] == "Beklenmedik ozel hata"
+    assert "Beklenmeyen" in got["empty"]
+    # Sadece dusunme birikmisken kopan akis HATA degil (kurtarma yoluna gider).
+    worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    assert "$usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0 -or ![string]::IsNullOrWhiteSpace($result.reasoning)" in worker
+    assert "Get-FriendlyErrorMessage $cause.Message" in worker

@@ -2344,7 +2344,7 @@ function Get-SystemPrompt {
     # bozulmaz. Model kanitli/dogru cevap versin, kritik adimlari tekrar gozden gecirsin
     # AMA yanitini de mutlaka yazsin (cok uzun dusunup yanitsiz kalmasin; zor soruda
     # dusunme cikti butcesini yiyebiliyor - bkz. qwen-inference.ps1 kurtarma yolu).
-    $lines += 'Kanitli ve dogru cevap ver: emin olmadigin bir seyi kesinmis gibi sunma, bilmedigini soyle. Ozellikle matematik, cebir, mantik ve cok adimli sorularda kritik adimlari ve sembolik/sayisal ARA SONUCLARI tekrar gozden gecir; gerekirse farkli bir yoldan dogrula. Ama YANITINI DA MUTLAKA YAZ: cok uzun dusunup yanitsiz kalma; yeterince emin oldugunda net ve eksiksiz yaniti hemen ver. Var oldugundan emin olmadigin test, teorem, ozdeslik veya kaynak adi KULLANMA.'
+    $lines += 'Kanitli ve dogru cevap ver: emin olmadigin bir seyi kesinmis gibi sunma, bilmedigini soyle. Net ve kesin bir cevap veremiyorsan TAHMIN YURUTME ve elindeki bilgiden bir sonuc UYDURMA; bunun yerine neyi bilmedigini ya da emin olmadigini kisa ve net soyle. Ozellikle matematik, cebir, mantik ve cok adimli sorularda kritik adimlari ve sembolik/sayisal ARA SONUCLARI tekrar gozden gecir; gerekirse farkli bir yoldan dogrula. Ama YANITINI DA MUTLAKA YAZ: cok uzun dusunup yanitsiz kalma; yeterince emin oldugunda net ve eksiksiz yaniti hemen ver. Var oldugundan emin olmadigin test, teorem, ozdeslik veya kaynak adi KULLANMA.'
     # LITE (kucuk 9B model): dusunme acik (sunucuda butce yok). Modeli derin ve adim adim
     # akil yurutmeye tesvik ederiz AMA dusunmeyi sinirsizca uzatmaya DEGIL: dusunme cikti
     # butcesini paylastigindan model cok uzun dusunup gorunur yaniti yazmayi atlayabiliyordu.
