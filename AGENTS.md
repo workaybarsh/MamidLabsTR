@@ -366,7 +366,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~450 test (455 toplanır; 451 geçti, 4 atlandı), ~185 sn; ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~464 test (468 toplanır; 464 geçti, 4 atlandı), ~150 sn; ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
