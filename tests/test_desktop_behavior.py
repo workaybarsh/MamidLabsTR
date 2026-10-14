@@ -479,3 +479,28 @@ Assert ($script:preempted) 'Audio turn did not preempt the model load'
 Assert ($script:proceeded) 'Audio turn did not start immediately'
 Assert (!$script:pendingSend) 'Audio turn stayed queued'
 """)
+
+
+def test_model_switch_error_surfaces_the_specific_reason(tmp_path):
+    """Yonetici surecinin stderr'inden anlamli satir arayuze tasinir: yetersiz VRAM gibi
+    spesifik neden jenerik 'Model işlemi başarısız' yerine gosterilir; stderr bossa
+    jenerik mesaja duser (bkz. Format-ModelSwitchError)."""
+    run_ps(tmp_path, r"""
+$msg = Format-ModelSwitchError "info: bir seyler`nYetersiz bos VRAM: 14763 MiB bos, `"flash`" profili icin en az 15200 MiB gerekir"
+Assert ($msg -match 'Yetersiz bos VRAM') 'Specific VRAM reason not surfaced'
+Assert ($msg -notmatch 'Model işlemi başarısız') 'Generic message shown despite a specific reason'
+$empty = Format-ModelSwitchError ''
+Assert ($empty -match 'Model işlemi başarısız') 'Empty stderr must fall back to the generic message'
+$noise = Format-ModelSwitchError "sadece bir not"
+Assert ($noise -eq 'sadece bir not') 'First stderr line should be used when no VRAM reason exists'
+""")
+
+
+def test_desktop_captures_manager_stderr_for_specific_errors():
+    """Arayuz, yonetici surecinin stderr'ini yakalayip Format-ModelSwitchError ile
+    isler; boylece 'Model işlemi başarısız' yerine gercek neden (or. VRAM) gosterilir."""
+    desktop = (ROOT / "qwen-desktop.ps1").read_text(encoding="utf-8-sig")
+    assert "RedirectStandardError = $true" in desktop
+    assert "function Format-ModelSwitchError" in desktop
+    assert "Format-ModelSwitchError $detail" in desktop
+

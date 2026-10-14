@@ -1855,6 +1855,18 @@ $statusCtrl.ForeColor = [System.Drawing.Color]::FromArgb(190, 200, 215)
 $controlTab.Controls.Add($statusCtrl)
 
 # ---------------------------------------------------------------- model yönetimi
+# Yonetici surecinin stderr'inden anlamli tek satiri cikarir (or. "Yetersiz bos VRAM: ...");
+# bos/anlamsizsa jenerik mesaja duser. Boylece arayuz spesifik nedeni gosterebilir.
+function Format-ModelSwitchError([string]$stderrText) {
+    $generic = 'Model işlemi başarısız. Model dosyalarını ve logs klasörünü kontrol edip modeli yeniden seç.'
+    if (!$stderrText) { return $generic }
+    $lines = @($stderrText -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $vram = @($lines | Where-Object { $_ -match 'VRAM' } | Select-Object -First 1)
+    if ($vram.Count) { return $vram[0] }
+    if ($lines.Count) { return $lines[0] }
+    return $generic
+}
+
 function Invoke-Manage([string]$action, [string]$profile, [string]$modelId) {
     $managePath = Join-Path $scripts 'manage-qwen.ps1'
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -1867,6 +1879,9 @@ function Invoke-Manage([string]$action, [string]$profile, [string]$modelId) {
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    # Yonetici basarisiz olursa gercek nedeni (or. yetersiz VRAM) arayuze tasiyabilmek icin
+    # stderr yakalanir. Cikti cok kucuk oldugundan boru dolmaz; cikista okunur.
+    $psi.RedirectStandardError = $true
     return [System.Diagnostics.Process]::Start($psi)
 }
 
@@ -1875,7 +1890,9 @@ function Update-ModelSwitch {
     if ($script:switchProcess) {
         if (!$script:switchProcess.HasExited) { return }
         if ($script:switchProcess.ExitCode -ne 0 -and !$script:pendingModelChange) {
-            $script:modelSwitchError = 'Model işlemi başarısız. Model dosyalarını ve logs klasörünü kontrol edip modeli yeniden seç.'
+            $detail = ''
+            try { $detail = $script:switchProcess.StandardError.ReadToEnd() } catch { }
+            $script:modelSwitchError = Format-ModelSwitchError $detail
         }
         $script:switchProcess.Dispose()
         $script:switchProcess = $null

@@ -22,6 +22,9 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   dışlanır). Kullanıcı verisine dokunulmaz.
 
 ### Düzeltilen
+- **Arayüzde model hatasının gerçek nedeni gösterilir.** Yetersiz VRAM gibi durumlarda jenerik
+  "Model işlemi başarısız" yerine gerçek neden (ör. "Yetersiz boş VRAM: …") görünür; yönetici
+  sürecinin stderr'i arayüze taşınır (`Format-ModelSwitchError`).
 - **Sistem isteminde uydurma test/teorem/kaynak adı yasağı geri getirildi.** "Sert anti-uydurma" yeniden yazımı sabit istemden bu talimatı düşürmüştü (testler yakaladı); yeniden eklendi.
 - **Sert anti-uydurma katmanı.** (1) Güncel/zaman duyarlı bilgi isteyen geniş bir küme (hava durumu,
   haber, fiyat/kur, "en son çıkan", skor, bugün/yarın, 20xx yılı…); web erişimi yoksa (arama
