@@ -109,36 +109,50 @@ def test_document_tool_requires_a_document_context():
     olmayan bir dosyayi uydurup cagiriyordu)."""
     worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
     assert "function Add-WebFailureNote" in worker
-    assert "Emit 'done' (Add-WebFailureNote (Add-NoInternetNote $final $userText ([bool]$JobData.internet))) $lastUsage $toolExchange" in worker
+    assert "function Get-FinalAnswer" in worker
+    assert "Emit 'done' (Get-FinalAnswer $final $userText ([bool]$JobData.internet)) $lastUsage $toolExchange" in worker
     assert "$hasDocumentContext = @($script:attachedDocuments).Count -gt 0 -or (Test-FileIntent $userText)" in worker
     assert "if ($hasDocumentContext) {" in worker
+    # Tekrar-dongu saglamlastirmasi.
+    assert "$script:completedTools = @{}" in worker
+    assert "$offeredTools = @($offeredTools | Where-Object { -not $script:completedTools.ContainsKey($_.function.name) })" in worker
 
 
-def test_no_internet_note_is_appended_for_current_info(tmp_path):
-    """Internet kapaliyken guncel bilgi isteyen bir yanit uydurulmus olabilir; yanit
-    zaten internetin kapali oldugunu belirtmiyorsa durust bir not eklenir."""
+def test_final_answer_blocks_fabrication_and_empty(tmp_path):
+    """Guncel bilgi + web yoksa (arama basarisiz / Internet kapali) modelin metni
+    KULLANILMAZ (uydurma ekrana gelmez); bos yanit yerine net mesaj verilir."""
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
     desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
-    defs = extract_function(desktop, "Test-CurrentInfoIntent") + "\n" + extract_function(desktop, "Add-NoInternetNote")
+    defs = "\n".join(
+        extract_function(desktop, n)
+        for n in ("Test-CurrentInfoIntent", "Add-WebFailureNote", "Get-FinalAnswer")
+    )
     cur = _ps_quote("Bugun Istanbulda hava durumu nasil? Guncel bilgi ver.")
     other = _ps_quote("Kediler hakkinda bilgi ver.")
     body = (
         "$ErrorActionPreference = 'Stop'\n" + defs + "\n"
-        "$script:webToolFailCount = 0\n"
+        "$script:webToolFailCount = 0; $script:lastProducedFile = ''\n"
         "$r = [ordered]@{}\n"
-        f"$r['on'] = Add-NoInternetNote 'hava' {cur} $true\n"
-        f"$r['off_current'] = Add-NoInternetNote 'hava tahmini' {cur} $false\n"
-        f"$r['off_other'] = Add-NoInternetNote 'kediler' {other} $false\n"
+        f"$r['offline'] = Get-FinalAnswer 'UYDURMA 21 derece' {cur} $false\n"
+        "$script:webToolFailCount = 2\n"
+        f"$r['webfail'] = Get-FinalAnswer 'UYDURMA iPhone 15' {cur} $true\n"
+        "$script:webToolFailCount = 0\n"
+        f"$r['normal'] = Get-FinalAnswer 'kediler memelidir' {other} $true\n"
+        f"$r['empty'] = Get-FinalAnswer '' {other} $true\n"
+        "$script:lastProducedFile = 'C:\\out\\grafik.png'\n"
+        f"$r['empty_file'] = Get-FinalAnswer '' {other} $true\n"
         "$r | ConvertTo-Json -Compress -EscapeHandling EscapeNonAscii\n"
     )
-    script = tmp_path / "nonet.ps1"
+    script = tmp_path / "final.ps1"
     script.write_text(body, encoding="utf-8-sig")
     proc = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-File", str(script)],
                           capture_output=True, encoding="utf-8", errors="replace", check=False)
     assert proc.returncode == 0, proc.stderr or proc.stdout
     got = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert got["on"] == "hava"
-    assert "İnternet erişimi kapalı" in got["off_current"]
-    assert got["off_other"] == "kediler"
+    assert "UYDURMA" not in got["offline"] and "İnternet erişimi kapalı" in got["offline"]
+    assert "UYDURMA" not in got["webfail"] and "web araştırması başarısız" in got["webfail"]
+    assert got["normal"] == "kediler memelidir"
+    assert "üretilemedi" in got["empty"]
+    assert "grafik.png" in got["empty_file"]

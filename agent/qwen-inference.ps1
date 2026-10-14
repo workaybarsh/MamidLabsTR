@@ -633,17 +633,27 @@ function Test-CurrentInfoIntent([string]$text) {
     return $normalized -match 'guncel|hava durumu|\bhaber|son cikan|son surum|son haber|en son \w+|en yeni|fiyat|borsa|\bkur\b|dolar|euro|skor|mac sonuc|weather|latest|current|news|price|stock|score'
 }
 
-# Internet cipi KAPALI oldugu halde guncel bilgi isteyen bir yanit uretilirse ve
-# yanit zaten internetin kapali oldugunu belirtmiyorsa, kisa ve durust bir not
-# eklenir: kullanici uydurulmus guncel veriye guvenmesin.
-function Add-NoInternetNote([string]$text, [string]$userText, [bool]$internetOn) {
-    if ($internetOn) { return $text }
-    if ($script:webToolFailCount -gt 0) { return $text }  # web-hatasi notu zaten eklenir
-    if ([string]::IsNullOrWhiteSpace($text)) { return $text }
-    if (!(Test-CurrentInfoIntent $userText)) { return $text }
-    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
-    if ($normalized -match 'internet (yok|kapali|baglant|erisim)|cevrimdisi|baglanti (yok|kurul)|online degil|offline|no internet') { return $text }
-    return $text + "`n`n[İnternet erişimi kapalı olduğu için bu bilgi güncel bir kaynaktan doğrulanamadı.]"
+# Nihai yaniti guvenli hale getirir (uydurmayi TAMAMEN onlemek icin):
+#  - Guncel bilgi isteyen bir turda web erisimi YOKSA (arama basarisiz ya da Internet
+#    cipi kapali) modelin urettigi METIN KULLANILMAZ; uydurulmus hava durumu/fiyat/
+#    "en son cikan model" gibi icerik ekrana hic gelmez, yalnizca durust bir mesaj gosterilir.
+#  - Web aramasi basarisiz olup yanit bunu belirtmiyorsa (guncel bilgi sart degilse) not eklenir.
+#  - Yanit bossa (or. arac dongusu bos dondu) bos/uydurma yerine net bir mesaj verilir.
+function Get-FinalAnswer([string]$text, [string]$userText, [bool]$internetOn) {
+    $webFailed = $script:webToolFailCount -gt 0
+    if (Test-CurrentInfoIntent $userText) {
+        if ($webFailed) {
+            return 'Maalesef web araştırması başarısız oldu; şu an internete ulaşamıyorum ve güncel bilgiyi doğrulayamıyorum. Bağlantını kontrol edip birazdan tekrar dener misin?'
+        }
+        if (!$internetOn) {
+            return 'İnternet erişimi kapalı olduğu için güncel bilgiyi şu an veremiyorum. Güncel bir sonuç için İnternet''i açıp tekrar sor.'
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        if ($script:lastProducedFile) { return ('İşlem tamamlandı; oluşturulan dosya: ' + [string]$script:lastProducedFile) }
+        return 'Yanıt üretilemedi. Lütfen isteğini tekrar dene.'
+    }
+    return (Add-WebFailureNote $text)
 }
 
 # Komut calistirma niyeti. run_command araci YALNIZCA kullanici acikca komut/terminal
@@ -1808,6 +1818,10 @@ try {
     $final = ''
     $lastUsage = $null
     $maxRounds = 8
+    # Ayni turda tamamlanan uretim araclari (grafik/belge) bir daha SUNULMAZ: kucuk model
+    # ayni araci tekrar tekrar cagirip (or. 8 kez grafik) bos yanit uretiyordu.
+    $script:completedTools = @{}
+    $script:lastProducedFile = ''
     # Sunucunun KV onbellegini bir sonraki turda yeniden kullanabilmesi icin, bu turda
     # $messages'a eklenen arac cagrisi/arac sonucu turlarini de istemciye geri gonderip
     # kalici sohbet gecmisine eklettiriyoruz -- aksi halde istemci yalnizca sikistirilmis
@@ -1895,6 +1909,9 @@ try {
             if (!(Test-FileIntent $userText)) { $blocked += @('list_bound_files', 'read_bound_file') }
             @($toolDefinitions | Where-Object { $_.function.name -notin $blocked })
         } else { $toolDefinitions }
+        # Bu turda tamamlanan uretim araclari (grafik/belge) bir daha sunulmaz: kucuk model
+        # ayni araci tekrar tekrar cagirip (or. 8 kez grafik) bos yanit uretiyordu.
+        $offeredTools = @($offeredTools | Where-Object { -not $script:completedTools.ContainsKey($_.function.name) })
         if (@($offeredTools).Count -gt 0) { $body.tools = @($offeredTools) }
         # Arayuz testinde FLASH modeli arac sonucundaki "reddedildi" talimatini atlayip reddi
         # "Python kurulu degil olabilir" diye yorumladi. Red varsa istegin sonuna (kalici gecmise
@@ -2001,7 +2018,7 @@ try {
                 return
             }
             $toolExchange = if ($messages.Count -gt $initialMessageCount) { @($messages.ToArray())[$initialMessageCount..($messages.Count - 1)] } else { @() }
-            Emit 'done' (Add-WebFailureNote (Add-NoInternetNote $final $userText ([bool]$JobData.internet))) $lastUsage $toolExchange
+            Emit 'done' (Get-FinalAnswer $final $userText ([bool]$JobData.internet)) $lastUsage $toolExchange
             return
         }
 
@@ -2083,8 +2100,8 @@ try {
                 $approval = if ($script:lastApprovalOutcome) { $script:lastApprovalOutcome } else { 'not_required' }
                 $auditResult = if ($approval -in @('asked_no', 'cancelled', 'timeout')) { 'denied' } else { 'ok' }
                 Write-AuditLog $name $approval $auditResult $auditDetail ([string]$script:createdArtifact)
-                if ($script:createdArtifact) { Emit 'artifact' $script:createdArtifact }
-                if ($name -eq 'generate_chart' -and $script:chartFile) { Emit 'chart' $script:chartFile }
+                if ($script:createdArtifact) { Emit 'artifact' $script:createdArtifact; $script:lastProducedFile = [string]$script:createdArtifact; $script:completedTools['create_document'] = $true }
+                if ($name -eq 'generate_chart' -and $script:chartFile) { Emit 'chart' $script:chartFile; $script:lastProducedFile = [string]$script:chartFile; $script:completedTools['generate_chart'] = $true }
                 if ($script:deniedNote) { Emit 'denied' $script:deniedNote }
                 if ($name -eq 'read_images_ocr') {
                     $multiOcr = $null
@@ -2125,7 +2142,7 @@ try {
         $final = $turn.content
     }
     $toolExchange = if ($messages.Count -gt $initialMessageCount) { @($messages.ToArray())[$initialMessageCount..($messages.Count - 1)] } else { @() }
-    Emit 'done' (Add-WebFailureNote (Add-NoInternetNote $final $userText ([bool]$JobData.internet))) $lastUsage $toolExchange
+    Emit 'done' (Get-FinalAnswer $final $userText ([bool]$JobData.internet)) $lastUsage $toolExchange
 } catch {
     if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.' }
     else {
