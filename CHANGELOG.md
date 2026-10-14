@@ -55,6 +55,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   `requirements` dizinini de siler; kök gerçekten kaldırılır.
 
 ### Belgeler
+- **README ve AGENTS ürün özeti güncellendi.** `README.md`'ye (TR) grafik çizimi yeteneği — tanıtım
+  satırı ve Özellikler tablosu — ve yeni güvenlik davranışları (istenmeden belge/görsel/video/grafik
+  üretilmez; web araması başarısızsa ya da İnternet kapalıyken güncel bilgi istenirse uydurmak yerine
+  durum dürüstçe bildirilir) eklendi. `AGENTS.md` §1 ürün özeti grafik çizimiyle hizalandı.
 - **Doküman tutarlılık geçişi (davranış değişmedi).** `AGENTS.md`, `docs/kurulum.md`,
   `docs/teknik-notlar.md`, `packaging/windows/mamidlabs.iss` (yorum), `qwen-desktop.ps1` (yorum),
   `scripts/manage-qwen.ps1` (yorum) ve `agent/transcriber/__init__.py` (yorum) güncel kodla

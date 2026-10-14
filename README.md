@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Tamamen yerel çalışan, çok modlu yapay zekâ çalışma alanı</b><br>
-  Sohbet · Web araması · Belge · OCR · Ses dökümü · Görsel anlama · Görsel ve video üretimi · Fotoğraf düzenleme
+  Sohbet · Web araması · Belge · OCR · Ses dökümü · Görsel anlama · Görsel ve video üretimi · Fotoğraf düzenleme · Grafik çizimi
 </p>
 
 <p align="center">
@@ -55,6 +55,7 @@ API sağlayıcıları için kullanılır.
 | **Görsel üretimi** | Krea-2 Turbo; yeniden üretim, stil referansı ve istek üzerine gerçekçilik LoRA'sı |
 | **Fotoğraf düzenleme** | Krea 2 Identity Edit: kişinin yüzü korunarak kıyafet, ışık ve arka plan değişir; iki görselle kişiyi sahneye yerleştirir (16 GB profiller) |
 | **Video üretimi** | Wan 2.2 TI2V 5B; metinden, görselden ve videodan devam |
+| **Grafik çizimi** | Çubuk, çizgi, pasta, saçılım ve fonksiyon grafikleri (y=f(x)); sohbetten tek istekle |
 | **Ajan modu** | Bağlı klasörde dosya okuma/yazma ve komut çalıştırma; kullanıcı onayıyla |
 | **API sağlayıcıları** | İsteğe bağlı OpenAI, Claude, Gemini, DeepSeek ve OpenAI uyumlu özel uç; anahtar doğrulama ve model listeleme |
 | **Kendi modellerin** | Dil, görsel ve video modelini dosya yoluyla seç; dosyalar kopyalanmadan yerinde kullanılır |
@@ -139,6 +140,9 @@ işleri arasında açık tutulabilir.
 - Her araç çağrısı `logs\audit.jsonl` denetim günlüğüne yazılır; sohbet kayıtları ve API
   anahtarları Windows DPAPI ile şifrelenir.
 - Web araçları yalnızca genel HTTP(S) adreslerine erişir; yerel ve özel ağ adresleri reddedilir.
+- Model, açıkça istenmedikçe belge/görsel/video/grafik üretmez; `read_document` yalnızca bir belge
+  ekliyken ya da dosya istenmişken sunulur. Web araması başarısız olursa ya da İnternet kapalıyken
+  güncel bilgi istenirse, uydurmak yerine durumu açıkça bildirir.
 
 ## Test ve doğrulama
 
