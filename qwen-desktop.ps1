@@ -2125,6 +2125,25 @@ function Load-Chat([string]$path) {
     $metric.Text = "Sohbet yüklendi: $($script:chatTitle)"
 }
 
+# "Tümünü Sil" o an AÇIK olan sohbeti silmez: ekranda duran sohbetin dosyası
+# listede görünse bile silineceklerin dışında tutulur. Böylece kullanıcı tüm
+# geçmişi silse de açık sohbet geçmişte kalmaya devam eder. Saf/test edilebilir
+# yardımcı; Tk/dialog durumuna dokunmaz.
+function Get-DeletableChatPaths([string]$directory, $paths, [string]$keepId) {
+    $keep = ''
+    if ($keepId) {
+        try { $keep = [IO.Path]::GetFullPath((Join-Path $directory "$keepId.json")) } catch { $keep = '' }
+    }
+    $result = New-Object System.Collections.ArrayList
+    foreach ($path in @($paths)) {
+        if (!$path) { continue }
+        try { $full = [IO.Path]::GetFullPath([string]$path) } catch { continue }
+        if ($keep -and $full -eq $keep) { continue }
+        [void]$result.Add($full)
+    }
+    return @($result)
+}
+
 function Update-ApprovalDialog($ctx) {
     # Arac tarafi vazgecti (sure doldu, Durdur'a basildi ya da is bitti): cevap bekleyen yok.
     if ([string]$ctx.request.AskId -ne $ctx.askId -or $ctx.request.Cancel) {
@@ -2293,11 +2312,22 @@ function Show-ChatHistory {
     })
     $delAllBtn.Add_Click({
         if ($entries.Count -eq 0) { return }
+        # Açık sohbet korunur (bkz. Get-DeletableChatPaths): $script:chatId o an
+        # ekranda duran sohbetin kimliğidir.
+        $targets = @(Get-DeletableChatPaths $chatDir $entries $script:chatId)
+        if ($targets.Count -eq 0) {
+            [void][System.Windows.Forms.MessageBox]::Show(
+                'Silinecek başka kayıtlı sohbet yok. Açık olan sohbet korunur.',
+                'Tüm sohbetleri sil', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            return
+        }
+        $note = ''
+        if ($script:chatId) { $note = "`n`nAçık olan sohbet korunur." }
         $answer = [System.Windows.Forms.MessageBox]::Show(
-            "$($entries.Count) sohbetin TAMAMI kalıcı olarak silinsin mi? Bu işlem geri alınamaz.",
+            "$($targets.Count) sohbetin TAMAMI kalıcı olarak silinsin mi? Bu işlem geri alınamaz.$note",
             'Tüm sohbetleri sil', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
         if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-        foreach ($path in @($entries)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+        foreach ($path in @($targets)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
         Refresh-List
     })
     $closeBtn.Add_Click({ $dlg.Close() })

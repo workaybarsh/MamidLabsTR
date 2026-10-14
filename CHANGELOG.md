@@ -18,6 +18,11 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   okuma projektör CPU'da hafifçe yavaşladı.
 
 ### Düzeltilen
+- **"Tümünü Sil" artık o an AÇIK olan sohbeti silmiyor.** Geçmiş sohbetler penceresinde
+  "Tümünü Sil" listenin tamamını (ekranda duran sohbet dahil) siliyordu. Artık ekranda duran
+  sohbetin dosyası silinecekler listesinden çıkarılır ve onay penceresinde "Açık olan sohbet
+  korunur." yazar; açık sohbet geçmişte kalmaya devam eder. Karar, saf ve test edilebilir
+  `Get-DeletableChatPaths` yardımcısıyla verilir (`tests/test_chat_history_delete.py`).
 - **Ses eki + "Ajan" çipi: modele dosya araçları sunulmuyor.** Ses eklenen bir turda ses zaten
   faster-whisper ile dökümlenip metne çevrildiği hâlde, Ajan çipi açıkken küçük model
   `list_bound_files`/`read_bound_file`/`write_bound_file` ile ses DOSYASINI aramaya/okumaya/yazmaya
