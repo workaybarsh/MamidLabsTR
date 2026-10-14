@@ -121,6 +121,26 @@ $script:deniedNote = $null
 # bariz sekilde internetsiz oldugu kabul edilir: web araclari sunulmaz, ag-probe
 # komutlari reddedilir ve model elindeki bilgiyle yanit verir. Kalici gecmise yazilmaz.
 $script:webToolFailCount = 0
+# Bu turda bir web araci GERCEK sonuc dondurdu mu? Uydurulmus kaynak/URL satirlarini
+# ayiklamak icin kullanilir: web basarili olmadiysa modelin "Kaynak: ..." gibi
+# atiflari dogrulanamaz sayilir ve gosterilmez.
+$script:webToolSuccess = $false
+# Bu turda bir web araci HIC cagrildi mi? Atif/URL ayiklama yalnizca web denenen
+# turlarda uygulanir (normal bir yanittaki mesru baglantilar bozulmasin).
+$script:webToolAttempted = $false
+
+# Web erisimi bu turda BASARILI olmadiysa modelin urettigi "Kaynak: ...",
+# "Source: ..." gibi atif satirlari ve ciplak http(s) URL'leri dogrulanamaz sayilir
+# ve metinden CIKARILIR: uydurma kaynak/URL kullaniciya gosterilmez.
+function Remove-FabricatedCitations([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $text }
+    $kept = foreach ($line in ($text -split "`n")) {
+        if ($line -match '(?i)(kaynak(lar|ca)?|kaynakça|source|sources|referans|reference)\s*[:：]') { continue }
+        if ($line -match 'https?://') { continue }
+        $line
+    }
+    return (@($kept) -join "`n").Trim()
+}
 
 function Emit([string]$kind, [string]$text, $usage = $null, $data = $null) {
     [pscustomobject]@{ kind = $kind; text = $text; usage = $usage; data = $data }
@@ -630,7 +650,11 @@ function Add-WebFailureNote([string]$text) {
 function Test-CurrentInfoIntent([string]$text) {
     if ([string]::IsNullOrWhiteSpace($text)) { return $false }
     $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
-    return $normalized -match 'guncel|hava durumu|\bhaber|son cikan|son surum|son haber|en son \w+|en yeni|fiyat|borsa|\bkur\b|dolar|euro|skor|mac sonuc|weather|latest|current|news|price|stock|score'
+    # Sert koruma: zaman duyarli/guncel bilgi isteyen genis bir kume. Web erisimi yoksa
+    # (arama basarisiz ya da Internet kapali) bu sorulara model metni GOSTERILMEZ.
+    # Ic gruplama YOK (parantezsiz) ki alternation guvenli olsun.
+    $pattern = 'guncel|güncel|hava durumu|hava nasil|hava tahmin|\bhaber|son cikan|son surum|son haber|en yeni|en guncel|fiyat|borsa|\bkur\b|dolar|euro|sterlin|altin|skor|mac sonuc|\bmac\b|bugun|bugün|su an|şu an|simdi|simdiki|derece|sicaklik|nem orani|yagmur|kar yag|ne zaman cikti|kac tl|kac dolar|kac lira|weather|forecast|latest|current|newest|\bnews\b|price|\bstock\b|score|exchange rate|today|tonight|tomorrow|\b20[2-9][0-9]\b|this week|this month|this year'
+    return $normalized -match $pattern
 }
 
 # Nihai yaniti guvenli hale getirir (uydurmayi TAMAMEN onlemek icin):
@@ -641,17 +665,29 @@ function Test-CurrentInfoIntent([string]$text) {
 #  - Yanit bossa (or. arac dongusu bos dondu) bos/uydurma yerine net bir mesaj verilir.
 function Get-FinalAnswer([string]$text, [string]$userText, [bool]$internetOn) {
     $webFailed = $script:webToolFailCount -gt 0
+    $webOk = $script:webToolSuccess
+    $webTried = $script:webToolAttempted
     if (Test-CurrentInfoIntent $userText) {
-        if ($webFailed) {
-            return 'Maalesef web araştırması başarısız oldu; şu an internete ulaşamıyorum ve güncel bilgiyi doğrulayamıyorum. Bağlantını kontrol edip birazdan tekrar dener misin?'
+        # Web erisimi YOKSA (denendi-basarisiz ya da Internet kapali) guncel bilgi
+        # SORUSUNUN metni hic gosterilmez: uydurulmus hava/fiyat/"en son cikan" icerigi
+        # ekrana gelmez, yalnizca durust bir mesaj verilir.
+        if (($webTried -and !$webOk) -or ($webFailed -and !$webOk)) {
+            return 'Maalesef bu bilgi internet bağlantısı olmadan elde edemeyeceğim bir bilgi. Web araması başarısız oldu; bağlantını kontrol edip birazdan tekrar dener misin?'
         }
         if (!$internetOn) {
-            return 'İnternet erişimi kapalı olduğu için güncel bilgiyi şu an veremiyorum. Güncel bir sonuç için İnternet''i açıp tekrar sor.'
+            return 'Maalesef bu bilgi internet bağlantısı olmadan elde edemeyeceğim bir bilgi. Güncel bir sonuç için İnternet''i açıp tekrar sor.'
         }
     }
     if ([string]::IsNullOrWhiteSpace($text)) {
         if ($script:lastProducedFile) { return ('İşlem tamamlandı; oluşturulan dosya: ' + [string]$script:lastProducedFile) }
         return 'Yanıt üretilemedi. Lütfen isteğini tekrar dene.'
+    }
+    # Sert anti-uydurma: web DENENDI ama HIC basarili olmadiysa atif/URL satirlari
+    # dogrulanamaz; metinden cikarilir. Geriye yalnizca atif kaldiysa durust mesaj verilir.
+    if ($webTried -and !$webOk) {
+        $cleaned = Remove-FabricatedCitations $text
+        if (![string]::IsNullOrWhiteSpace($cleaned)) { $text = $cleaned }
+        else { return 'Bu bilgiyi güncel bir kaynaktan doğrulayamadım; kaynak/bağlantı gösteremiyorum.' }
     }
     return (Add-WebFailureNote $text)
 }
@@ -1166,6 +1202,17 @@ function Get-ToolDefinitions([hashtable]$job) {
             xmax = @{ type = 'number'; description = 'Yalnizca function: x ust siniri (varsayilan 10).' }
             samples = @{ type = 'integer'; description = 'Yalnizca function: ornekleme sayisi (varsayilan 600).' }
         } } } }
+    }
+    # Kullanici GUNCEL bilgi arastirmasi istediyse (web arastirmasi) ve acikca uretim
+    # istemediyse, gorsel/video/belge/grafik araclari HIC SUNULMAZ: model bu islere
+    # girisemez (var olan arac sayesinde en azindan cagiramaz). Acik istek varsa sunulur.
+    if (Test-CurrentInfoIntent $userText) {
+        $explicitGeneration = (Test-ImageRequestIntent $userText ([bool]$job.hasCurrentImage -or [bool]$job.hasSourceImage)) -or
+            (Test-DocumentRequestIntent $userText) -or (Test-VideoRequestIntent $userText ([bool]$job.hasSourceVideo)) -or
+            (Test-ChartRequestIntent $userText)
+        if (!$explicitGeneration) {
+            $defs = @($defs | Where-Object { $_.function.name -notin @('generate_image', 'generate_video', 'create_document', 'generate_chart') })
+        }
     }
     return $defs
 }
@@ -2112,7 +2159,10 @@ try {
                 } elseif ($name -eq 'generate_chart' -and !(Test-ChartRequestIntent $userText)) {
                     'Grafik olusturulmadi: kullanici bu istekte grafik istemedi. Istegi metinle yanitla, grafik olusturma.'
                 } else { Invoke-Tool $name $arguments ([string]$JobData.boundFolder) }
-                if (Test-WebToolFailure $name $result) { $script:webToolFailCount++ }
+                if ($name -in @('search_web', 'fetch_page', 'find_reference_image')) {
+                    $script:webToolAttempted = $true
+                    if (Test-WebToolFailure $name $result) { $script:webToolFailCount++ } else { $script:webToolSuccess = $true }
+                }
                 $approval = if ($script:lastApprovalOutcome) { $script:lastApprovalOutcome } else { 'not_required' }
                 $auditResult = if ($approval -in @('asked_no', 'cancelled', 'timeout')) { 'denied' } else { 'ok' }
                 Write-AuditLog $name $approval $auditResult $auditDetail ([string]$script:createdArtifact)

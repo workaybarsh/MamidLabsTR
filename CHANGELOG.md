@@ -18,6 +18,16 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   okuma projektör CPU'da hafifçe yavaşladı.
 
 ### Düzeltilen
+- **Sert anti-uydurma katmanı.** (1) Güncel/zaman duyarlı bilgi isteyen geniş bir küme (hava durumu,
+  haber, fiyat/kur, "en son çıkan", skor, bugün/yarın, 20xx yılı…); web erişimi yoksa (arama
+  başarısız ya da İnternet kapalı) bu soruların **model metni gösterilmez**, yalnızca "bu bilgi
+  internet bağlantısı olmadan elde edemeyeceğim bir bilgi" mesajı verilir. (2) Web **denendi ama
+  hiç başarılı olmadıysa**, diğer yanıtlarda uydurma "Kaynak:"/"Source:" satırları ve çıplak
+  http(s) URL'leri **metinden çıkarılır** (`Remove-FabricatedCitations`). (3) Sistem istemi artık
+  kesin olan bilgiyi (tanım, matematik, kod, genel kültür) net cevaplamayı, ancak güncel ve
+  doğrulanamaz bilgide tahmin yürütmemeyi/uydurmamayı söyler. (4) Web araştırması (güncel bilgi)
+  istenen bir turda açıkça istenmedikçe görsel/video/belge/grafik araçları **hiç sunulmaz**; model bu
+  işlere girişemez.
 - **Akış yarıda kesilirse anlaşılır mesaj; net cevap verilemiyorsa tahmin/uydurma yok.** Bir tur
   **görünür yanıt üretmeden** (yalnızca düşünme birikmişken) koparsa bu artık hata sayılmaz; düşünme
   kapatılarak yanıt doğrudan istenir (boş-yanıt kurtarma yolu). Başka bir kopma/hatada
