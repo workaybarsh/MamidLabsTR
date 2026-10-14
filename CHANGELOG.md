@@ -18,6 +18,17 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   okuma projektör CPU'da hafifçe yavaşladı.
 
 ### Düzeltilen
+- **İstenmeden belge/görsel/video/grafik üretimi engellendi; web araması başarısız olunca dürüstçe
+  bildirilir.** Üretim araçları her turda modele sunuluyordu ve koruma yalnızca sistem istemine
+  bağlıydı; küçük model (LITE) istenmeden üretebiliyordu. Artık `create_document`, `generate_video`
+  ve `generate_chart` de `generate_image` gibi **çağrı anında niyet denetimiyle** korunur
+  (`Test-DocumentRequestIntent` / `Test-VideoRequestIntent` / `Test-ChartRequestIntent`): kullanıcı
+  açıkça istemediyse araç çalıştırılmaz. Ayrıca web araması başarısız olduğunda ve yanıt bunu hiç
+  belirtmiyorsa yanıta dürüst bir not eklenir (`Add-WebFailureNote`); `read_document` yalnızca ekli
+  belge ya da dosya niyeti varsa sunulur (model, elinde dosya yokken olmayan bir dosyayı uydurup
+  okumaya çalışıyordu). İnternet kapalıyken güncel bilgi (hava durumu, haber, fiyat, "en son
+  çıkan"…) isteyen bir yanıt da `Add-NoInternetNote` ile dürüst bir not alır. Regresyon testleri:
+  `tests/test_generation_intent_guard.py`.
 - **"Tümünü Sil" artık o an AÇIK olan sohbeti silmiyor.** Geçmiş sohbetler penceresinde
   "Tümünü Sil" listenin tamamını (ekranda duran sohbet dahil) siliyordu. Artık ekranda duran
   sohbetin dosyası silinecekler listesinden çıkarılır ve onay penceresinde "Açık olan sohbet

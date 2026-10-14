@@ -612,6 +612,40 @@ function Test-WebToolFailure([string]$name, $result) {
     return $false
 }
 
+# Web araci bu turda basarisiz olduysa ve görünür yanit bunu HIC belirtmiyorsa
+# yanitin sonuna kisa ve durust bir not eklenir. Kucuk model (LITE) sistem notuna
+# ragmen arama sonucunu UYDURABILIYOR ("en son cikti" diye eski bir modeli kesin
+# bilgi gibi sundu - gercek testte yasandi); boylece kullanici "web aramasi
+# basarisiz oldu" bilgisini MUTLAKA gorur, arama yapilmis gibi sunulmaz.
+function Add-WebFailureNote([string]$text) {
+    if ($script:webToolFailCount -le 0 -or [string]::IsNullOrWhiteSpace($text)) { return $text }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    if ($normalized -match 'basarisiz|basaramad|ulasila|baglanti (kurul|yok)|internet (yok|baglant|erisim)|kaynak (yok|bulun)|dogrulanam|error|failed|unavailable|unable to|could not') { return $text }
+    return $text + "`n`n[İnternet araması başarısız oldu; yanıttaki bilgiler güncel bir kaynaktan doğrulanamadı.]"
+}
+
+# Kullanici GUNCEL/zaman duyarli bir bilgi mi istiyor? (hava durumu, haber, fiyat,
+# "en son cikan", skor vb.) Internet kapaliyken modelin uydurdugu bir yaniti
+# isaretlemek icin kullanilir.
+function Test-CurrentInfoIntent([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    return $normalized -match 'guncel|hava durumu|\bhaber|son cikan|son surum|son haber|en son \w+|en yeni|fiyat|borsa|\bkur\b|dolar|euro|skor|mac sonuc|weather|latest|current|news|price|stock|score'
+}
+
+# Internet cipi KAPALI oldugu halde guncel bilgi isteyen bir yanit uretilirse ve
+# yanit zaten internetin kapali oldugunu belirtmiyorsa, kisa ve durust bir not
+# eklenir: kullanici uydurulmus guncel veriye guvenmesin.
+function Add-NoInternetNote([string]$text, [string]$userText, [bool]$internetOn) {
+    if ($internetOn) { return $text }
+    if ($script:webToolFailCount -gt 0) { return $text }  # web-hatasi notu zaten eklenir
+    if ([string]::IsNullOrWhiteSpace($text)) { return $text }
+    if (!(Test-CurrentInfoIntent $userText)) { return $text }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    if ($normalized -match 'internet (yok|kapali|baglant|erisim)|cevrimdisi|baglanti (yok|kurul)|online degil|offline|no internet') { return $text }
+    return $text + "`n`n[İnternet erişimi kapalı olduğu için bu bilgi güncel bir kaynaktan doğrulanamadı.]"
+}
+
 # Komut calistirma niyeti. run_command araci YALNIZCA kullanici acikca komut/terminal
 # istediginde sunulur. Aksi halde model (ozellikle kucuk LITE) web/arama hatasinda absurt
 # komut denemelerine giriyordu; tool hic sunulmazsa cagiramaz. Sistem/terminal komutlari
@@ -1022,10 +1056,17 @@ function Get-ToolDefinitions([hashtable]$job) {
         }
     }
     if ($job.office) {
+        # read_document YALNIZCA bir belge baglami varsa sunulur: ekli bir belge ya da
+        # kullanicinin dosya/belge niyeti. Aksi halde kucuk model, elinde dosya yokken
+        # "veriyi dosyadan okurum" diye OLMAYAN bir dosya yolu uydurup read_document
+        # cagiriyordu (gercek testte: internet kapaliyken hava durumu sorusu).
+        $hasDocumentContext = @($script:attachedDocuments).Count -gt 0 -or (Test-FileIntent $userText)
+        if ($hasDocumentContext) {
         $defs += @{ type = 'function'; function = @{ name = 'read_document'; description = 'PDF, Word (docx), Excel (xlsx), PowerPoint (pptx), ZIP veya RAR dosyasini okur. ZIP/RAR icin entry verilmezse arsivdeki dosya listesini dondurur; entry verilirse o dosyanin icerigini okur.'; parameters = @{ type = 'object'; required = @('path'); properties = @{
             path = @{ type = 'string'; description = "Tam dosya yolu. Masaustu, Belgeler, Indirilenler, $(Get-InstallRoot)\outputs, bagli klasor veya sohbete eklenen belge okunabilir." }
             entry = @{ type = 'string'; description = 'Yalnizca zip/rar icin: arsiv icindeki dosyanin adi (once entry vermeden cagirip listeyi gor).' }
         } } } }
+        }
     }
     if ($job.documentCreate) {
         $defs += @{ type = 'function'; function = @{ name = 'create_document'; description = 'PDF, Word veya PowerPoint belgesi olusturur. Icerigi markdown olarak yazarsin: # basliklar, - maddeler, | tablolar |, **kalin**. PowerPoint icin her "# " yeni bir slayt olur.'; parameters = @{ type = 'object'; required = @('filename', 'format', 'content'); properties = @{
@@ -1465,8 +1506,41 @@ function Test-ImageRequestIntent([string]$text, [bool]$hasImageContext) {
     return $false
 }
 
-function Test-ConversationHasImage([Collections.ArrayList]$items) {
-    foreach ($item in $items) {
+# Belge/video/grafik araclari HER turda modele sunulur; kucuk model bunlari
+# istenmeden cagirabiliyordu ("hava durumu karti" uretti; soru sorunca belge
+# olusturma denemesi). Gorselde oldugu gibi (Test-ImageRequestIntent) cagri
+# aninda niyet denetlenir: kullanici acikca istemediyse arac CALISTIRILMAZ.
+# Niyet kaliplari generik tutulur ki gercek istekler kacirilmasin.
+function Test-DocumentRequestIntent([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    # Acik bicim adi (pdf, word, powerpoint, sunum...) tek basina yeterlidir.
+    if ($normalized -match '\bpdf\b|\bdocx?\b|\bword\b|powerpoint|\bpptx?\b|sunum|slayt|\bpresentation\b|\bslide') { return $true }
+    # Belge turu adi + olusturma fiili.
+    if ($normalized -match '(belge|dokuman|rapor|doküman|document|report)\w*' -and
+        $normalized -match 'olustur|hazirla|\byaz\b|uret|kaydet|create|generate|make|write|save|prepare') { return $true }
+    return $false
+}
+
+# Video yalnizca acikca video/animasyon isteniyorsa (ya da ekli videodan devam
+# isteniyorsa) uretilir; ekli video hakkinda soru sormak uretim sayilmaz.
+function Test-VideoRequestIntent([string]$text, [bool]$hasVideoContext) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    if ($normalized -match 'video|animasyon|\banimation\b|\bclip\b|\bfilm\b' -and
+        $normalized -match 'uret|olustur|\byap\b|hazirla|\bcevir\b|generate|create|make|render') { return $true }
+    if ($hasVideoContext -and $normalized -match 'devam|uzat|sur(dur)?\b|continue|extend') { return $true }
+    return $false
+}
+
+# Grafik/cizim istegi: "grafik" gecen istekler pratikte her zaman uretim istegidir.
+function Test-ChartRequestIntent([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
+    return ($normalized -match 'grafik|grafi(g|k)\w*|\bchart\b|\bplot\b|\bcizim\b|scatter|histogram|\bbar\b.*\bchart\b|\bpasta\b|\bfunction\b.*\bplot\b|egri(sini)?\s*ciz')
+}
+
+function Test-ConversationHasImage([Collections.ArrayList]$items) {    foreach ($item in $items) {
         $content = $item.content
         if ($content -is [string]) {
             if ($content.StartsWith('[Gorsel uretildi') -or $content.StartsWith('[Video uretildi')) { return $true }
@@ -1927,12 +2001,14 @@ try {
                 return
             }
             $toolExchange = if ($messages.Count -gt $initialMessageCount) { @($messages.ToArray())[$initialMessageCount..($messages.Count - 1)] } else { @() }
-            Emit 'done' $final $lastUsage $toolExchange
+            Emit 'done' (Add-WebFailureNote (Add-NoInternetNote $final $userText ([bool]$JobData.internet))) $lastUsage $toolExchange
             return
         }
 
         # Gorsel uretimi: dil modeli yalnizca promptu yazar; VRAM takasini ve uretimi arayuz yonetir.
         $videoCall = @($toolCalls | Where-Object { $_.function.name -eq 'generate_video' })[0]
+        # Istekte video/animasyon niyeti yoksa uretim baslatilmaz (asagidaki dongude reddedilir).
+        if ($videoCall -and !(Test-VideoRequestIntent $userText ([bool]$JobData.hasSourceVideo))) { $videoCall = $null }
         if ($videoCall) {
             $spec = $null
             try { $spec = $videoCall.function.arguments | ConvertFrom-Json -ErrorAction Stop } catch { }
@@ -1996,6 +2072,12 @@ try {
                 $result = if ($name -eq 'generate_image') {
                     # Kabul edilen gorsel cagrilari yukarida arayuze devredilir; buraya gelen reddedilmistir.
                     'Gorsel uretilmedi: kullanici bu istekte gorsel istemedi. Istegi metinle yanitla, gorsel uretme.'
+                } elseif ($name -eq 'generate_video' -and !(Test-VideoRequestIntent $userText ([bool]$JobData.hasSourceVideo))) {
+                    'Video uretilmedi: kullanici bu istekte video istemedi. Istegi metinle yanitla, video uretme.'
+                } elseif ($name -eq 'create_document' -and !(Test-DocumentRequestIntent $userText)) {
+                    'Belge olusturulmadi: kullanici bu istekte belge istemedi. Istegi metinle yanitla, belge olusturma.'
+                } elseif ($name -eq 'generate_chart' -and !(Test-ChartRequestIntent $userText)) {
+                    'Grafik olusturulmadi: kullanici bu istekte grafik istemedi. Istegi metinle yanitla, grafik olusturma.'
                 } else { Invoke-Tool $name $arguments ([string]$JobData.boundFolder) }
                 if (Test-WebToolFailure $name $result) { $script:webToolFailCount++ }
                 $approval = if ($script:lastApprovalOutcome) { $script:lastApprovalOutcome } else { 'not_required' }
@@ -2043,7 +2125,7 @@ try {
         $final = $turn.content
     }
     $toolExchange = if ($messages.Count -gt $initialMessageCount) { @($messages.ToArray())[$initialMessageCount..($messages.Count - 1)] } else { @() }
-    Emit 'done' $final $lastUsage $toolExchange
+    Emit 'done' (Add-WebFailureNote (Add-NoInternetNote $final $userText ([bool]$JobData.internet))) $lastUsage $toolExchange
 } catch {
     if ($Shared.Cancel) { Emit 'cancelled' 'Istek durduruldu.' }
     else {
