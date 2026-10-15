@@ -15,7 +15,7 @@ Kullanım (Windows PowerShell 5.1):
 . .\tests\ui-automation\win32.ps1
 ```
 
-Ekran görüntüleri `%TEMP%\claude\ui\shots\` altına yazılır.
+Ekran görüntüleri `%TEMP%\mamidlabs\ui\shots\` altına yazılır.
 
 ## Öğrenilenler
 

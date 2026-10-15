@@ -220,7 +220,7 @@ metin ve `tool_use` blokları akıştan sırasıyla toplanır ve bir sonraki ist
 gönderilir. Bu kayıt yalnızca o isteğin belleğinde tutulur; sohbet dosyasına ve diğer
 sağlayıcılara geçmez. `max_tokens` düşünceyi de kapsadığı için Claude'da alt sınır 16000'dir.
 
-Claude, Gemini ya da ChatGPT **abonelik hesabıyla giriş** (OAuth) bilerek yoktur. Bu sağlayıcılar
+OpenAI, Claude ya da Gemini **abonelik hesabıyla giriş** (OAuth) bilerek yoktur. Bu sağlayıcılar
 tüketici aboneliği girişini yalnızca kendi uygulamalarına açar; üçüncü taraf uygulamanın abonelik
 oturumunu kullanması kullanım koşullarına aykırıdır ve hesabın kapatılmasına yol açabilir.
 Desteklenen yol API anahtarıdır; hesap bağlama penceresi bu adımı tek tıka indirir.
