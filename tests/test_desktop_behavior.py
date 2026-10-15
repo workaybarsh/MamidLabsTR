@@ -504,3 +504,27 @@ def test_desktop_captures_manager_stderr_for_specific_errors():
     assert "function Format-ModelSwitchError" in desktop
     assert "Format-ModelSwitchError $detail" in desktop
 
+
+def test_desktop_warns_when_the_model_spills_into_shared_memory():
+    """Model VRAM'e tam sigmazsa llama.cpp agirliklarin bir kismini paylasilan bellege alir
+    ve sohbet belirgin yavaslar (olculdu: 27B tam siginca ~55 tok/s; tastiginda onek isleme
+    ~20 tok/s). Arayuz bunu sessizce yasamak yerine acikca uyarir: yukleme sonrasi
+    Get-LlamaSpillMiB ile BIR kez kontrol edilir ve >1000 MiB ise 'Yavas mod' gosterilir."""
+    desktop = (ROOT / "qwen-desktop.ps1").read_text(encoding="utf-8-sig")
+    assert "function Get-LlamaSpillMiB" in desktop
+    assert "GPU Process Memory(*)\\Shared Usage" in desktop
+    assert "$script:spillChecked" in desktop and "$script:spillWarn" in desktop
+    assert "$spill -gt 1000" in desktop
+    assert "Yavaş mod" in desktop
+    # Yukleme basina bir kez kontrol + durum/model degisince sifirlama.
+    assert desktop.count("$script:spillChecked = $false") >= 2
+
+
+def test_get_llama_spill_mib_returns_a_non_negative_int(tmp_path):
+    """Get-LlamaSpillMiB, llama-server sureci yoksa ya da sayac okunamazsa 0 doner
+    (yanlis uyari yok); aksi halde negatif olmayan bir tamsayi doner."""
+    run_ps(tmp_path, r"""
+$m = Get-LlamaSpillMiB
+Assert ($m -is [int] -and $m -ge 0) "Get-LlamaSpillMiB negatif olmayan tamsayi donmeli, gelen: $m"
+""")
+

@@ -22,6 +22,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   dışlanır). Kullanıcı verisine dokunulmaz.
 
 ### Düzeltilen
+- **Yavaş model (VRAM taşması) artık açıkça bildirilir.** Model VRAM'e tam sığmayıp paylaşılan
+  belleğe taştığında sohbet ~20x yavaşlıyordu (ölçüm: 27B tam sığınca ~55 tok/s; taşınca ön-işleme
+  ~20 tok/s) ve bu sessizce yaşanıyordu. Arayüz yükleme sonrası bir kez ölçüp **"Yavaş mod (VRAM
+  taşması)"** uyarısını gösterir.
 - **Arayüzde model hatasının gerçek nedeni gösterilir.** Yetersiz VRAM gibi durumlarda jenerik
   "Model işlemi başarısız" yerine gerçek neden (ör. "Yetersiz boş VRAM: …") görünür; yönetici
   sürecinin stderr'i arayüze taşınır (`Format-ModelSwitchError`).

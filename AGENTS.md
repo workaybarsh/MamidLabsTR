@@ -366,7 +366,7 @@ aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~464 test (468 toplanır; 464 geçti, 4 atlandı), ~150 sn; ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~466 test (470 toplanır; 466 geçti, 4 atlandı), ~176 sn; ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -518,6 +518,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-15 | **Ön-işleme/düşünme gecikmesi teşhisi + VRAM taşma uyarısı.** Ölçüm (RTX 5060 Ti, MAX): KV önbelleği **çalışıyor** (2. turda 19.988 token önbellekten geldi, ilk token 0,6 sn) ve temiz yüklemede ön-işleme ~415 tok/s; buna karşılık uzun bağlamda **tam yeniden işleme** ~48 sn (20k token) sürüyor. Sorunlu turdaki ~20 tok/s ise ~20x yavaşlık: model VRAM'e tam sığmayıp **paylaşılan belleğe taşmıştı**. Arayüz artık yükleme sonrası **bir kez** `Get-LlamaSpillMiB` (llama-server'ın `GPU Process Memory(*)\Shared Usage` değeri) ölçüp >1000 MiB ise **"Yavaş mod (VRAM taşması)"** uyarısını metrik + durum panelinde gösterir (sessiz yavaşlık yerine). Model/durum değişiminde uyarı sıfırlanır. | qwen-desktop.ps1, tests/test_desktop_behavior.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Arayüz, model yükleme hatasının gerçek nedenini gösterir.** `Invoke-Manage` artık `RedirectStandardError` ile yönetici sürecinin stderr'ini yakalar; `Update-ModelSwitch` başarısız çıkışta yeni `Format-ModelSwitchError` ile anlamlı satırı (ör. "Yetersiz boş VRAM: …") gösterir; önce yalnızca jenerik "Model işlemi başarısız" görünüyordu. Ölçüm notu: MAX/FLASH bellek toleransı **0** kalır — 27B, 15244 MiB boş VRAM'de ~45 tok/s ile tam sığar; 15095 MiB'de ise taşıp ~30 tok/s'ye düşer, yani taşma yavaşlatır ve engellenmesi doğrudur. Test: `tests/test_desktop_behavior.py`. | qwen-desktop.ps1, tests/test_desktop_behavior.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Sistem isteminden düşen anti-uydurma cümlesi geri getirildi (test yakaladı).** Önceki "sert anti-uydurma" yeniden yazımı sabit sistem isteminden "test, teorem, özdeşlik veya kaynak adı KULLANMA" talimatını düşürmüştü; `tests/test_qwen_contracts.py` bunu kırıyordu. Sabit istem yeniden eklendi (önek sabit kaldığı için KV önbelleği bozulmaz). Bu değişiklikle pytest TR 462 / ENG 459 yeşil. | qwen-desktop.ps1, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Kurulu program dosyaları repoyla birebir aynı (assets\installer dışlaması kaldırıldı).** `layout` ve `kurulum-kaynak` tazelemesi artık `assets\installer\*` (sihirbaz görselleri) dosyalarını **dışlamaz**; `.iss` `[Files]` `Excludes: "installer\*"` kaldırıldı ve `Remove-ProgramExcludes` yalnızca `agent\__pycache__\*`/`*.pyc` temizler. Böylece kurulu kökün program dosyaları (`agent\`, `scripts\`, `assets\`, `requirements\` ve üst dosyalar) repoyla byte-for-byte aynıdır. | scripts/install-mamidlabs.ps1, packaging/windows/mamidlabs.iss, tests/test_install_layout_source.py, tests/test_install_update_gaps.py, AGENTS.md, CHANGELOG.md |

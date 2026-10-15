@@ -153,6 +153,12 @@ $script:stackY = 8
 $script:dirty = $false
 $script:shuttingDown = $false
 $script:lastSpeed = 0
+# Model VRAM'e tam sigmazsa llama.cpp agirliklarin bir kismini paylasilan sistem bellegine
+# (shared memory) alir; sohbet belirgin YAVAS calisir (olculdu: 27B tam siginca ~55 tok/s;
+# tastiginda onek isleme ~20 tok/s). Yukleme sonrasi BIR kez kontrol edilip arayuzde acik
+# bir uyari gosterilir (sessiz yavaslik yerine).
+$script:spillChecked = $false
+$script:spillWarn = $null
 # Son hiz testi sonucu; 2 sn'lik durum zamanlayicisi paneli yeniden yazarken korunur.
 $script:benchReport = ''
 $script:streamGenerating = $false
@@ -1953,13 +1959,35 @@ function Stop-LocalQwen {
     $script:modelReady = $false
     $script:activeModel = $null
     $script:modelSwitchError = $null
+    $script:spillChecked = $false
+    $script:spillWarn = $null
     $script:pendingModelChange = @{ action = 'stop'; profile = ''; modelId = '' }
     Update-ModelSwitch
     $statusCtrl.Text = 'Model durduruluyor… Arayüz açık kalacak.'
 }
 
+# llama-server surecinin VRAM yerine PAYLASILAN sistem belleginde tuttugu GPU miktarini (MiB)
+# dondurur. Yukleme sonrasi bu deger buyukse (or. >1 GB) model kismen CPU/paylasilan bellege
+# tasmistir ve sohbet belirgin yavaslar. Arizali/okunamayan durumda 0 doner (yanlis uyari yok).
+function Get-LlamaSpillMiB {
+    try {
+        $pids = @(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.Id })
+        if (!$pids.Count) { return 0 }
+        $rows = (Get-Counter '\GPU Process Memory(*)\Shared Usage' -ErrorAction Stop).CounterSamples
+        $sum = 0.0
+        foreach ($row in $rows) {
+            if ($row.InstanceName -match 'pid_(\d+)') {
+                if ($pids -contains [int]$Matches[1]) { $sum += [double]$row.CookedValue }
+            }
+        }
+        return [int][math]::Round($sum / 1MB)
+    } catch { return 0 }
+}
+
 function Restart-LocalQwen([string]$profile) {
     $wanted = Get-SelectedLocalAlias
+    $script:spillChecked = $false
+    $script:spillWarn = $null
     if ($script:modelReady -and $script:activeModel -eq $wanted -and !$script:switchProcess -and !$script:pendingModelChange) {
         $statusCtrl.Text = "$($profile.ToUpperInvariant()) zaten yüklü; model yeniden yüklenmedi."
         return
@@ -3425,9 +3453,21 @@ $timer.Add_Tick({
         if (!$active -or $active -ne (Get-SelectedLocalAlias)) { throw 'Seçilen model henüz hazır değil' }
         $script:activeModel = $active
         $script:modelReady = $true
+        # Yukleme basina BIR kez: model paylasilan bellege tasmis mi? (yavas mod uyarisi)
+        if (!$script:spillChecked) {
+            $script:spillChecked = $true
+            $script:spillWarn = $null
+            if ($script:providerId -eq 'local') {
+                $spill = Get-LlamaSpillMiB
+                if ($spill -gt 1000) {
+                    $script:spillWarn = "Yavas mod: model kismen paylasilan bellege taştı (~$spill MiB). Sohbet belirgin yavas calisir; GPU kullanan diger uygulamalari (tarayici vb.) kapatip modeli yeniden sec."
+                }
+            }
+        }
         if ($script:pendingSend) { Begin-Generation }
         $state = if ($script:busy) { 'Yanıtlıyor' } elseif ($script:multiImageOcrMode) { 'Çoklu görsel okuma aktif' } else { 'Hazır' }
         $warn = if ($script:contextTokens -gt $script:compactAt) { '  [sıkıştırma sırada]' } else { '' }
+        if ($script:spillWarn) { $state = 'Yavaş mod (VRAM taşması)' }
         if (!$script:busy) {
             $metric.Text = "$state$warn"
         }
@@ -3443,6 +3483,7 @@ $timer.Add_Tick({
             "coklu OCR     : $(if ($script:multiImageOcrMode) { 'aktif — sonraki turda birden fazla görsel kabul edilir' } else { 'kapali — tek görsel mmproj' })"
             'uretim araclari: mesaja gore otomatik'
             "bagli klasor  : $folderState"
+            if ($script:spillWarn) { ''; $script:spillWarn }
             if ($script:benchReport) { ''; $script:benchReport }
         ) -join "`r`n"
     } catch {
