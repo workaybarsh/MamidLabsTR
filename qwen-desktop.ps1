@@ -84,6 +84,11 @@ if ($existingWindow -ne [IntPtr]::Zero) {
 # Bu dosya kurulum kokunde durur; $root kendi konumundan turetilir, boylece
 # uygulama hangi klasore kurulduysa oradan calisir.
 $root = $PSScriptRoot
+# HF onbellegi (ses modelleri + indirmeler) KURULUM KOKU altindadir; cocuk surecler (python
+# araclari, sicak ses iscisi) bu onbellegi cevrimdisi kullansin. Kurulum da ayni yolu
+# kullanir (install-mamidlabs.ps1). Ayarlanmazsa isci VARSAYILAN HF onbellegine duser ve AST
+# ses olayi modeli bulunamaz -> sesli giris hata verir.
+$env:HF_HOME = Join-Path $root 'tools\hf-home'
 . (Join-Path $root 'agent\api-providers.ps1')
 . (Join-Path $root 'agent\api-settings.ps1')
 . (Join-Path $root 'agent\model-registry.ps1')

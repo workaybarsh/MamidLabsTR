@@ -369,7 +369,7 @@ tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~245 sn (473 toplanır; 469 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~150 sn (477 toplanır; 473 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -504,6 +504,13 @@ bağlamı zaten yoktur, dolayısıyla boşta VRAM tutmaz ve 27B'nin ince payın�
     yüzden işçi çıktısını tüketen her yerde önce `if ($done.data)` / `if ($jobEvent.data)`
     koruması kullanılır (arayüzdeki `Render-JobEvent` ve smoke testindeki `gecmis_devam` böyle
     yapar). Boş diziyi koşulsuz `+` ile birleştirme.
+23. **Ses modelleri kurulum kökünün HF önbelleğindedir; çalışma anında `HF_HOME` ayarlanmalıdır.**
+    `tools\hf-home` (whisper large-v3-tr + AST ses olayı modeli) yalnızca `install-mamidlabs.ps1`
+    tarafından kurulum sırasında `HF_HOME` ile kullanılır. Uygulama `qwen-desktop.ps1`'de
+    `$env:HF_HOME = <kok>\tools\hf-home` ayarlar; `agent/qwen-inference.ps1` `Get-HfHome`'u hem
+    tek-atımlık `Invoke-PythonTool`'a (çocuk süreç ortamı) hem kalıcı `Start-AsrServerProcess`'e
+    verir. Ayarlanmazsa işçi VARSAYILAN önbelleğe düşer, AST bulunamaz ve sesli giriş hata verir
+    (bkz. §16). HF kullanan yeni bir işçi eklerken `HF_HOME`'u geçirmeyi unutma.
 
 ## 15. Değişiklik yaparken kontrol listesi
 
@@ -529,6 +536,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-15 | **Normal başlatılan uygulamada sesli giriş kırıktı: `HF_HOME` çalışma anında hiç ayarlanmıyordu.** Ses modelleri (whisper large-v3-tr + AST) kurulum kökünün HF önbelleğinde (`tools\hf-home`) durur ve kurulum `HF_HOME`'u oraya **yalnızca kurulum sırasında** ayarlar. Çalışma anında uygulama ayarlamadığı için işçi VARSAYILAN önbelleğe (`%USERPROFILE%\.cache\huggingface`) düşüyor, AST orada olmadığından `events.tag()` modeli yüklerken istisna atıyor ve **tüm döküm** "Can't load feature extractor" hatasıyla düşüyordu (olaylar varsayılan AÇIK; yalnızca "olay yok" durumu ele alınmıştı). Düzeltme: (1) `qwen-desktop.ps1` başlangıçta `$env:HF_HOME = <kok>\tools\hf-home` ayarlar; `agent/qwen-inference.ps1`'e `Get-HfHome` eklendi ve hem tek-atımlık `Invoke-PythonTool` (çocuk sürece `HF_HOME`) hem kalıcı `Start-AsrServerProcess` bu önbelleği kullanır (böylece çevrimdışı, ağa gerek yok); (2) `events.tag()` AST yüklemesini `try/except` ile korur, model eksikse olaylar atlanır (boş liste) ve döküm düşmez. Testler: `tests/test_transcriber.py` (korumalı yükleme statik + `tag` boş liste davranışı + `Invoke-PythonTool` alt süreç `HF_HOME` gerçek pwsh + statik bağlama). | qwen-desktop.ps1, agent/qwen-inference.ps1, agent/transcriber/events.py, tests/test_transcriber.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Sesli giriş gecikmesi: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan sabit maliyet (Python başlatma + torch/transformers/faster-whisper importları; ölçüldü ~10 sn, ilk/disk soğukken ~25 sn) artık oturumda BİR kez ödenir: `whisper-tools.py --serve` tek bir kalıcı süreç olarak 127.0.0.1'de dinler (port/pid `logs\asr-server.json`), modelleri süreç içinde tutar; `{"action":"unload"}` ses modellerini boşaltır (süreç yaşar). Dil modeli VRAM'e geri yüklenmeden ÖNCE işçi boşaltılıp DURDURULUR (kalan CUDA bağlamı ~140 MiB, 27B'nin ince payını yemesin), tur sonunda ARKA PLANDA yeniden başlar; boşta 600 sn / uygulama kapanınca kendini bitirir. İşçi ulaşılamazsa tek-atımlık `Invoke-PythonTool` yoluna düşer. Tek-atımlık stdin/stdout sözleşmesi korunur. Testler: `tests/test_transcriber.py` (serve sözleşmesi + `_dispatch` + `_parent_gone` + gerçek `--serve` ping/idle-çıkış + PS kablolama statik). | agent/whisper-tools.py, agent/qwen-inference.ps1, tests/test_transcriber.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Belge/atıf temizliği (kod davranışı değişmedi).** `README.md`'den lisans karşılaştırma cümlesi, `AGENTS.md` girişinden dış yapay zekâ aracı adları ve `CLAUDE.md` satırı kaldırıldı; `CLAUDE.md` dosyası silindi; `tests/ui-automation` geçici/ekran görüntüsü yolu `%TEMP%\mamidlabs\ui` olarak nötrlendi; `docs/teknik-notlar.md` abonelik-girişi cümlesindeki tüketici asistan adı ürünün sağlayıcı adına çevrildi. Ürün özelliği olan API sağlayıcıları korunur. | README.md, AGENTS.md, docs/teknik-notlar.md, CLAUDE.md (silindi), tests/ui-automation/ui.ps1, tests/ui-automation/win32.ps1, tests/ui-automation/README.md |
 | 2026-10-15 | **Ön-işleme gecikmesi teşhisi + "boş VRAM'in tamamını kullan / taşma yok" düzeltmesi.** Ölçüm (RTX 5060 Ti, MAX): KV önbelleği **çalışıyor** (2. turda 19.988 token önbellekten geldi, ilk token 0,6 sn) ve temiz yüklemede ön-işleme ~415 tok/s; buna karşılık uzun bağlamda **tam yeniden işleme** ~48 sn (20k token) sürüyor. Sorunlu turdaki ~20 tok/s ise ~20x yavaşlık: model VRAM'e tam sığmayıp **paylaşılan belleğe taşmıştı**. **Ölçülen model ayak izi 15350 MiB** (dosya 14.600 iken GPU'da KV cache q4_0 + hesap tamponları + MTP draft bağlamı ile; temiz yükleme 15454 MiB boşta ~41-55 tok/s). MAX/FLASH bellek payı **750 MiB** (eşik 15350) yapıldı: model **ancak tam sığacaksa** yüklenir, **tüm boş VRAM'i kullanır** ve **taşmaz**; normal masaüstünde (tarayıcı kapalı) **hatasız yüklenir**; altında net "yetersiz VRAM" verilir. `--gpu-layers 99` korunur; llama.cpp `--fit` otomatik yerleştirmesi denendi ve daha **temkinli** çıktı (tüm VRAM'i kullanmadı, ~23 tok/s) → kullanılmaz. (Önceki "Yavaş mod uyarısı" yaklaşımı kaldırıldı: taşma doğrudan engellenir.) | scripts/manage-qwen.ps1, tests/test_memory_admission.py, AGENTS.md, CHANGELOG.md |

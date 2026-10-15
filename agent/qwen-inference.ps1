@@ -39,6 +39,12 @@ function Get-MediaPythonExe { Join-Path (Get-InstallRoot) 'venv\imagegen\Scripts
 function Get-AsrPythonExe { Join-Path (Get-InstallRoot) 'venv\asr\Scripts\python.exe' }
 function Get-ManageQwenPath { Join-Path (Get-InstallRoot) 'scripts\manage-qwen.ps1' }
 function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
+# HF onbellegi (whisper large-v3-tr + AST ses olayi modeli) KURULUM KOKU altindadir;
+# isci/araçlar bu onbellegi CEVRIMDISI kullanmali. Uygulama calisma aninda HF_HOME'u
+# ayarlamazsa isci VARSAYILAN HF onbellegine duser; AST modeli orada olmadigindan olay
+# modeli yuklenemez ve sesli giris hata verir. Kurulum da ayni yolu kullanir
+# (install-mamidlabs.ps1 -> $env:HF_HOME = <kok>\tools\hf-home).
+function Get-HfHome { Join-Path (Get-InstallRoot) 'tools\hf-home' }
 
 # Islem denetim kaydi: her arac cagrisindan sonra logs/audit.jsonl'e bir JSON satiri
 # ekler (is/arac kimligi, kaynak kanal, onay, sonuc, degisen yollar). Belge/komut
@@ -204,6 +210,9 @@ function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [st
     $psi.RedirectStandardError = $true
     $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
     $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+    # Python araclari (ses iscisi whisper-tools.py dahil) kurulum HF onbellegini cevrimdisi
+    # kullansin: HF_HOME ayarlanmazsa varsayilan onbellege dusulur ve AST modeli bulunamaz.
+    $psi.EnvironmentVariables['HF_HOME'] = Get-HfHome
     $p = [Diagnostics.Process]::Start($psi)
     try {
         $p.StandardInput.Write(($payload | ConvertTo-Json -Compress -Depth 10))
@@ -564,6 +573,8 @@ function Start-AsrServerProcess {
     $logDir = Split-Path -Parent $statePath
     if (!(Test-Path -LiteralPath $logDir -PathType Container)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
     Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+    # Kalici isci de kurulum HF onbellegini kullanmali (Start-Process surec ortamini miras alir).
+    $env:HF_HOME = Get-HfHome
     $argList = @($worker, '--serve', '--state-file', $statePath, '--parent-pid', "$PID", '--idle-timeout', "$(Get-AsrServerIdleSeconds)")
     $quoted = ($argList | ForEach-Object { '"' + [string]$_ + '"' }) -join ' '
     try { return (Start-Process -FilePath $python -ArgumentList $quoted -WindowStyle Hidden -PassThru) } catch { return $null }

@@ -135,7 +135,13 @@ def tag(wav_path: str, profile, device: str = 'cuda', threshold: float = 0.3,
     except Exception:
         return []
 
-    extractor, model = _load_events_model(profile)
+    # AST modeli yuklenemezse (or. HF onbellegi eksik: HF_HOME ayarlanmamis ve varsayilan
+    # onbellekte model yok) TUM dökum DUSMEMELI; olaylar atlanir. Aksi halde sesli giris
+    # tamamen hata veriyordu (bkz. tests/test_transcriber.py).
+    try:
+        extractor, model = _load_events_model(profile)
+    except Exception:
+        return []
     use_cuda = (device or '').lower() == 'cuda' and torch.cuda.is_available()
     if use_cuda:
         model = model.to('cuda')

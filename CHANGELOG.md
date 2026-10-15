@@ -11,6 +11,21 @@ düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-ser
 modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
+### Düzeltildi
+- **Normal başlatılan uygulamada sesli giriş çalışmıyordu: `HF_HOME` çalışma anında hiç
+  ayarlanmıyordu.** Ses modelleri (whisper large-v3-tr + AST ses olayı modeli) kurulum kökünün HF
+  önbelleğinde (`tools\hf-home`) durur; kurulum `HF_HOME`'u oraya yalnızca kurulum sırasında ayarlar.
+  Çalışma anında uygulama `HF_HOME` ayarlamadığı için işçi **varsayılan** HF önbelleğine düşüyordu
+  (`%USERPROFILE%\.cache\huggingface`); AST modeli orada olmadığından `events.tag()` modeli yüklerken
+  istisna atıyor ve **tüm döküm** "Can't load feature extractor ..." hatasıyla düşüyordu (yalnızca
+  sessiz "olay yok" durumu ele alınmıştı). İki düzeltme: (1) uygulama başlarken `HF_HOME`'u kurulum
+  önbelleğine ayarlar (`qwen-desktop.ps1`) ve işçi/araçlara açıkça verilir (`agent/qwen-inference.ps1`
+  içinde `Get-HfHome`; tek-atımlık `Invoke-PythonTool` ve kalıcı `Start-AsrServerProcess`), böylece iki
+  model de çevrimdışı bulunur; (2) `events.tag()` model yüklemesini korur; model bir gün eksikse
+  olaylar dökümü düşürmek yerine **atlanır** (boş liste). Testler: `tests/test_transcriber.py`
+  (korumalı yükleme + `Invoke-PythonTool`'un alt sürece `HF_HOME` verdiğinin gerçek pwsh ile
+  doğrulanması + statik bağlama).
+
 ### Değişen
 - **Sesli giriş gecikmesi düşürüldü: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan
   sabit maliyet (Python başlatma + `torch`/`transformers`/`faster-whisper` importları; ölçüldü ~10 sn,

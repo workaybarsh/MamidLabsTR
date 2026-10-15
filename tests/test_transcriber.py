@@ -343,6 +343,32 @@ def test_events_filters_speech_labels_and_translates():
     assert "SPEECH_LABELS" in src and "_merge_repeats" in src
 
 
+def test_events_load_failure_does_not_break_transcription():
+    """AST modeli yuklenemezse (or. HF onbellegi eksik) TUM dökum DUSMEMELI; olaylar atlanir.
+    Regresyon: `_load_events_model` try DISINDA cagriliyordu; uygulama calisma aninda HF_HOME
+    ayarlamadiginda (varsayilan onbellekte AST yok) sesli giris tamamen hata veriyordu."""
+    import re
+
+    src = read_text("agent/transcriber/events.py")
+    assert re.search(
+        r"try:\s*\n\s*extractor, model = _load_events_model\(profile\)\s*\n"
+        r"\s*except Exception:\s*\n\s*return \[\]",
+        src,
+    ), "events.tag AST yuklemesini try/except ile korumali"
+
+
+def test_events_tag_returns_empty_when_model_missing(monkeypatch):
+    """Davranis: olay modeli yuklenemezse `tag` istisna sizdirmaz, bos liste doner."""
+    from transcriber import events
+
+    def boom(profile):
+        raise OSError("no model")
+
+    monkeypatch.setattr(events, "_load_events_model", boom)
+    profile = SimpleNamespace(events=True, events_model="MIT/ast-x", name="pro")
+    assert events.tag("yok.wav", profile) == []
+
+
 # ------------------------------------------------------------- worker / arayuz
 def test_worker_exists_and_reads_json_on_stdin():
     src = read_text("agent/whisper-tools.py")
@@ -693,6 +719,42 @@ def test_transcription_uses_asr_environment_not_imagegen():
     assert "path = $path" in plan
 
 
+def test_asr_worker_uses_install_hf_cache():
+    """Ses iscisi KURULUM HF onbellegini (kok\\tools\\hf-home) kullanmali. Regresyon: uygulama
+    calisma aninda HF_HOME'u hic ayarlamiyordu; isci VARSAYILAN HF onbellegine dusuyor, AST
+    ses olayi modeli orada olmadigindan olay modeli yuklenemiyor ve TUM sesli giris hata
+    veriyordu. Kurulum da ayni yolu kullanir (install-mamidlabs.ps1)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    assert "function Get-HfHome" in worker
+    assert "tools\\hf-home" in worker
+    # Tek-atimlik python araci ve kalici isci sureci HF_HOME'u alir.
+    py = worker.split("function Invoke-PythonTool")[1].split("function ")[0]
+    assert "HF_HOME" in py and "Get-HfHome" in py
+    srv = worker.split("function Start-AsrServerProcess")[1].split("function ")[0]
+    assert "HF_HOME" in srv and "Get-HfHome" in srv
+    # Uygulama baslangicinda da ayarlanir (arayuz uzerinden calisan tum cocuklara gecer).
+    desktop = read_text("qwen-desktop.ps1")
+    assert "$env:HF_HOME = Join-Path $root 'tools\\hf-home'" in desktop
+
+
+def test_python_tool_sets_hf_home_for_child(tmp_path):
+    """Davranis: Invoke-PythonTool alt surece HF_HOME=<kok>\\tools\\hf-home verir; boylece ses
+    iscisi (ve diger python araclari) kurulum onbellegini cevrimdisi kullanir (gercek pwsh +
+    gercek Python)."""
+    worker = read_text("agent/qwen-inference.ps1")
+    probe = tmp_path / "probe.py"
+    probe.write_text("import os\nprint(os.environ.get('HF_HOME',''))\n", encoding="utf-8")
+    script = _invoke_python_tool_harness(worker) + f"""
+$shared = @{{ Cancel = $false }}
+$out = Invoke-PythonTool @{{}} '{probe}' '{sys.executable}' 15
+'HF=' + $out.Trim()
+"""
+    out = _run_ps1(script, tmp_path)
+    lines = [line for line in out.splitlines() if line.startswith("HF=")]
+    assert lines, out
+    assert lines[0][3:].replace("/", "\\").lower().endswith(r"tools\hf-home")
+
+
 def test_worker_maps_selected_profile_to_asr_tier():
     """Arayuz SECILI dil-modeli profilini ses hatti tier'ina cevirir ('lite'->'lite', aksi->
     'pro') ve hem plan hem transcribe isteklerine `profile` alani olarak gecirir."""
@@ -735,6 +797,16 @@ def _run_ps1(script: str, tmp_path: Path) -> str:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
+
+
+def _invoke_python_tool_harness(worker: str) -> str:
+    """Invoke-PythonTool'u izole calistirmak icin gereken fonksiyonlar + Get-InstallRoot stub'i.
+
+    Invoke-PythonTool artik alt surece HF_HOME (kurulum onbellegi) verir; bu yuzden izole
+    kosumda Get-HfHome (ve onun bagimli oldugu Get-InstallRoot) da tanimli olmalidir."""
+    return ("function Get-InstallRoot { 'C:\\fake\\root' }\n"
+            + _extract_ps_function(worker, "Get-HfHome") + "\n"
+            + _extract_ps_function(worker, "Invoke-PythonTool"))
 
 
 def test_asr_profile_name_ignores_non_local_provider(tmp_path):
@@ -1015,7 +1087,7 @@ def test_python_tool_wall_clock_timeout_kills_subprocess(tmp_path):
     """D2 davranis: sonsuza kadar uyuyan alt surec zaman asiminda oldurulur ve is
     TAKILMADAN hata dondurur (gercek pwsh + gercek Python sureci)."""
     worker = read_text("agent/qwen-inference.ps1")
-    fn = _extract_ps_function(worker, "Invoke-PythonTool")
+    fn = _invoke_python_tool_harness(worker)
     sleeper = tmp_path / "sleeper.py"
     sleeper.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
     script = fn + f"""

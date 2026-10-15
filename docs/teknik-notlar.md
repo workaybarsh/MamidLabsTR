@@ -541,6 +541,14 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   (kalan CUDA bağlamı ~140 MiB 27B'nin payını yemesin), tur sonunda arka planda yeniden başlar; boşta
   600 sn sonra / uygulama kapanınca kendini bitirir. İşçi ulaşılamazsa döküm tek-atımlık
   `Invoke-PythonTool` yoluna düşer (davranış korunur).
+- **HF önbelleği (`HF_HOME`):** ses modelleri (whisper large-v3-tr + AST) kurulum kökünün HF
+  önbelleğinde (`tools\hf-home`) durur ve çalışma anında **çevrimdışı** kullanılır; uygulama
+  `qwen-desktop.ps1`'de `$env:HF_HOME = <kok>\tools\hf-home` ayarlar ve `agent/qwen-inference.ps1`
+  `Get-HfHome`'u hem tek-atımlık `Invoke-PythonTool`'a (çocuk süreç ortamı) hem kalıcı
+  `Start-AsrServerProcess`'e geçirir. Ayarlanmazsa işçi VARSAYILAN HF önbelleğine düşer, AST orada
+  bulunmaz; `events.tag()` yüklemeyi `try/except` ile koruduğu için döküm yine tamamlanır ama
+  **olaylar atlanır** (boş liste). AST'nin gerçekten çalışması `HF_HOME`'a bağlıdır (kurulumla aynı
+  yol).
 
 ## Düzeltmeleri doğrulama
 
