@@ -241,6 +241,48 @@ function Stop-ComfyLeaks {
     return $killed
 }
 
+# Uygulamaya ait ARTIK/kaçak GPU isçileri: kalici ses iscisi (`whisper-tools.py --serve`)
+# ve OCR iscisi (`ocr-tools.py`). Uygulama coktugunde/gorev sonlandirildiginda bunlar
+# kalabilir ve CUDA baglamlari (~140-600 MiB) dil modelinin ince payini yer; model
+# "yetersiz VRAM" ile reddedilir. Yalnizca KURULUM KOKU altindaki python'lari ve bilinen
+# GPU iscisi betiklerini hedefleriz; ComfyUI (main.py) kendi yasam dongusune sahiptir ve
+# buraya girmez. Baska uygulamalarin sureclerine DOKUNULMAZ.
+function Get-AppGpuWorkers {
+    $rootFull = $root.TrimEnd('\')
+    @(Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ExecutablePath -and
+            $_.ExecutablePath.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase) -and
+            $_.CommandLine -match '(whisper-tools|ocr-tools)\.py'
+        })
+}
+
+# Artik GPU isçilerini kapatir ve surucunun VRAM'i birakmasi icin kisa bir sure bekler.
+# En az biri kapatildiysa $true doner (butce yeniden olculmeden once). Yalnizca
+# Get-AppGpuWorkers'in sectigi (kurulum koku altindaki) surecleri hedefler.
+function Stop-OrphanWorkers {
+    $procs = @(Get-AppGpuWorkers)
+    if ($procs.Count -eq 0) { return $false }
+    $killed = $false
+    foreach ($p in $procs) {
+        try {
+            $process = [Diagnostics.Process]::GetProcessById([int]$p.ProcessId)
+            $process.Kill($true)
+            $process.WaitForExit(10000) | Out-Null
+            $killed = $true
+        } catch { }
+    }
+    # Hemen olmeyen kalirsa zorla.
+    foreach ($p in $procs) {
+        if (Get-Process -Id ([int]$p.ProcessId) -ErrorAction SilentlyContinue) {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            $killed = $true
+        }
+    }
+    if ($killed) { Start-Sleep -Milliseconds 1000 }  # Surucu VRAM'i biraz gecikmeyle serbest birakir.
+    return $killed
+}
+
 function Get-ManagedServers {
     @(Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" -ErrorAction SilentlyContinue | Where-Object {
         $_.ExecutablePath -and
@@ -296,6 +338,10 @@ try {
     if ($settings -and $null -ne $settings.comfyKeepAlive) { $comfyKeepAlive = [bool]$settings.comfyKeepAlive }
     [void](Stop-ComfyLeaks)
     if (!$comfyKeepAlive -or $Profile -ne 'lite') { [void](Stop-IdleComfy) }
+    # Uygulamaya ait artik GPU isçileri (bosta kalmis ses/OCR iscisi) da kapatilir: cokme ya
+    # da zorla kapatma sonrasi CUDA baglamlari dil modelinin ince payini yiyebilir. Boylece
+    # model yuklenmeden ONCE otomatik VRAM temizligi yapilir (yalnizca MamidLabs surecleri).
+    [void](Stop-OrphanWorkers)
     # Onceki surec zaten yukarida durduruldu; bos VRAM burada olculur ki eski
     # surecin bosalttigi bellek de sayilsin.
     #
@@ -306,14 +352,14 @@ try {
     if (!$SkipMemoryCheck) {
         $budgetOk = $false
         $lastBudgetError = $null
-        $attempts = 6
+        $attempts = 8
         for ($attempt = 1; $attempt -le $attempts; $attempt++) {
             try { Test-MemoryBudget $model $Profile $projector; $budgetOk = $true; break }
             catch {
                 $lastBudgetError = $_
                 # Ilk denemede ComfyUI acik olabilir: kuyruk bossa kapat ve hemen tekrar dene.
                 if ($attempt -eq 1 -and (Stop-IdleComfy)) { continue }
-                # ASR/OCR alt surecinin VRAM'i birakmasi icin kisa bekleme (toplam ~5 sn).
+                # ASR/OCR alt surecinin VRAM'i birakmasi icin kisa bekleme (toplam ~7 sn).
                 if ($attempt -lt $attempts) { Start-Sleep -Milliseconds 1000 }
             }
         }

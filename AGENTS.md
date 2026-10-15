@@ -171,6 +171,9 @@ Bu, taşmayı önleyen **en düşük** eşiktir. `--gpu-layers 99` korunur (mode
 tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi ve daha **temkinli**
 çıktı (tüm VRAM'i kullanmadı, ~23 tok/s), bu yüzden kullanılmaz.
 Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97 tok/s.
+Model yüklenmeden önce uygulamaya ait **artık GPU işçileri** (boşta kalmış kalıcı ses işçisi ya da
+OCR işçisi) de otomatik kapatılır (`Stop-OrphanWorkers`); böylece VRAM temizliği otomatiktir ve
+yalnızca kurulum kökü altındaki MamidLabs süreçlerine dokunulur.
 
 ## 6. Sohbet isteğinin akışı
 
@@ -369,7 +372,7 @@ tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~150 sn (477 toplanır; 473 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~150 sn (480 toplanır; 476 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -448,7 +451,9 @@ bağlamı zaten yoktur, dolayısıyla boşta VRAM tutmaz ve 27B'nin ince payın�
    kullanır** ve **taşmaz**; normal masaüstünde hatasız açılır. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
    Kaçak örnek 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
-   19 tok/s'ye düşer.
+   19 tok/s'ye düşer. Model yüklenmeden önce uygulamaya ait **artık GPU işçileri** (boşta kalmış
+   ses/OCR işçisi) de otomatik kapatılır (`Stop-OrphanWorkers`); kalan CUDA bağlamları payı
+   yiyebileceğinden temizlik yalnızca kurulum kökü altındaki süreçleri hedefler.
 8. **Tek görsel kuralı:** Sohbete aynı anda yalnızca bir görsel gider (çoklu görsel yalnızca
    "çoklu görsel okuma modu"nda OCR ile).
 9. **UI Automation ile test:** Modal pencere açan bir menü öğesine UIA `Invoke` pencere kapanana
@@ -536,6 +541,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-16 | **Bütün araçlar bütün profillerde aynı sunulur (yalnızca kimlik düzenleme hariç).** "Bütün araçlar bütün profillerde sorunsuz çalışsın" incelemesi: `Get-ToolDefinitions` profile bağımsızdır — MAX/FLASH/LITE aynı araç kümesini görür (niyet/çip kapıları profile göre değişmez). Tek profil farkı `kimlik_duzenle`'dir (MAX/FLASH'ta var, LITE'ta yok; 5+7,5 GB > 8 GB VRAM, bkz. §13) ve üç katmanda korunur: araç sunulmaz (`$identityEditAvailable = -not $job.imageProfileLite`), `imagegen-run.ps1` reddeder, LITE kataloğunda LoRA yok. Davranış artık `tests/test_lite_profile.py`'deki `test_tool_set_is_identical_across_profiles_except_identity_edit` ile kilitlidir (gerçek pwsh ile iki profilin araç adı kümesi ve `generate_image` mod listesi karşılaştırılır). | tests/test_lite_profile.py, CHANGELOG.md, AGENTS.md | Uygulamaya ait artık/kaçak GPU işçileri — boşta kalmış kalıcı ses işçisi (`whisper-tools.py --serve`) ve OCR işçisi (`ocr-tools.py`) — dil modeli yüklenmeden **önce** otomatik kapatılır: çökme/zorla kapatma sonrası kalan CUDA bağlamları (~140–600 MiB) 27B'nin ince payını yiyip "yetersiz VRAM" hatasına yol açabiliyordu. `scripts/manage-qwen.ps1`: `Get-AppGpuWorkers` (yalnızca kurulum kökü altındaki python'lardan bu iki GPU işçisi betiğini çalıştıranları seçer; ComfyUI `main.py` kendi yaşam döngüsünde) + `Stop-OrphanWorkers` (kapatır, sürücünün VRAM'i bırakması için bekler) bellek kapısından ÖNCE çağrılır; kapı yeniden deneme sayısı 6→8 (~7 sn). Başka uygulamaların süreçlerine dokunulmaz. Testler: `tests/test_memory_admission.py` (statik çağrı sırası + gerçek pwsh ile süreç seçimi). | scripts/manage-qwen.ps1, tests/test_memory_admission.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Normal başlatılan uygulamada sesli giriş kırıktı: `HF_HOME` çalışma anında hiç ayarlanmıyordu.** Ses modelleri (whisper large-v3-tr + AST) kurulum kökünün HF önbelleğinde (`tools\hf-home`) durur ve kurulum `HF_HOME`'u oraya **yalnızca kurulum sırasında** ayarlar. Çalışma anında uygulama ayarlamadığı için işçi VARSAYILAN önbelleğe (`%USERPROFILE%\.cache\huggingface`) düşüyor, AST orada olmadığından `events.tag()` modeli yüklerken istisna atıyor ve **tüm döküm** "Can't load feature extractor" hatasıyla düşüyordu (olaylar varsayılan AÇIK; yalnızca "olay yok" durumu ele alınmıştı). Düzeltme: (1) `qwen-desktop.ps1` başlangıçta `$env:HF_HOME = <kok>\tools\hf-home` ayarlar; `agent/qwen-inference.ps1`'e `Get-HfHome` eklendi ve hem tek-atımlık `Invoke-PythonTool` (çocuk sürece `HF_HOME`) hem kalıcı `Start-AsrServerProcess` bu önbelleği kullanır (böylece çevrimdışı, ağa gerek yok); (2) `events.tag()` AST yüklemesini `try/except` ile korur, model eksikse olaylar atlanır (boş liste) ve döküm düşmez. Testler: `tests/test_transcriber.py` (korumalı yükleme statik + `tag` boş liste davranışı + `Invoke-PythonTool` alt süreç `HF_HOME` gerçek pwsh + statik bağlama). | qwen-desktop.ps1, agent/qwen-inference.ps1, agent/transcriber/events.py, tests/test_transcriber.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Sesli giriş gecikmesi: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan sabit maliyet (Python başlatma + torch/transformers/faster-whisper importları; ölçüldü ~10 sn, ilk/disk soğukken ~25 sn) artık oturumda BİR kez ödenir: `whisper-tools.py --serve` tek bir kalıcı süreç olarak 127.0.0.1'de dinler (port/pid `logs\asr-server.json`), modelleri süreç içinde tutar; `{"action":"unload"}` ses modellerini boşaltır (süreç yaşar). Dil modeli VRAM'e geri yüklenmeden ÖNCE işçi boşaltılıp DURDURULUR (kalan CUDA bağlamı ~140 MiB, 27B'nin ince payını yemesin), tur sonunda ARKA PLANDA yeniden başlar; boşta 600 sn / uygulama kapanınca kendini bitirir. İşçi ulaşılamazsa tek-atımlık `Invoke-PythonTool` yoluna düşer. Tek-atımlık stdin/stdout sözleşmesi korunur. Testler: `tests/test_transcriber.py` (serve sözleşmesi + `_dispatch` + `_parent_gone` + gerçek `--serve` ping/idle-çıkış + PS kablolama statik). | agent/whisper-tools.py, agent/qwen-inference.ps1, tests/test_transcriber.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Belge/atıf temizliği (kod davranışı değişmedi).** `README.md`'den lisans karşılaştırma cümlesi, `AGENTS.md` girişinden dış yapay zekâ aracı adları ve `CLAUDE.md` satırı kaldırıldı; `CLAUDE.md` dosyası silindi; `tests/ui-automation` geçici/ekran görüntüsü yolu `%TEMP%\mamidlabs\ui` olarak nötrlendi; `docs/teknik-notlar.md` abonelik-girişi cümlesindeki tüketici asistan adı ürünün sağlayıcı adına çevrildi. Ürün özelliği olan API sağlayıcıları korunur. | README.md, AGENTS.md, docs/teknik-notlar.md, CLAUDE.md (silindi), tests/ui-automation/ui.ps1, tests/ui-automation/win32.ps1, tests/ui-automation/README.md |

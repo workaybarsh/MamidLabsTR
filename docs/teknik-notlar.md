@@ -92,7 +92,7 @@ RTX 5060 Ti 16 GB üzerinde llama.cpp'nin bellek dökümüyle ölçüldü (32K b
 Görsel projektör GPU'da ağırlık ve hesap tamponuyla 1.133 MiB daha istiyordu; toplam boş alanı
 aşıp ~420 MiB paylaşılan belleğe taşıyordu. Projektör CPU'ya alınınca sohbet 19,6'dan 25,0 tok/s'ye,
 tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-qwen.ps1` içindeki bellek kontrolü
-model dosyası + 600 MiB ister. **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
+model dosyası + 750 MiB ister (eşik 15350 = ölçülen ayak izi). **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
 varsayılan `false`): ComfyUI **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil
 modeli yüklenmeden önce kapatılır, böylece boşta ne VRAM ne RAM tutar (boşta ComfyUI ~300 MiB CUDA
 bağlamı + süreç RAM'i tutuyordu). Medya gerektiğinde yeniden açılır (~27 sn). MAX/FLASH'ta dil
@@ -100,6 +100,13 @@ modeli yüklenmeden önce **her zaman** kapatılır; LITE'ta `comfyKeepAlive=tru
 arasında açık tutulabilir (o zaman taşma yapmaz — ölçüldü: GPU tampon yerleşimi iki durumda da
 aynı; graph splits 2 — yalnızca sohbet ~%11 yavaşlar, 49,7 → 44,2 tok/s). Yer yetmezse (kuyruk
 boşsa) kapatılıp yeniden ölçülür.
+
+**Otomatik VRAM temizliği:** dil modeli yüklenmeden önce uygulamaya ait **artık GPU işçileri** de
+kapatılır — boşta kalmış kalıcı ses işçisi (`whisper-tools.py --serve`) ve OCR işçisi
+(`ocr-tools.py`); çökme/zorla kapatma sonrası kalan CUDA bağlamları (~140–600 MiB) 27B'nin ince
+payını yiyebilir. `scripts/manage-qwen.ps1` → `Get-AppGpuWorkers`/`Stop-OrphanWorkers` bellek
+kapısından **önce** çalışır, sürücünün VRAM'i bırakmasını bekler ve kapı sınırlı kez yeniden denenir
+(~7 sn). Temizlik yalnızca kurulum kökü altındaki süreçleri hedefler; başka uygulamalara dokunulmaz.
 
 ### Lite profili (8 GB VRAM / 16 GB RAM)
 

@@ -15,6 +15,30 @@ def read_text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8-sig")
 
 
+def run_pwsh_functions(script: str) -> str:
+    """PowerShell fonksiyonlarini gercek pwsh'ta calistirir (AST ile cikarilan
+    fonksiyonlar `Get-Functions` prelude'u ile yuklenir)."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        pytest.skip("PowerShell 7 is unavailable")
+    prelude = r"""
+$ErrorActionPreference = 'Stop'
+function Get-Functions([string]$path) {
+    $tokens=$null; $errs=$null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errs)
+    if ($errs.Count) { throw ($errs | Out-String) }
+    return (($ast.EndBlock.Statements | Where-Object { $_ -is [Management.Automation.Language.FunctionDefinitionAst] } | ForEach-Object { $_.Extent.Text }) -join "`n")
+}
+"""
+    proc = subprocess.run(
+        [pwsh, "-NoProfile", "-Command", prelude + script],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(f"pwsh basarisiz oldu: {proc.stderr}")
+    return proc.stdout
+
+
 def parse_alias_table(text: str, variable: str) -> dict:
     """@{ max = 'a'; flash = 'b'; lite = 'c' } biçimindeki tabloyu sözlüğe çevirir."""
     match = re.search(re.escape(variable) + r"\s*=\s*@\{([^}]*)\}", text)
@@ -318,6 +342,51 @@ def test_lite_video_caps_resolution_and_duration():
     # Comfy-Org deposunda ti2v_5B'nin fp8'i yok; Lite de fp16 dosyasını kullanır.
     assert "wan2.2_ti2v_5B_fp8_scaled" not in videogen
     assert "tile_size = $tile.size" in videogen
+
+
+def test_tool_set_is_identical_across_profiles_except_identity_edit():
+    """Kullanici istegiyle: BUTUN araclar MAX/FLASH/LITE profillerinin hepsinde
+    sunulur; tek profil farki kimlik korumali fotograf duzenlemedir (kimlik_duzenle
+    yalnizca MAX/FLASH'ta; 8 GB'ta 5+7,5 GB VRAM'e sigmadigindan LITE'ta ~10-15 dk
+    surer). Gercek pwsh ile `Get-ToolDefinitions` cagrilir; iki profilin urettigi
+    arac kumesi ayni olmali, yalnizca generate_image mode enum'i farkli olmali."""
+    script = r"""
+. ([scriptblock]::Create((Get-Functions 'INFERENCE')))
+$script:attachedDocuments = @()
+# Metin hem dosya hem komut niyetini tetikler; boylece read_document/run_command de
+# sunulur ve iki profilin arac kumesi tam karsilastirilabilir.
+$userText = 'bagli klasordeki dosyayi oku, komut calistir ve bir kedi resmi uret'
+$provider = 'local'
+$job = @{
+  agent=$true; internet=$true; office=$true; documentCreate=$true
+  videogen=$true; imagegen=$true; chartgen=$true
+  hasCurrentImage=$true; hasPreviousImage=$false; hasSourceImage=$true; hasSourceVideo=$true
+  multiImageOcr=$false; consultProviders=@{}; currentAudioPaths=@()
+}
+$liteJob = $job.Clone(); $liteJob.imageProfileLite = $true
+$proJob  = $job.Clone(); $proJob.imageProfileLite  = $false
+function Names($d) { ($d | ForEach-Object { $_.function.name } | Sort-Object) -join ',' }
+$liteDefs = @(Get-ToolDefinitions $liteJob)
+$proDefs  = @(Get-ToolDefinitions $proJob)
+"LITE_NAMES=$(Names $liteDefs)"
+"PRO_NAMES=$(Names $proDefs)"
+"LITE_MODES=$((($liteDefs | Where-Object { $_.function.name -eq 'generate_image' }).function.parameters.properties.mode.enum) -join ',')"
+"PRO_MODES=$((($proDefs  | Where-Object { $_.function.name -eq 'generate_image' }).function.parameters.properties.mode.enum) -join ',')"
+"""
+    script = script.replace("INFERENCE", str(ROOT / "agent" / "qwen-inference.ps1"))
+    out = run_pwsh_functions(script)
+    got = dict(line.split("=", 1) for line in out.strip().splitlines() if "=" in line)
+    # Tum araclar her profilde ayni sekilde sunulur (arac kumesi profilden bagimsiz).
+    assert got["LITE_NAMES"] == got["PRO_NAMES"], got
+    expected_tools = {
+        "search_web", "fetch_page", "find_reference_image",
+        "list_bound_files", "read_bound_file", "write_bound_file", "run_command",
+        "read_document", "create_document", "generate_image", "generate_video", "generate_chart",
+    }
+    assert expected_tools.issubset(set(got["PRO_NAMES"].split(","))), got["PRO_NAMES"]
+    # Tek profil farki: kimlik korumali duzenleme modu.
+    assert got["PRO_MODES"] == "yeni,yeniden_uret,stil_referansi,kimlik_duzenle", got
+    assert got["LITE_MODES"] == "yeni,yeniden_uret,stil_referansi", got
 
 
 # ------------------------------------------------------------- profil kataloğu

@@ -27,6 +27,20 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   doğrulanması + statik bağlama).
 
 ### Değişen
+- **Model yüklenmeden önce otomatik VRAM temizliği.** Uygulamaya ait artık/kaçak GPU işçileri
+  (boşta kalmış kalıcı ses işçisi `whisper-tools.py --serve` ve OCR işçisi `ocr-tools.py`) dil
+  modeli yüklenmeden **önce** otomatik kapatılır: çökme/zorla kapatma sonrası kalan CUDA bağlamları
+  (~140–600 MiB) 27B'nin ince payını yiyip "yetersiz VRAM" hatasına yol açabiliyordu.
+  `scripts/manage-qwen.ps1` bunları `Get-AppGpuWorkers`/`Stop-OrphanWorkers` ile temizler, sürücünün
+  VRAM'i bırakmasını bekler ve bellek kapısını sınırlı kez yeniden dener (6→8 deneme). Yalnızca
+  kurulum kökü altındaki MamidLabs süreçleri hedeflenir; başka uygulamalara dokunulmaz. Test:
+  `tests/test_memory_admission.py` (statik sıra + gerçek pwsh ile süreç seçimi).
+- **Bütün araçlar bütün profillerde aynı sunulur (yalnızca kimlik düzenleme hariç).** Denetim,
+  `Get-ToolDefinitions`'ın profile bağımsız olduğunu doğruladı: MAX/FLASH/LITE aynı araç kümesini
+  görür; tek profil farkı, 8 GB VRAM'e sığmayan kimlik korumalı fotoğraf düzenlemedir
+  (`kimlik_duzenle`; LITE'ta hiç sunulmaz ve `imagegen-run.ps1` ikinci savunma olarak reddeder).
+  Bu davranış artık `tests/test_lite_profile.py`'deki yeni testle kilitlidir (gerçek pwsh ile iki
+  profilin araç kümesi ve `generate_image` mod listesi karşılaştırılır).
 - **Sesli giriş gecikmesi düşürüldü: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan
   sabit maliyet (Python başlatma + `torch`/`transformers`/`faster-whisper` importları; ölçüldü ~10 sn,
   ilk/disk soğukken ~25 sn) artık oturumda **bir kez** ödenir: `agent/whisper-tools.py --serve` tek bir
