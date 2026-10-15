@@ -49,7 +49,7 @@ def parse_alias_table(text: str, variable: str) -> dict:
 # --------------------------------------------------------------- profil tanımı
 
 def test_manager_accepts_lite_profile():
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
 
     assert "ValidateSet('max', 'flash', 'lite')" in manager
     # Lite ayrı bir 9B modeli kullanır; 27B dosyasına düşmemeli.
@@ -59,7 +59,7 @@ def test_manager_accepts_lite_profile():
 
 def test_alias_tables_agree_between_manager_and_registry():
     """İki dosyadaki alias tablosu ayrışırsa model geri yükleme yanlış profile döner."""
-    manager = parse_alias_table(read_text("scripts/manage-qwen.ps1"), "$profileAliases")
+    manager = parse_alias_table(read_text("scripts/manage-mamidlabs.ps1"), "$profileAliases")
     registry = parse_alias_table(read_text("agent/model-registry.ps1"), "$script:localProfileAliases")
 
     assert manager == registry
@@ -87,7 +87,7 @@ def test_lite_stays_within_eight_gigabyte_budget():
     mmproj GPU'dayken 7885 MiB idi (~72 MiB bos) ve llama.cpp buyuk gomme
     tensorunu CPU'ya itiyordu. Sohbet hizi degismez (~40-79 tok/s, MTP kabulune
     gore), gorsel okuma yalnizca biraz yavaslar."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     lite_block = manager.split("if ($Profile -eq 'lite') {", 1)[1]
 
     assert "$liteFile = 'Huihui-Qwen3.5-9B-abliterated.i1-Q5_K_M.gguf'" in lite_block
@@ -105,7 +105,7 @@ def test_max_flash_server_args_are_locked():
     Sessiz bir duzenleme PRO'yu bozabilir; bu test demetin tamamini kilitler (mmproj CPU'da,
     --image-min-tokens 1024, batch 512/256, threads 6/12, xhigh/low; MTP yalnizca GGUF'ta MTP
     varsa eklenir)."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     for frag in [
         "'--model', $model, '--mmproj', $projector, '--no-mmproj-offload', '--image-min-tokens', '1024'",
         "'--ctx-size', '32768', '--predict', $predict, '--parallel', '1'",
@@ -122,7 +122,7 @@ def test_max_flash_server_args_are_locked():
 
 def test_settings_are_loaded_before_the_profile_reads_them():
     """$settings profil blokundan sonra atanirsa liteModel/liteContext sessizce yok sayilir."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
 
     assigned = manager.index("$settings = Get-Content -LiteralPath $settingsPath")
     used = manager.index("$settings.liteModel")
@@ -142,7 +142,7 @@ def test_registry_exposes_lite_entry_matching_server_context():
 
 def test_model_bar_only_lists_profiles_with_chat_files_present():
     """MAX kurulu bir PC'de LITE de (ya da tersi) alt barda seçilebilir görünüyordu;
-    seçilince manage-qwen.ps1 dosya bulunamadı hatası veriyordu. Artık yalnızca dil
+    seçilince manage-mamidlabs.ps1 dosya bulunamadı hatası veriyordu. Artık yalnızca dil
     modeli dosyaları diskte olan profiller listelenir."""
     registry = read_text("agent/model-registry.ps1")
     catalog = read_text("agent/profile-catalog.ps1")
@@ -203,7 +203,7 @@ Write-Output ('lite:' + (Test-LocalProfileChatFilesPresent 'lite'))
 
 
 def test_desktop_resolves_profile_through_alias_helper():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     # Eski "-like '*-flash'" türetmesi üç yerde vardı; lite'ı max sanıyordu.
     assert "-like '*-flash'" not in desktop
@@ -219,8 +219,8 @@ def test_lite_thinks_without_a_reasoning_budget():
     (kullanici istegi): sunucuya `--reasoning-budget` verilmez, model lazim oldugu kadar
     (gerektigi kadar uzun) dusunur. Dusunme acik kalir (--reasoning on, deepseek formati) ve
     sistem istemi modele derin dusunmesini, suresini kisitlamamasini soyler."""
-    manager = read_text("scripts/manage-qwen.ps1")
-    desktop = read_text("qwen-desktop.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     assert "--reasoning-budget" not in manager
     assert "$liteThinkBudget" not in manager
@@ -230,7 +230,7 @@ def test_lite_thinks_without_a_reasoning_budget():
     assert "'--reasoning-format', 'deepseek'" in manager
     # Derin dusunme talimati YUMUSATILDI: dusunme cikti butcesini paylastigindan model
     # cok uzun dusunup gorunur yaniti yazmayi atlayabiliyordu; artik yanitini de
-    # mutlaka yazmasi istenir (bkz. qwen-inference.ps1 dusunmesiz kurtarma yolu).
+    # mutlaka yazmasi istenir (bkz. mamidlabs-inference.ps1 dusunmesiz kurtarma yolu).
     assert "Derin ve dikkatli dusun" in desktop
     assert "YANITINI DA MUTLAKA YAZ" in desktop
 
@@ -241,7 +241,7 @@ def test_mtp_speculative_decoding_is_enabled_when_model_has_mtp_layers():
     (agent/mtp_inject.py). --spec-type draft-mtp AYRI draft model gerektirmez ve cikti
     kayipsizdir. Bayrak yalnizca model gercekten MTP katmani tasiyorsa eklenir; tasimayan
     modele verilirse llama.cpp "model doesn't contain MTP layers" ile acilmaz."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
 
     assert "'--spec-type', 'draft-mtp'" in manager
     # MTP katmani olan her profil (max/flash/lite) icin; custom haric, GGUF kontroluyle.
@@ -260,7 +260,7 @@ def test_thinking_is_only_switched_off_for_empty_answer_recovery():
     reasoning_effort yok sayildigindan dusunme tum cikti butcesini tuketip yaniti
     engelleyebiliyor; kurtarma yolu ikinci denemeyi `enable_thinking = $false` ile
     (Set-NoThinkingRequest) yapar. Ana istek/baglam sikistirma hala dusuk caba ister."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "function Set-LowEffortRequest" in inference
     assert "function Set-NoThinkingRequest" in inference
@@ -281,7 +281,7 @@ def test_lite_system_prompt_encourages_deep_reasoning():
     satir yalnizca lite profilinde bulunur (onek profile gore sabit oldugu icin KV
     onbellegi bozulmaz). Talimat YUMUSATILDI: dusunmeyi sinirsizca uzatmaya degil,
     yeterince dusunup YANITI DA YAZMAYA yonlendirir (dusunme cikti butcesini paylasir)."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     assert "Derin ve dikkatli dusun" in desktop
     # Yalnizca LITE profilinde eklenir.
@@ -373,7 +373,7 @@ $proDefs  = @(Get-ToolDefinitions $proJob)
 "LITE_MODES=$((($liteDefs | Where-Object { $_.function.name -eq 'generate_image' }).function.parameters.properties.mode.enum) -join ',')"
 "PRO_MODES=$((($proDefs  | Where-Object { $_.function.name -eq 'generate_image' }).function.parameters.properties.mode.enum) -join ',')"
 """
-    script = script.replace("INFERENCE", str(ROOT / "agent" / "qwen-inference.ps1"))
+    script = script.replace("INFERENCE", str(ROOT / "agent" / "mamidlabs-inference.ps1"))
     out = run_pwsh_functions(script)
     got = dict(line.split("=", 1) for line in out.strip().splitlines() if "=" in line)
     # Tum araclar her profilde ayni sekilde sunulur (arac kumesi profilden bagimsiz).
@@ -451,7 +451,7 @@ def test_every_profile_is_fully_downloadable():
 
 
 def test_lite_language_model_matches_manager_default():
-    """Katalogdaki GGUF ile manage-qwen.ps1'in açtığı dosya aynı olmalı."""
+    """Katalogdaki GGUF ile manage-mamidlabs.ps1'in açtığı dosya aynı olmalı."""
     lite = next(p for p in load_catalog()["profiles"] if p["id"] == "lite")
     gguf = [
         e
@@ -463,8 +463,8 @@ def test_lite_language_model_matches_manager_default():
 
     assert len(gguf) == 1
     name = gguf[0]["target"].rsplit("/", 1)[-1]
-    assert name in read_text("scripts/manage-qwen.ps1")
-    # manage-qwen.ps1 dosyayı bu klasörde arar.
+    assert name in read_text("scripts/manage-mamidlabs.ps1")
+    # manage-mamidlabs.ps1 dosyayı bu klasörde arar.
     assert gguf[0]["target"].startswith("models/Huihui-Qwen3.5-9B-abliterated-i1-GGUF/")
 
 
@@ -503,7 +503,7 @@ def test_downloader_rejects_paths_outside_the_repository():
 
 
 def test_profile_menu_is_wired_into_the_desktop():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     catalog = read_text("agent/profile-catalog.ps1")
 
     assert "profile-catalog.ps1')" in desktop

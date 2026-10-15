@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 # Kurulum kokunu kendi konumundan turet. ONEMLI: bu dosya Start-ThreadJob -FilePath
 # ile baslatilir; bu, hedef dosyayi METIN olarak okuyup yeni bir runspace'te
 # calistirir - $PSScriptRoot o baglamda HEP BOSTUR (gercek makinede dogrulandi).
-# Asil kaynak qwen-desktop.ps1/media-settings.ps1/hf-settings.ps1/profile-catalog.ps1'in
+# Asil kaynak mamidlabs-desktop.ps1/media-settings.ps1/hf-settings.ps1/profile-catalog.ps1'in
 # JobData.root ile acikca gecirdigi degerdir.
 $root = if ($JobData.root) { [string]$JobData.root } elseif ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { (Get-Location).Path }
 $process=$null

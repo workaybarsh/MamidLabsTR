@@ -4,10 +4,10 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # Kurulum kokunu kendi konumundan turet. ONEMLI: bu dosya Start-ThreadJob -FilePath
-# ile baslatilir (qwen-desktop.ps1); bu, hedef dosyayi METIN olarak okuyup yeni bir
+# ile baslatilir (mamidlabs-desktop.ps1); bu, hedef dosyayi METIN olarak okuyup yeni bir
 # runspace'te calistirir - $PSScriptRoot/$PSCommandPath/$MyInvocation.MyCommand.Path
 # o baglamda HEP BOSTUR (gercek makinede dogrulandi: probe script'i bunu kanitladi).
-# Bu yuzden asil kaynak, qwen-desktop.ps1'in kendi (dogru bilinen) $root'unu
+# Bu yuzden asil kaynak, mamidlabs-desktop.ps1'in kendi (dogru bilinen) $root'unu
 # JobData.root ile acikca gecirmesidir; $PSScriptRoot yalnizca bu dosya dogrudan
 # -File ile calistirildiginda (elle test/hata ayiklama) devreye girer. Fonksiyon
 # olarak tanimlanir (model-registry.ps1 icindeki Get-LocalProfileAliases ile ayni
@@ -28,7 +28,7 @@ $root = Get-InstallRoot
 # Start-LocalModelRestore ve Invoke-ImageOcrWithModelSwap fonksiyonlari izole
 # calistirildiginda ust seviye degisken degil, bu erisimciler kullanilir.
 function Get-PythonExe { Join-Path (Get-InstallRoot) 'venv\app\Scripts\python.exe' }
-function Get-ToolsPyPath { Join-Path (Get-InstallRoot) 'agent\qwen-agent-tools.py' }
+function Get-ToolsPyPath { Join-Path (Get-InstallRoot) 'agent\mamidlabs-agent-tools.py' }
 function Get-OfficePyPath { Join-Path (Get-InstallRoot) 'agent\office-tools.py' }
 function Get-OcrPyPath { Join-Path (Get-InstallRoot) 'agent\ocr-tools.py' }
 function Get-OcrPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr\Scripts\python.exe' }
@@ -37,7 +37,7 @@ function Get-WhisperPyPath { Join-Path (Get-InstallRoot) 'agent\whisper-tools.py
 function Get-MediaPythonExe { Join-Path (Get-InstallRoot) 'venv\imagegen\Scripts\python.exe' }
 # Ses dökum hatti kendi ortaminda calisir (faster-whisper + transformers/AST + pyannote).
 function Get-AsrPythonExe { Join-Path (Get-InstallRoot) 'venv\asr\Scripts\python.exe' }
-function Get-ManageQwenPath { Join-Path (Get-InstallRoot) 'scripts\manage-qwen.ps1' }
+function Get-ManageMamidLabsPath { Join-Path (Get-InstallRoot) 'scripts\manage-mamidlabs.ps1' }
 function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
 # HF onbellegi (whisper large-v3-tr + AST ses olayi modeli) KURULUM KOKU altindadir;
 # isci/araçlar bu onbellegi CEVRIMDISI kullanmali. Uygulama calisma aninda HF_HOME'u
@@ -376,7 +376,7 @@ function Wait-LocalModelStopped {
 # MAX/FLASH'taki Qwen3.8 27B sablonu reasoning_effort anahtarini anlar. Lite'taki
 # Qwen3.5 9B sablonu onu yok sayar (olculdu: low caba ile token sayisi degismedi);
 # orada dusunme ACIK ve SINIRSIZDIR (sunucuda --reasoning-budget verilmez; bkz.
-# scripts/manage-qwen.ps1). Bu yuzden zor soruda dusunme TUM cikti butcesini
+# scripts/manage-mamidlabs.ps1). Bu yuzden zor soruda dusunme TUM cikti butcesini
 # (--predict) yiyip gorunur yanit uretmeyebilir; asil kurtarma asagidaki
 # Set-NoThinkingRequest'tir.
 function Set-LowEffortRequest([hashtable]$body) {
@@ -401,7 +401,7 @@ function Start-LocalModelRestore([string]$profile) {
     $arguments = @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
-        '-File', (Get-ManageQwenPath),
+        '-File', (Get-ManageMamidLabsPath),
         '-Action', 'start',
         '-Profile', $profile
     )
@@ -433,7 +433,7 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
     if ($swapModel) {
         Emit 'status' 'Dil modeli RAM''e aliniyor; OCR icin VRAM bosaltiliyor…' | Out-Null
         try {
-            & (Get-ManageQwenPath) -Action stop | Out-Null
+            & (Get-ManageMamidLabsPath) -Action stop | Out-Null
             Wait-LocalModelStopped
         } catch { $ocrError = $_ }
     }
@@ -705,7 +705,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     if (!$path -or !(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Ses dosyasi bulunamadi.' }
     if ($swapModel) {
         Emit 'status' 'Dil modeli geçici olarak kapatılıyor; transkripsiyon için VRAM boşaltılıyor…' | Out-Null
-        try { & (Get-ManageQwenPath) -Action stop | Out-Null; Wait-LocalModelStopped } catch { $err = $_ }
+        try { & (Get-ManageMamidLabsPath) -Action stop | Out-Null; Wait-LocalModelStopped } catch { $err = $_ }
     }
     if (!$err) {
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
@@ -749,7 +749,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         if ($err -and !$Shared.Cancel -and !$swapModel -and $provider -eq 'local') {
             try {
                 Emit 'status' 'Ses dökumu alinamadi; dil modeli gecici olarak bellekten cikarilip yeniden deneniyor…' | Out-Null
-                & (Get-ManageQwenPath) -Action stop | Out-Null
+                & (Get-ManageMamidLabsPath) -Action stop | Out-Null
                 Wait-LocalModelStopped
                 $swapModel = $true
                 $retryPayload = $payloadBase.Clone(); $retryPayload['device'] = 'cuda'; $retryPayload['need_swap'] = $true
@@ -1645,7 +1645,7 @@ function Get-PlainText($content) {
 }
 
 # F1: Tur ici baglam tasmasi korumasi. Arac sonuclari tur boyunca birikip prompt'u
-# buyutur; llama-server --no-context-shift ile calistigindan (bkz. manage-qwen.ps1)
+# buyutur; llama-server --no-context-shift ile calistigindan (bkz. manage-mamidlabs.ps1)
 # prompt ctx-size'i asarsa istek HATA ile doner ve tur duser. Bu yuzden her tur
 # BASINDA tahmini prompt boyutunu olcup gerekirse eski ciktilar kisaltilir.
 # Hesap masaustundeki Estimate-ContextTokens ile ayni yaklasimdir (karakter/3;

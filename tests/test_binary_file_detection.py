@@ -1,4 +1,4 @@
-"""agent/qwen-inference.ps1 read_bound_file icin ikili dosya tespiti.
+"""agent/mamidlabs-inference.ps1 read_bound_file icin ikili dosya tespiti.
 
 Bir .exe/.zip/gorsel metin olarak okunursa bozuk karakterler model baglamina gider
 (token israfi, tanimsiz davranis). Ikili dosyalar tespit edilip reddedilir; UTF-8
@@ -19,7 +19,7 @@ def read_text(path: str) -> str:
 
 
 def test_read_bound_file_checks_for_binary_before_reading_as_text():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "function Test-BinaryFile" in inference
     assert "if (Test-BinaryFile $target)" in inference
@@ -30,7 +30,7 @@ def test_read_bound_file_checks_for_binary_before_reading_as_text():
 
 
 def _run_function_isolated(function_text: str, invocation: str, tmp_path: Path) -> str:
-    """Fonksiyonu, tum qwen-inference.ps1'i (JobData/Shared bekleyen ust
+    """Fonksiyonu, tum mamidlabs-inference.ps1'i (JobData/Shared bekleyen ust
     seviye kod dahil) dot-source etmeden, izole calistirir. -Command yerine
     -File kullanir: Turkce karakterler -Command argumaninda Python -> pwsh
     kodlama katmanlari arasinda bozulabilir, dosyaya UTF-8 BOM ile yazmak
@@ -49,7 +49,7 @@ def _run_function_isolated(function_text: str, invocation: str, tmp_path: Path) 
 
 
 def _extract_function(name: str) -> str:
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     start = inference.index(f"function {name}(")
     # Basit brace sayaci: fonksiyon govdesinin kapanisini bulur.
     depth = 0
@@ -70,7 +70,7 @@ def _extract_function(name: str) -> str:
     ("assets/icons/mamidlabs.ico", True),
     ("assets/icons/mamidlabs-64.png", True),
     ("README.md", False),
-    ("scripts/manage-qwen.ps1", False),
+    ("scripts/manage-mamidlabs.ps1", False),
 ])
 def test_binary_detection_on_real_repository_files(filename, expect_binary, tmp_path):
     """Gercek repo dosyalari uzerinde calistirilir; mock veri degil."""

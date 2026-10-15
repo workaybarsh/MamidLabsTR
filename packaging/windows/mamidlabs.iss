@@ -86,8 +86,8 @@ Name: "smoketest"; Description: "Kurulum sonunda smoke testi çalıştır (sohbe
 [Files]
 ; Program kaynagi. setup-run.ps1 bunu install-mamidlabs.ps1 -Source olarak kullanir;
 ; guncellemede ayni klasor yeniden yazilir.
-Source: "..\..\qwen-desktop.ps1"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
-Source: "..\..\launch-qwen-desktop.vbs"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
+Source: "..\..\mamidlabs-desktop.ps1"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
+Source: "..\..\launch-mamidlabs-desktop.vbs"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
 Source: "..\..\EULA.txt"; DestDir: "{app}\kurulum-kaynak"; Flags: ignoreversion
@@ -101,7 +101,7 @@ Source: "..\..\scripts\profile-report.ps1"; Flags: dontcopy
 Source: "..\..\agent\profiles.json"; Flags: dontcopy
 
 [Run]
-Filename: "{app}\launch-qwen-desktop.vbs"; Description: "MamidLabs'i şimdi aç"; Flags: postinstall shellexec nowait skipifsilent; Check: LauncherExists
+Filename: "{app}\launch-mamidlabs-desktop.vbs"; Description: "MamidLabs'i şimdi aç"; Flags: postinstall shellexec nowait skipifsilent; Check: LauncherExists
 
 [UninstallDelete]
 ; Asil temizligi scripts\uninstall-mamidlabs.ps1 yapar (CurUninstallStepChanged): surecleri
@@ -118,8 +118,8 @@ Type: filesandordirs; Name: "{app}\venv"
 Type: filesandordirs; Name: "{app}\tools"
 Type: filesandordirs; Name: "{app}\requirements"
 Type: filesandordirs; Name: "{app}\logs"
-Type: files; Name: "{app}\qwen-desktop.ps1"
-Type: files; Name: "{app}\launch-qwen-desktop.vbs"
+Type: files; Name: "{app}\mamidlabs-desktop.ps1"
+Type: files; Name: "{app}\launch-mamidlabs-desktop.vbs"
 Type: files; Name: "{app}\README.md"
 Type: files; Name: "{app}\LICENSE"
 Type: files; Name: "{app}\EULA.txt"
@@ -148,7 +148,7 @@ const
     özdeş); yalnızca çalışma zamanı ayarları (reasoning effort/predict) farklıdır. Kurulumda
     tek "PRO" (Qwen3.8 27B) seçeneği vardır ve indirme 'flash' kataloğuyla yapılır. FLASH/MAX
     geçişi uygulamanın alt çubuğundan yapılır (agent/model-registry.ps1). }
-  OptQwen38 = 1;
+  OptPro = 1;
   OptLater = 2;
   OptOwn = 3;
 
@@ -165,7 +165,7 @@ end;
 
 function LauncherExists: Boolean;
 begin
-  Result := FileExists(ExpandConstant('{app}\launch-qwen-desktop.vbs'));
+  Result := FileExists(ExpandConstant('{app}\launch-mamidlabs-desktop.vbs'));
 end;
 
 procedure CustomCancelButtonClick(Sender: TObject); forward;
@@ -174,7 +174,7 @@ function SelectedProfile: String;
 begin
   case ProfilePage.SelectedValueIndex of
     OptLite: Result := 'lite';
-    OptQwen38: Result := 'flash';
+    OptPro: Result := 'flash';
   else
     Result := 'none';
   end;
@@ -291,7 +291,7 @@ begin
   if LoadStringFromFile(RecommendFile, RecommendedRaw) then
   begin
     Recommended := Trim(String(RecommendedRaw));
-    if (Recommended = 'flash') or (Recommended = 'max') then ProfilePage.SelectedValueIndex := OptQwen38
+    if (Recommended = 'flash') or (Recommended = 'max') then ProfilePage.SelectedValueIndex := OptPro
     else if Recommended = 'lite' then ProfilePage.SelectedValueIndex := OptLite
     else ProfilePage.SelectedValueIndex := OptOwn;
   end;

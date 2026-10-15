@@ -22,7 +22,7 @@ def test_delete_all_keeps_the_open_chat(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "qwen-desktop.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "mamidlabs-desktop.ps1").read_text(encoding="utf-8-sig")
     function = extract_function(desktop, "Get-DeletableChatPaths")
     chat_dir = tmp_path / "chats"
     chat_dir.mkdir()
@@ -57,7 +57,7 @@ def test_delete_all_keeps_the_open_chat(tmp_path):
 def test_delete_all_handler_protects_open_chat():
     """Silme döngüsü artık listenin tamamı ($entries) yerine filtrelenmiş
     $targets üzerinde çalışır; açık sohbet kullanıcıya bildirilir."""
-    desktop = (ROOT / "qwen-desktop.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "mamidlabs-desktop.ps1").read_text(encoding="utf-8-sig")
     assert "Get-DeletableChatPaths $chatDir $entries $script:chatId" in desktop
     assert "foreach ($path in @($targets)) { Remove-Item" in desktop
     assert "Açık olan sohbet korunur." in desktop

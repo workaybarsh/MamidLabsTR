@@ -26,8 +26,8 @@ def test_custom_provider_base_url_is_passed_to_the_worker():
     jobData'ya apiSettings + baseUrl gecirmeli, isci de gercek istekte bunlari
     kullanmali; aksi halde custom saglayici sohbette 'taban adresi gir' hatasi verir
     (yalnizca dogrulama calisir). Gercek uctan uca testte bulundu."""
-    desktop = read_text("qwen-desktop.ps1")
-    worker = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     # Masaustu iki jobData blogunda (sohbet + sikistirma) gecirir.
     assert desktop.count("apiSettings = $script:apiSettings") >= 2
     assert desktop.count("baseUrl = (Get-CustomBaseUrl)") >= 2
@@ -41,7 +41,7 @@ def test_custom_provider_base_url_is_passed_to_the_worker():
 
 def test_model_profiles_use_max_flash_and_lite_names():
     registry = read_text("agent/model-registry.ps1")
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
 
     assert "builtin-max" in registry
     assert "builtin-flash" in registry
@@ -53,7 +53,7 @@ def test_model_profiles_use_max_flash_and_lite_names():
 
 
 def test_ocr_only_returns_text_without_explanation_request():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "function Test-OcrExplainIntent" in inference
     assert "$ocrDirect = !(Test-OcrExplainIntent $userText)" in inference
@@ -63,13 +63,13 @@ def test_ocr_only_returns_text_without_explanation_request():
 
 
 def test_image_ocr_swaps_local_model_and_command_tool_uses_approval():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     ocr = read_text("agent/ocr-tools.py")
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     assert "function Invoke-ImageOcrWithModelSwap" in inference
     assert "action = 'ocr_image'; path = [string]$paths[0]; device = 'gpu'" in inference
-    assert "& (Get-ManageQwenPath) -Action stop" in inference
+    assert "& (Get-ManageMamidLabsPath) -Action stop" in inference
     assert "Start-LocalModelRestore ([string]$JobData.profile)" in inference
     assert "function Request-Approval([string]$toolName" in inference
     assert "Request-Approval 'run_command'" in inference
@@ -95,7 +95,7 @@ def test_image_ocr_swaps_local_model_and_command_tool_uses_approval():
 def test_generation_tools_are_gated_by_installed_components():
     """Görsel/video ve çoklu-görsel OCR yalnızca ilgili bileşen kuruluysa (ya da API) sunulur;
     aksi halde model var olmayan aracı çağırıp sapıtıyordu."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "imagegen = ($hasMedia -or $imageApiOk)" in desktop
     assert "videogen = ($hasMedia -or $videoApiOk)" in desktop
     assert "$hasMedia = Test-Path -LiteralPath (Join-Path $root 'ComfyUI\\main.py')" in desktop
@@ -103,7 +103,7 @@ def test_generation_tools_are_gated_by_installed_components():
 
 
 def test_multi_image_selection_is_preserved_until_send_validation():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     add_image_start = desktop.index("function Add-SelectedImage")
     add_image_end = desktop.index("function Add-SelectedVideo", add_image_start)
@@ -121,7 +121,7 @@ def test_provider_adapters_preserve_forced_tool_choice():
 
 
 def test_api_video_tools_do_not_advertise_unsupported_video_continuation():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "$videoModes = @('metin', 'gorsel')" in inference
     assert "$videoModes += 'video'" in inference
@@ -132,8 +132,8 @@ def test_web_tool_failure_is_detected_and_discourages_workarounds():
     """Web aramasi/sayfa indirme ag hatasiyla basarisiz olunca modelin run_command
     (ping/curl...) gibi araclarla etrafindan dolasmasini onleyen bir sistem notu
     eklenir; arac basarisizligi guvenilir sekilde tespit edilir."""
-    inference = read_text("agent/qwen-inference.ps1")
-    desktop = read_text("qwen-desktop.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     assert "function Test-WebToolFailure" in inference
     assert "$script:webToolFailCount" in inference
@@ -160,7 +160,7 @@ def test_web_tool_failure_is_detected_and_discourages_workarounds():
 def test_run_command_is_only_offered_on_explicit_command_intent():
     """Kullanici acikca komut/terminal istemedikce run_command modele SUNULMAZ; boylece
     kucuk model web/arama hatasinda absurt komut denemelerine giremez."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "function Test-CommandIntent" in inference
     # run_command tanimi niyet kosuluna bagli.
@@ -178,7 +178,7 @@ def test_command_intent_detection_matrix():
     script = r"""
 $job = @{ messages = @(@{ role = 'user'; content = 'x' }); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }
 $shared = @{ Cancel = $false }
-. '__ROOT__\agent\qwen-inference.ps1' $job $shared | Out-Null
+. '__ROOT__\agent\mamidlabs-inference.ps1' $job $shared | Out-Null
 $cases = @(
   @{ t = 'su komutu calistir: ipconfig'; e = $true }
   @{ t = 'terminali ac ve dir yaz'; e = $true }
@@ -218,7 +218,7 @@ def test_web_tool_failure_detection_matrix():
     script = r"""
 $job = @{ messages = @(@{ role = 'user'; content = 'x' }); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }
 $shared = @{ Cancel = $false }
-. '__ROOT__\agent\qwen-inference.ps1' $job $shared | Out-Null
+. '__ROOT__\agent\mamidlabs-inference.ps1' $job $shared | Out-Null
 $cases = @(
   @{ n = 'search_web'; r = '{"error":"Web aramasi basarisiz"}'; e = $true }
   @{ n = 'search_web'; r = '[{"title":"x","href":"u"}]'; e = $false }
@@ -253,7 +253,7 @@ def test_stream_watchdog_uses_fresh_connection_and_survives_dropped_stream():
     bayat baglanti tekrar kullanilinca akis ortasinda 'Varolan bir baglanti ... zorla
     kapatildi' (WSAECONNRESET) olusuyordu. Duzeltme: yerel istekler baglantiyi kapatir
     (her tur taze baglanti) ve yanit metni varken kopma hata sayilmaz."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "if ($provider -eq 'local') { $request.Headers.ConnectionClose = $true }" in inference
     assert "$result.finishReason = 'connection-closed'" in inference
@@ -264,7 +264,7 @@ def test_custom_provider_retries_and_tolerates_partial_stream():
     """D3: 'custom' (OpenAI uyumlu ozel uc) icin gecici baglanti hatasinda sinirli
     yeniden deneme + kismi yanit toleransi. Uzak saglayicilar (openai/claude/gemini/
     deepseek) KORUNUR: yalnizca local + custom bu toleransi alir."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "$retryableProvider = $provider -eq 'local' -or $provider -eq 'custom'" in inference
     assert "if (!$retryableProvider -or $networkRetried" in inference
@@ -324,7 +324,7 @@ def test_custom_provider_dropped_stream_is_not_an_error(tmp_path):
             f"""
 $job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; provider = 'custom'; baseUrl = '{base}'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $false; internet = $false; office = $false; documentCreate = $false }}
 $shared = @{{ Cancel = $false }}
-. '{ROOT}\\agent\\qwen-inference.ps1' $job $shared | Out-Null
+. '{ROOT}\\agent\\mamidlabs-inference.ps1' $job $shared | Out-Null
 # compactOnly cikisinda betik kendi HttpClient'ini kapatir.
 $script:http = [Net.Http.HttpClient]::new(); $script:http.Timeout = [Threading.Timeout]::InfiniteTimeSpan
 $turn = @{{ reasoning = ''; content = ''; usage = $null; toolParts = @{{}}; finishReason = $null }}
@@ -352,7 +352,7 @@ try {{
 
 
 def test_ocr_model_swap_keeps_json_response_separate_from_status_events():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     start = inference.index("function Invoke-ImageOcrWithModelSwap")
     end = inference.index("function Invoke-Tool", start)
     ocr_swap = inference[start:end]
@@ -363,7 +363,7 @@ def test_ocr_model_swap_keeps_json_response_separate_from_status_events():
 
 
 def test_security_contracts_cover_ssrf_archive_and_local_output_paths():
-    tools = read_text("agent/qwen-agent-tools.py")
+    tools = read_text("agent/mamidlabs-agent-tools.py")
     office = read_text("agent/office-tools.py")
     media = read_text("agent/api-media.py")
     video_tools = read_text("agent/media-tools.py")
@@ -393,7 +393,7 @@ def test_security_contracts_cover_ssrf_archive_and_local_output_paths():
 
 
 def test_chat_history_remains_account_encrypted():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     assert "MAMIDLABS-CHAT-DPAPI-V1" in desktop
     assert "Protect-ChatText $json" in desktop
@@ -407,19 +407,19 @@ def test_single_instance_check_verifies_the_window_class():
     'zaten acik' sanip HIC acilmiyordu (gercek makinede goruldu; arayuz smoke
     adimi 'pencere acilmadan kapandi' verdi). Tek-ornek denetimi artik yalnizca
     gercek WinForms penceresini (sinif adi WindowsForms10.*) kabul eder."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "GetClassName" in desktop
     assert "WindowsForms10.*" in desktop
     # Sinif denetimi FindWindow sonucundan sonra ve erken return'den once olmali.
-    idx_find = desktop.index("[QwenWindow]::FindWindow([NullString]::Value, $appTitle)")
+    idx_find = desktop.index("[MamidLabsWindow]::FindWindow([NullString]::Value, $appTitle)")
     idx_class = desktop.index("WindowsForms10.*", idx_find)
     idx_return = desktop.index("return", idx_find)
     assert idx_find < idx_class < idx_return
 
 
 def test_remote_url_validation_blocks_local_and_non_http_targets():
-    path = ROOT / "agent" / "qwen-agent-tools.py"
-    spec = importlib.util.spec_from_file_location("qwen_agent_tools", path)
+    path = ROOT / "agent" / "mamidlabs-agent-tools.py"
+    spec = importlib.util.spec_from_file_location("mamidlabs_agent_tools", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -445,8 +445,8 @@ def test_archive_reader_stops_before_unbounded_memory_growth():
 
 
 def test_previous_image_payload_is_not_kept_for_follow_up_messages():
-    desktop = read_text("qwen-desktop.ps1")
-    inference = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "$turnHasImage = [bool]$script:currentTurnHasImage" in desktop
     assert "$script:currentTurnHasImage -and" in desktop
@@ -500,11 +500,11 @@ def test_runtime_ocr_intent_matrix():
     if not pwsh:
         pytest.skip("PowerShell 7 is unavailable")
 
-    # qwen-inference.ps1 $root'u kendi konumundan turetir; ROOT uzerinden dot-source edilir.
+    # mamidlabs-inference.ps1 $root'u kendi konumundan turetir; ROOT uzerinden dot-source edilir.
     script = r"""
 $job = @{ messages = @(@{ role = 'user'; content = 'Gorseldeki metni oku' }); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 1200; agent = $false; internet = $false; office = $false; documentCreate = $false }
 $shared = @{ Cancel = $false }
-. '__ROOT__\agent\qwen-inference.ps1' $job $shared | Out-Null
+. '__ROOT__\agent\mamidlabs-inference.ps1' $job $shared | Out-Null
 foreach ($text in @('Gorseldeki metni oku', 'Bu görselde okuduklarını açıkla', 'Gorseldeki metni acikla', 'Gorselde ne var', 'Gorseldeki metni oku, guven skorunu belirt')) {
     Write-Output (('OCR=' + [bool](Test-OcrIntent $text)) + '|EXPLAIN=' + [bool](Test-OcrExplainIntent $text))
 }
@@ -539,8 +539,8 @@ foreach ($text in @('Gorseldeki metni oku', 'Bu görselde okuduklarını açıkl
 
 
 def test_multi_image_ocr_is_an_explicit_one_turn_mode():
-    desktop = read_text("qwen-desktop.ps1")
-    inference = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "$script:multiImageOcrMode = $false" in desktop
     assert "function Test-MultiImageOcrActivationIntent" in desktop
@@ -558,7 +558,7 @@ def test_multi_image_ocr_is_an_explicit_one_turn_mode():
 
 def test_generated_artifacts_can_be_opened_directly():
     """Uretilen dosya (gorsel/video/belge) sohbet balonundan tek tikla acilabilmeli."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "function Open-BubbleArtifact" in desktop
     assert "Open-BubbleArtifact $this.Tag" in desktop
     assert "Start-Process -FilePath $path" in desktop
@@ -584,7 +584,7 @@ def test_system_prompt_requires_verification_and_forbids_fabrication():
     LITE'ta cikti butcesini tuketerek gorunur yaniti engelleyebiliyordu; artik model
     YANITINI DE MUTLAKA YAZMAYA cagrilir. Talimat sabit oldugu icin onek degismez ve KV
     onbellegi bozulmaz."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "Kanitli ve dogru cevap ver" in desktop
     assert "tekrar gozden gecir" in desktop
     assert "YANITINI DA MUTLAKA YAZ" in desktop

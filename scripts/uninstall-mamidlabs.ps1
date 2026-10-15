@@ -98,16 +98,16 @@ if (Test-ProtectedPath $Root) {
     Write-Line "Guvenlik: $Root bir sistem ya da kullanici klasoru; kaldirma yapilmadi." 'Red'
     exit 1
 }
-$markers = @('agent\profiles.json', 'qwen-desktop.ps1', 'launch-qwen-desktop.vbs')
+$markers = @('agent\profiles.json', 'mamidlabs-desktop.ps1', 'launch-mamidlabs-desktop.vbs')
 if (!($markers | Where-Object { Test-Path -LiteralPath (Join-Path $Root $_) })) {
-    Write-Line "Guvenlik: $Root bir MamidLabs kurulumu gibi gorunmuyor (qwen-desktop.ps1 / agent\profiles.json yok); kaldirma yapilmadi." 'Red'
+    Write-Line "Guvenlik: $Root bir MamidLabs kurulumu gibi gorunmuyor (mamidlabs-desktop.ps1 / agent\profiles.json yok); kaldirma yapilmadi." 'Red'
     exit 1
 }
 
 # -------------------------------------------------------------------- plan
 # Kurulumun kokte olusturdugu her sey. Burada olmayan girisler kullaniciya sorulur.
 $programEntries = @('agent', 'scripts', 'assets', 'requirements', 'models', 'logs', 'llama.cpp', 'ComfyUI', 'venv',
-    'runtime', 'tools', 'kurulum-kaynak', 'qwen-desktop.ps1', 'launch-qwen-desktop.vbs',
+    'runtime', 'tools', 'kurulum-kaynak', 'mamidlabs-desktop.ps1', 'launch-mamidlabs-desktop.vbs',
     'README.md', 'LICENSE', 'EULA.txt')
 $userEntries = @('chats', 'outputs', 'settings')
 $wizardEntries = @('unins000.exe', 'unins000.dat', 'unins000.msg')

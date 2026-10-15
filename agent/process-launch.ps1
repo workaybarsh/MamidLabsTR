@@ -3,7 +3,7 @@
 #
 # Start-Process -RedirectStandardOutput, CreateProcess'i bInheritHandles=TRUE ile
 # cagirir: cocuk, cagiranin devredilebilir tum tanitcilarini, betigin kendi stdout
-# borusu dahil, alir. Cocuk yasadikca boru kapanmaz; bu yuzden "manage-qwen.ps1 |
+# borusu dahil, alir. Cocuk yasadikca boru kapanmaz; bu yuzden "manage-mamidlabs.ps1 |
 # Out-String", smoke-test.ps1 ciktisini dosyaya yonlendirmek ya da Start-Process -Wait
 # hic bitmiyordu (gercek makinede goruldu). Cozum: baslatma aninda std tanitcilarin
 # devralma bayragini kapatip sonra eski haline getirmek.

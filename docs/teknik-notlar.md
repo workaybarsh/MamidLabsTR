@@ -10,10 +10,10 @@ gereklilik değil. Uygulama kendi konumundan çalışır; sihirbazda klasör se�
 ## Mimari
 
 ```
-qwen-desktop.ps1  (WinForms arayüz, tek pencere)
+mamidlabs-desktop.ps1  (WinForms arayüz, tek pencere)
       │
-      ├─ agent/qwen-inference.ps1   → llama-server /v1/chat/completions (akış + araç döngüsü)
-      │       ├─ agent/qwen-agent-tools.py  → web araması, sayfa okuma, referans görsel bulma
+      ├─ agent/mamidlabs-inference.ps1   → llama-server /v1/chat/completions (akış + araç döngüsü)
+      │       ├─ agent/mamidlabs-agent-tools.py  → web araması, sayfa okuma, referans görsel bulma
       │       ├─ agent/office-tools.py      → PDF / Word / Excel / PowerPoint oku-yaz
       │       └─ agent/ocr-tools.py         → düz görselde GPU, PDF'te CPU PaddleOCR
       │
@@ -22,7 +22,7 @@ qwen-desktop.ps1  (WinForms arayüz, tek pencere)
       │       └─ agent/media-tools.py       → video karesi çıkarma, küçük resim
       │
       ├─ agent/media-model-swap.ps1 → VRAM devri, ComfyUI yaşam döngüsü
-      ├─ scripts/manage-qwen.ps1    → llama-server başlat / durdur / profil değiştir, bellek kapısı
+      ├─ scripts/manage-mamidlabs.ps1    → llama-server başlat / durdur / profil değiştir, bellek kapısı
       │       └─ agent/process-launch.ps1   → uzun ömürlü süreçleri çağıranın çıktı hattından ayırır
       └─ agent/profile-catalog.ps1  → profil kataloğu, eksik dosya taraması, indirme
               └─ agent/profiles.json        → profil başına dosya listesi ve kaynakları
@@ -42,7 +42,7 @@ qwen-desktop.ps1  (WinForms arayüz, tek pencere)
 | Sohbet geçmişi | `%LOCALAPPDATA%\Programs\MamidLabs\chats` |
 | Loglar | `%LOCALAPPDATA%\Programs\MamidLabs\logs` |
 
-Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-qwen-desktop.vbs`
+Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-mamidlabs-desktop.vbs`
 (konsol penceresi açılmaz, uygulama zaten açıksa öne getirilir).
 
 ## Profiller
@@ -91,7 +91,7 @@ RTX 5060 Ti 16 GB üzerinde llama.cpp'nin bellek dökümüyle ölçüldü (32K b
 
 Görsel projektör GPU'da ağırlık ve hesap tamponuyla 1.133 MiB daha istiyordu; toplam boş alanı
 aşıp ~420 MiB paylaşılan belleğe taşıyordu. Projektör CPU'ya alınınca sohbet 19,6'dan 25,0 tok/s'ye,
-tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-qwen.ps1` içindeki bellek kontrolü
+tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-mamidlabs.ps1` içindeki bellek kontrolü
 model dosyası + 750 MiB ister (eşik 15350 = ölçülen ayak izi). **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
 varsayılan `false`): ComfyUI **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil
 modeli yüklenmeden önce kapatılır, böylece boşta ne VRAM ne RAM tutar (boşta ComfyUI ~300 MiB CUDA
@@ -104,7 +104,7 @@ boşsa) kapatılıp yeniden ölçülür.
 **Otomatik VRAM temizliği:** dil modeli yüklenmeden önce uygulamaya ait **artık GPU işçileri** de
 kapatılır — boşta kalmış kalıcı ses işçisi (`whisper-tools.py --serve`) ve OCR işçisi
 (`ocr-tools.py`); çökme/zorla kapatma sonrası kalan CUDA bağlamları (~140–600 MiB) 27B'nin ince
-payını yiyebilir. `scripts/manage-qwen.ps1` → `Get-AppGpuWorkers`/`Stop-OrphanWorkers` bellek
+payını yiyebilir. `scripts/manage-mamidlabs.ps1` → `Get-AppGpuWorkers`/`Stop-OrphanWorkers` bellek
 kapısından **önce** çalışır, sürücünün VRAM'i bırakmasını bekler ve kapı sınırlı kez yeniden denenir
 (~7 sn). Temizlik yalnızca kurulum kökü altındaki süreçleri hedefler; başka uygulamalara dokunulmaz.
 
@@ -321,7 +321,7 @@ isteminde de önleyici bir kural vardır. Küçük model (LITE) prompt notuna he
 modele artık sunulmaz** (arama döngüsü engellenir); (2) `run_command` ile `ping`, `curl`, `wget`,
 `nslookup`, `ipconfig` gibi **ağ-probe komutları çalıştırılmadan reddedilir**. Bu korumalar yalnızca
 bir web hatasından **sonra** devreye girer; kullanıcının açık ve ilgisiz komut isteğini etkilemez.
-Sözleşme testleri: `tests/test_qwen_contracts.py`.
+Sözleşme testleri: `tests/test_mamidlabs_contracts.py`.
 
 Üstelik **`run_command` aracı modele yalnızca kullanıcı açıkça komut/terminal istediğinde sunulur**
 (`Test-CommandIntent`): komut, terminal, konsol, cmd, powershell, bash, script/betik, .bat/.cmd/.ps1/.exe,
@@ -550,7 +550,7 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   `Invoke-PythonTool` yoluna düşer (davranış korunur).
 - **HF önbelleği (`HF_HOME`):** ses modelleri (whisper large-v3-tr + AST) kurulum kökünün HF
   önbelleğinde (`tools\hf-home`) durur ve çalışma anında **çevrimdışı** kullanılır; uygulama
-  `qwen-desktop.ps1`'de `$env:HF_HOME = <kok>\tools\hf-home` ayarlar ve `agent/qwen-inference.ps1`
+  `mamidlabs-desktop.ps1`'de `$env:HF_HOME = <kok>\tools\hf-home` ayarlar ve `agent/mamidlabs-inference.ps1`
   `Get-HfHome`'u hem tek-atımlık `Invoke-PythonTool`'a (çocuk süreç ortamı) hem kalıcı
   `Start-AsrServerProcess`'e geçirir. Ayarlanmazsa işçi VARSAYILAN HF önbelleğine düşer, AST orada
   bulunmaz; `events.tag()` yüklemeyi `try/except` ile koruduğu için döküm yine tamamlanır ama

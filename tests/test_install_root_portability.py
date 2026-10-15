@@ -1,7 +1,7 @@
 """Kurulum kokunun tasinabilirligi.
 
 Uygulama hangi klasore kurulduysa oradan calisir; hicbir betik sabit bir kurulum yolu
-yazmaz. qwen-desktop.ps1 isciler (qwen-inference.ps1, imagegen-run.ps1,
+yazmaz. mamidlabs-desktop.ps1 isciler (mamidlabs-inference.ps1, imagegen-run.ps1,
 videogen-run.ps1, api-media-run.ps1) Start-ThreadJob -FilePath ile baslatir; bu
 baglamda $PSScriptRoot bostur ve Get-Location ilgisiz bir klasor olabilir. Bu yuzden
 kok JobData.root ile acikca tasinir; isciler yalnizca dogrudan calistirildiklarinda
@@ -38,8 +38,8 @@ def test_worker_scripts_derive_root_from_their_own_location():
         assert text.index("if ($JobData.root)") < text.index("Split-Path -Parent $PSScriptRoot")
 
 
-def test_qwen_inference_uses_get_install_root_with_jobdata_priority():
-    inference = read_text("agent/qwen-inference.ps1")
+def test_mamidlabs_inference_uses_get_install_root_with_jobdata_priority():
+    inference = read_text("agent/mamidlabs-inference.ps1")
 
     assert "function Get-InstallRoot" in inference
     assert "if ($JobData -and $JobData.root)" in inference
@@ -47,9 +47,9 @@ def test_qwen_inference_uses_get_install_root_with_jobdata_priority():
 
 
 def test_desktop_passes_root_to_every_threadjob_worker():
-    """qwen-desktop.ps1'in 4 Start-ThreadJob cagrisinin hepsi JobData.root
+    """mamidlabs-desktop.ps1'in 4 Start-ThreadJob cagrisinin hepsi JobData.root
     gecirmeli; biri unutulursa o worker sessizce yanlis koke duser."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
 
     threadjob_count = desktop.count("Start-ThreadJob -FilePath (Join-Path $root 'agent")
     assert threadjob_count == 4, f"beklenen 4 Start-ThreadJob cagrisi, bulunan {threadjob_count}"
@@ -69,7 +69,7 @@ def test_hf_and_profile_catalog_pass_root_for_api_media_run():
 
 
 def test_launcher_derives_root_from_its_own_location():
-    vbs = read_text("launch-qwen-desktop.vbs")
+    vbs = read_text("launch-mamidlabs-desktop.vbs")
     assert "GetParentFolderName(WScript.ScriptFullName)" in vbs
 
 
@@ -79,6 +79,6 @@ def test_python_workers_derive_root_from_file_location():
         ("agent/media-tools.py", "pathlib.Path(__file__).resolve().parent.parent"),
         ("agent/ocr-tools.py", "Path(__file__).resolve().parent.parent"),
         ("agent/office-tools.py", "os.path.dirname(os.path.dirname(os.path.abspath(__file__)))"),
-        ("agent/qwen-agent-tools.py", "os.path.dirname(os.path.dirname(os.path.abspath(__file__)))"),
+        ("agent/mamidlabs-agent-tools.py", "os.path.dirname(os.path.dirname(os.path.abspath(__file__)))"),
     ):
         assert marker in read_text(path), f"{path}: __file__ tabanli kok turetme eksik"

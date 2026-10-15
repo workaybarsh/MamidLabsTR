@@ -19,7 +19,7 @@ def read_text(path: str) -> str:
 
 
 def test_write_audit_log_function_exists_and_never_logs_full_content():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "function Write-AuditLog" in inference
     assert "function Get-ToolAuditDetail" in inference
     # write_bound_file/create_document icin relative_path/filename gecer,
@@ -34,7 +34,7 @@ def test_audit_lock_is_a_lazy_accessor_function_not_a_top_level_assignment():
     AST ile yalnizca fonksiyonlar cikarilip yuklendiginde (davranis testleri,
     veya baska bir sebeple dosyanin tamami calismadiginda) tanimsiz kalirdi,
     Write-AuditLog icindeki .WaitOne() cagrisi null referans hatasi verirdi."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "function Get-AuditLock" in inference
     assert "$lock = Get-AuditLock" in inference
     # Mutex olusturma satiri Get-AuditLock govdesi ICINDE olmali, fonksiyonun
@@ -44,20 +44,20 @@ def test_audit_lock_is_a_lazy_accessor_function_not_a_top_level_assignment():
 
 
 def test_tool_call_site_logs_both_success_and_error_paths():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "Write-AuditLog $name $approval $auditResult $auditDetail" in inference
     assert "Write-AuditLog $name (if ($script:lastApprovalOutcome)" in inference
 
 
 def test_denied_approval_is_recorded_as_denied_not_ok():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "$auditResult = if ($approval -in @('asked_no', 'cancelled', 'timeout')) { 'denied' } else { 'ok' }" in inference
 
 
 def test_write_bound_file_tracks_its_changed_path():
     """create_document zaten $script:createdArtifact ayarliyordu; write_bound_file
     ayarlamiyordu - audit kaydinda changedPath hep bos kalirdi."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     section = inference.split("if ($name -eq 'write_bound_file')")[1].split(
         "if ($name -eq 'run_command')"
     )[0]

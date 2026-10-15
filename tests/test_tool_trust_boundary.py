@@ -15,14 +15,14 @@ def read_text(path: str) -> str:
 
 
 def test_tool_results_get_an_untrusted_data_guard_when_tools_are_active():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "$toolTrustGuard = if ($toolDefinitions.Count -gt 0)" in inference
     assert "VERIDIR" in inference
     assert "UYMA" in inference
 
 
 def test_guard_is_added_to_the_request_body_not_to_persisted_history():
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     # Sunucuya giden govdeye ekleniyor (ayri bir [array] degiskeni uzerinden -
     # bkz. test_single_element_array_uses_explicit_array_cast asagida, dogrudan
     # hashtable degeri olarak if/else atanirsa PowerShell tek elemanli diziyi
@@ -44,7 +44,7 @@ def test_single_element_array_uses_explicit_array_cast():
     ConvertTo-Json bunu JSON dizisi degil duz nesne olarak yazar, sunucu
     "Expected 'messages' to be an array" ile 400 doner. [array] cast'i ile
     onceden hesaplanmis bir degiskene atamak bunu onler."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     idx_cast = inference.index("[array]$sendMessages = if")
     idx_body = inference.index("$body = @{")
     assert idx_cast < idx_body, "sendMessages, $body olusturulmadan once hesaplanmali"
@@ -54,6 +54,6 @@ def test_initial_message_count_and_tool_exchange_slicing_are_unaffected():
     """$initialMessageCount / $toolExchange kalici $messages uzerinden
     hesaplanmaya devam etmeli; guard eklendikten sonra da UI'ye geri
     gonderilen sohbet gecmisi guard icermemeli."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "$initialMessageCount = $messages.Count" in inference
     assert inference.index("$toolTrustGuard = if") < inference.index("$initialMessageCount = $messages.Count")

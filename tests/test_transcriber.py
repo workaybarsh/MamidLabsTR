@@ -711,7 +711,7 @@ def test_worker_plan_action_uses_path_duration(monkeypatch, tmp_path):
 
 def test_transcription_uses_asr_environment_not_imagegen():
     """Ses iscisi KENDI ortaminda (venv\\asr) calisir; venv\\imagegen'de faster-whisper yok."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Get-AsrPythonExe" in worker
     assert "venv\\asr\\Scripts\\python.exe" in worker
     plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]
@@ -724,7 +724,7 @@ def test_asr_worker_uses_install_hf_cache():
     calisma aninda HF_HOME'u hic ayarlamiyordu; isci VARSAYILAN HF onbellegine dusuyor, AST
     ses olayi modeli orada olmadigindan olay modeli yuklenemiyor ve TUM sesli giris hata
     veriyordu. Kurulum da ayni yolu kullanir (install-mamidlabs.ps1)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Get-HfHome" in worker
     assert "tools\\hf-home" in worker
     # Tek-atimlik python araci ve kalici isci sureci HF_HOME'u alir.
@@ -733,7 +733,7 @@ def test_asr_worker_uses_install_hf_cache():
     srv = worker.split("function Start-AsrServerProcess")[1].split("function ")[0]
     assert "HF_HOME" in srv and "Get-HfHome" in srv
     # Uygulama baslangicinda da ayarlanir (arayuz uzerinden calisan tum cocuklara gecer).
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "$env:HF_HOME = Join-Path $root 'tools\\hf-home'" in desktop
 
 
@@ -741,7 +741,7 @@ def test_python_tool_sets_hf_home_for_child(tmp_path):
     """Davranis: Invoke-PythonTool alt surece HF_HOME=<kok>\\tools\\hf-home verir; boylece ses
     iscisi (ve diger python araclari) kurulum onbellegini cevrimdisi kullanir (gercek pwsh +
     gercek Python)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     probe = tmp_path / "probe.py"
     probe.write_text("import os\nprint(os.environ.get('HF_HOME',''))\n", encoding="utf-8")
     script = _invoke_python_tool_harness(worker) + f"""
@@ -758,7 +758,7 @@ $out = Invoke-PythonTool @{{}} '{probe}' '{sys.executable}' 15
 def test_worker_maps_selected_profile_to_asr_tier():
     """Arayuz SECILI dil-modeli profilini ses hatti tier'ina cevirir ('lite'->'lite', aksi->
     'pro') ve hem plan hem transcribe isteklerine `profile` alani olarak gecirir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Get-AsrProfileName" in worker
     fn = worker.split("function Get-AsrProfileName")[1].split("function ")[0]
     assert "return 'lite'" in fn
@@ -815,7 +815,7 @@ def test_asr_profile_name_ignores_non_local_provider(tmp_path):
     ASR zorla 'pro' olmamali. Get-AsrProfileName yerel OLMAYAN saglayicida $null donmeli ki
     isci tier'i gercek VRAM'den secsin (config.select_profile); yerel + lite -> 'lite',
     yerel + max/flash -> 'pro'. Fonksiyon gercek pwsh'ta izole calistirilir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Get-AsrProfileName")
     script = fn + """
 
@@ -838,8 +838,8 @@ Ask 'local' ''
 
 
 def test_desktop_pipes_audio_to_worker_and_shows_transcript():
-    desktop = read_text("qwen-desktop.ps1")
-    worker = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "currentTurnAudioPaths" in desktop
     assert "currentAudioPaths = @($script:currentTurnAudioPaths)" in desktop
     assert "function Invoke-TranscribeWithModelSwap" in worker
@@ -852,7 +852,7 @@ def test_desktop_pipes_audio_to_worker_and_shows_transcript():
 def test_microphone_red_button_cancels_recording():
     """Kayit surerken kirmizi mikrofon tiklamasi kaydi IPTAL eder (dur + dosya silinir,
     gonderilmez). Kaydi bitirip gondermek icin sag tik menusu ya da Gönder kullanilir."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "function Start-MicrophoneCapture" in desktop
     assert "mciSendString" in desktop
     assert "open new type waveaudio alias" in desktop  # WAVE_MAPPER = default device
@@ -873,12 +873,12 @@ def test_microphone_menu_has_non_speech_events_toggle():
     """Mikrofon menusunde 'Konusma disi sesler' onay kutusu: isaretli ise AST olaylari da
     yakalanir, degilse yalnizca konusma. Ayar api.json -> audioEvents'te saklanir ve isciye
     gecirilir."""
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "Konuşma dışı sesler" in desktop
     assert "$script:audioEvents" in desktop
     assert "audioEvents = [bool]$script:audioEvents" in desktop
     assert "$script:apiSettings.audioEvents = $script:audioEvents" in desktop
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "events = $audioEvents" in worker
 
 
@@ -886,10 +886,10 @@ def test_transcription_uses_model_swap_for_local_provider():
     """OCR ile ayni desen: yerel saglayicida (dil modeli yuklu) tier SECILI profilden gelir
     (lite/pro); cihaz/swap karari ise ses isi baslarken OLCULEN bos VRAM/RAM + kaydin
     suresine gore verilir; dil modeli gerekiyorsa bosaltilir ve geri yuklenir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]
-    assert "(Get-ManageQwenPath) -Action stop" in block
+    assert "(Get-ManageMamidLabsPath) -Action stop" in block
     assert "Start-LocalModelRestore" in block
     # Plan iscisi whisper-tools.py'yi cagirir (cihaz/swap'i o belirler).
     assert "Get-WhisperPyPath" in plan and "action = 'plan'" in plan
@@ -912,17 +912,17 @@ def test_transcription_uses_model_swap_for_local_provider():
 
 
 def test_swap_status_message_reflects_process_stop():
-    """Kozmetik ama onemli: swap sirasinda dil modeli RAM'e TASINMIYOR; `manage-qwen -Action
+    """Kozmetik ama onemli: swap sirasinda dil modeli RAM'e TASINMIYOR; `manage-mamidlabs -Action
     stop` ile SUREC KAPATILIYOR (RAM dostu). Durum metni bunu yansitmali (yaniltici 'RAM'e
     aliniyor' DEGIL). Kod davranisi degismez."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     assert "kapatılıyor" in block
     assert "RAM'e aliniyor" not in block
 
 
 def test_transcription_honors_cancel_and_stop_does_not_wait_for_restore():
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     assert "$Shared.Cancel" in block
     wait = worker.split("function Wait-LocalModelReady")[1].split("function ")[0]
@@ -940,7 +940,7 @@ def test_inference_uses_warm_asr_server_with_fallback():
     modeli VRAM'e geri yuklenmeden ONCE ses modelleri bosaltilir ve isci DURDURULUR (kalan
     CUDA baglami ~140 MiB, 27B'nin ince payini yemesin); tur sonunda ARKA PLANDA yeniden
     baslatilir ki sonraki tur sicak olsun."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     for fn in ("Get-AsrServerStatePath", "Send-AsrServerLine", "Get-AsrServerEndpoint",
                "Start-AsrServerProcess", "Start-AsrServer", "Start-AsrServerAsync",
                "Ensure-AsrServer", "Stop-AsrServer", "Unload-AsrServerModels",
@@ -972,7 +972,7 @@ def test_worker_steers_model_away_from_reading_failed_audio():
     acmaya calisiyor ve TUM ajan turlarini (>8) bosa harcayip kullaniciya tek kelime
     yanit vermiyordu; dökum baloncugu da hic olusmuyordu. Ayrica plan 'swap yok' deyip
     dökum yine de alinamazsa dil modeli bosaltilip TEMIZ GPU/RAM ile BIR kez daha denenir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Set-AudioUnavailableNote" in worker
     # Basarisiz dökumun HER iki yolunda (bos/hata sonucu + istisna) yonlendirme notu eklenir.
     caller = worker.split("$currentAudioPaths = @($JobData.currentAudioPaths")[1].split("Otomatik baglam")[0]
@@ -991,7 +991,7 @@ def test_worker_steers_model_away_from_reading_failed_audio():
 def test_set_audio_unavailable_note_isolated(tmp_path):
     """Set-AudioUnavailableNote izole calistirilir: yonlendirme notu son kullanici mesajina
     eklenir ve modeli dosyayi okumaktan acikca caydirir (gercek pwsh)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Set-AudioUnavailableNote")
     script = fn + """
 $items = [Collections.ArrayList]::new()
@@ -1015,7 +1015,7 @@ def test_audio_turn_hides_bound_file_tools_unless_file_intent():
     notunu gorup ses DOSYASINI list_bound_files/read_bound_file/write_bound_file ile
     aramaya/okumaya/yazmaya kalkip bosa turlar harciyordu (arayuz testinde: liste/yazma
     dongusu). Kullanici acikca dosya isterse (Test-FileIntent) araclar yine sunulur."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "$audioAttachedThisTurn = @($job.currentAudioPaths" in worker
     assert "if (!($audioAttachedThisTurn -and !(Test-FileIntent $userText)))" in worker
     # Uc dosya araci ortak kosula bagli (list + read + write ayni blokta, kosuldan SONRA).
@@ -1028,7 +1028,7 @@ def test_transcript_note_tells_model_not_to_open_the_audio_file(tmp_path):
     """Basarili dökumde de modele ses DOSYASINI araclarla ACMAMASI soylenir
     (Set-AudioUnavailableNote ile simetrik); aksi halde 'ekli belge' sanip tur harciyordu.
     Gercek pwsh ile calistirilir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Add-TranscriptToMessages")
     script = fn + """
 $items = [Collections.ArrayList]::new()
@@ -1045,7 +1045,7 @@ $ok = Add-TranscriptToMessages $items 'Konusmaci: merhaba' 'ses.wav'
 
 
 def test_audio_turn_preempts_language_model_loading():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "function Stop-ModelSwitchForAudio" in desktop
     begin = desktop.split("function Begin-Generation {")[1].split("function Set-LastUserImage")[0]
     assert "$turnAudio" in begin and "Stop-ModelSwitchForAudio" in begin
@@ -1054,7 +1054,7 @@ def test_audio_turn_preempts_language_model_loading():
 
 
 def test_python_tool_subprocess_is_killed_instantly_on_stop():
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Invoke-PythonTool")[1].split("function ")[0]
     assert "ReadToEndAsync" in block
     assert "$Shared.Cancel" in block
@@ -1071,7 +1071,7 @@ def test_python_tool_has_wall_clock_timeout():
     surec kilitlenirse TUM is sonsuza kadar bekliyordu. Artik ust sure var (varsayilan
     180 sn; parametre ya da $payload.timeoutSeconds ile gecersiz kilinabilir) ve
     asilirsa alt surec agaci oldurulup hata donulur; iptal davranisi korunur."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Invoke-PythonTool")[1].split("function ")[0]
     assert "function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [string]$pythonPath = $null, [int]$timeoutSeconds = 0)" in worker
     assert "$payload.timeoutSeconds" in block
@@ -1086,7 +1086,7 @@ def test_python_tool_has_wall_clock_timeout():
 def test_python_tool_wall_clock_timeout_kills_subprocess(tmp_path):
     """D2 davranis: sonsuza kadar uyuyan alt surec zaman asiminda oldurulur ve is
     TAKILMADAN hata dondurur (gercek pwsh + gercek Python sureci)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _invoke_python_tool_harness(worker)
     sleeper = tmp_path / "sleeper.py"
     sleeper.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
@@ -1109,7 +1109,7 @@ def test_transcribe_sets_finite_timeout_from_recording_duration():
     zamanli; GPU + swap) dökumu yarida kesmesin: transcribe istegi, kaydin suresinden
     turetilen SONLU bir `timeoutSeconds` tasir; plan islemi de kaydin suresini
     (`duration_seconds`) dondurur ki zaman asimi ondan hesaplanabilsin."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Get-AudioTimeoutSeconds" in worker
     block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
     assert "Get-AudioTimeoutSeconds" in block
@@ -1121,7 +1121,7 @@ def test_transcribe_sets_finite_timeout_from_recording_duration():
 def test_audio_timeout_seconds_is_clamped(tmp_path):
     """Get-AudioTimeoutSeconds kurali: max(600, d*4+300), ust sinir 3600 sn; sure
     bilinmiyorsa/0 ise 1800 sn. Gercek pwsh ile dogrulanir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Get-AudioTimeoutSeconds")
     script = fn + """
 'T0=' + (Get-AudioTimeoutSeconds 0)
@@ -1145,7 +1145,7 @@ def test_inference_loop_guards_against_context_overflow():
     boyutu hesaplanir; butce asilirsa EN ESKI araç ciktilarini kisaltir, hala sigmazsa
     araclara devam etmeden gorunur yanit ister. Ayrica max_tokens kalan odaga gore
     sinirlanir."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Estimate-MessagesTokens" in worker
     assert "function Compress-TurnMessages" in worker
     assert "$promptTokensEst = Estimate-MessagesTokens $messages" in worker
@@ -1165,7 +1165,7 @@ def test_estimate_and_compress_turn_messages_isolated(tmp_path):
     """F1 davranis: tahmin araç ciktisiyla buyur; Compress-TurnMessages butceyi asan
     EN ESKI araç ciktisini kisaltir, sistem mesajini ve SON kullanici mesajini korur,
     mesaji SILMEZ (assistant tool_calls ile tool eslesmesi bozulmaz)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Estimate-MessagesTokens") + "\n\n" + \
         _extract_ps_function(worker, "Compress-TurnMessages")
     script = fn + """
@@ -1205,7 +1205,7 @@ def test_audit_log_has_size_rotation():
     Tavan (5 MB) asilinca mevcut dosya audit.1.jsonl'e devredilir (uzerine yazilir)
     ve yeni kayit temiz dosyaya gider. Devir de ayni try icindedir; audit yazimi
     hicbir durumda turu DUSURMEZ (mevcut catch yutar)."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("function Write-AuditLog")[1].split("$endpoint =")[0]
     assert "5MB" in block
     assert "audit.1.jsonl" in block
@@ -1222,7 +1222,7 @@ def test_write_audit_log_rotates_when_oversized(tmp_path):
     audit.1.jsonl'e devredilir (varsa eski devir dosyasinin UZERINE yazilir) ve yeni
     satir temiz dosyaya gider. Devirden sonra dosya kucuk kaldigi icin ikinci yazim
     yeniden devretmez."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     fn = _extract_ps_function(worker, "Get-AuditLock") + "\n\n" + \
         _extract_ps_function(worker, "Write-AuditLog")
     log_dir = tmp_path / "logs"
@@ -1257,7 +1257,7 @@ def test_reasoning_repeat_guard_uses_same_threshold():
     bos donuyordu. reasoning birikimine de AYNI esik/desen uygulanir ve akis guvenli
     durdurulur; görünür yanit yoksa mevcut 'bos yanit' yolu (finishReason'a bakmaz)
     bozulmadan devreye girer."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     block = worker.split("if ($delta.reasoning_content) {")[1].split("if ($delta.content) {")[0]
     assert "(Test-RepeatedOutput $result.reasoning)" in block
     assert "Remove-RepeatedTail $result.reasoning" in block
@@ -1277,7 +1277,7 @@ def test_empty_answer_recovery_disables_thinking(tmp_path):
     `enable_thinking = $false` ile yapar (LITE reasoning_effort'u yok saydığından
     tek garantili yol budur) ve /no_think ile modelden doğrudan yanıt ister.
     Tetikleyici: görünür yanıt BOŞ ya da çıktı tavanında kesilmiş kırık yanıt."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "function Set-NoThinkingRequest" in worker
     assert "$body.chat_template_kwargs = @{ enable_thinking = $false }" in worker
     # Tetikleyici: görünür yanıt BOŞ veya 'length' ile kesilmiş kırık yanıt.
@@ -1339,7 +1339,7 @@ def test_reasoning_repeat_stops_stream_early(tmp_path):
         script = f"""
 $job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; model = 'test'; contextLimit = 32768; maxTokens = 8192; agent = $false; internet = $false; office = $false; documentCreate = $false }}
 $shared = @{{ Cancel = $false }}
-. '{ROOT}\\agent\\qwen-inference.ps1' $job $shared | Out-Null
+. '{ROOT}\\agent\\mamidlabs-inference.ps1' $job $shared | Out-Null
 $endpoint = 'http://127.0.0.1:{server.server_port}/v1/chat/completions'
 $script:http = [Net.Http.HttpClient]::new(); $script:http.Timeout = [Threading.Timeout]::InfiniteTimeSpan
 $turn = @{{ reasoning = ''; content = ''; usage = $null; toolParts = @{{}}; finishReason = $null }}
@@ -1360,8 +1360,8 @@ try {{ Invoke-ChatCompletion @{{ messages = @() }} $shared $false $turn | Out-Nu
 
 
 def test_stop_cancels_work_but_never_kills_an_in_flight_model_load():
-    desktop = read_text("qwen-desktop.ps1")
-    cancel = desktop.split("function Cancel-Generation {")[1].split("function Stop-LocalQwen")[0]
+    desktop = read_text("mamidlabs-desktop.ps1")
+    cancel = desktop.split("function Cancel-Generation {")[1].split("function Stop-LocalMamidLabs")[0]
     assert "switchProcess" not in cancel
     assert "pendingModelChange" not in cancel
 
@@ -1403,6 +1403,6 @@ def test_transcribe_cpu_fallback_overrides_device_without_duplicate_key():
     var); bu yuzden CPU yedegi payload'u '+' ile birlestiremez. Kopyala + alani ez deseni
     kullanilmali; aksi halde CUDA dokum basarisiz olunca CPU'ya HIC gecilmez ve ses
     dökumu kaybolur (bkz. sessiz kalan 'Item has already been added. Key: device')."""
-    worker = read_text("agent/qwen-inference.ps1")
+    worker = read_text("agent/mamidlabs-inference.ps1")
     assert "$payloadBase + @{" not in worker
     assert "$cpuPayload['device'] = 'cpu'" in worker

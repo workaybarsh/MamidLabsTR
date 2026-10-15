@@ -1,6 +1,6 @@
 """Ofis belgesi araclari: PDF / Word / PowerPoint / Excel okuma ve olusturma.
 
-stdin'den JSON alir, stdout'a JSON yazar. qwen-inference.ps1 tarafindan cagirilir.
+stdin'den JSON alir, stdout'a JSON yazar. mamidlabs-inference.ps1 tarafindan cagirilir.
 """
 import json
 import os

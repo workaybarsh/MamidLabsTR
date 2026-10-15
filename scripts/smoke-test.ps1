@@ -62,7 +62,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 if (!(Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)) { Import-Module ThreadJob -ErrorAction Stop }
 
-$manage = Join-Path $Root 'scripts\manage-qwen.ps1'
+$manage = Join-Path $Root 'scripts\manage-mamidlabs.ps1'
 $results = [ordered]@{}
 $lite = ($Profile -eq 'lite')
 $script:chatBaseline = $null
@@ -101,7 +101,7 @@ function Get-FreeVramMiB {
     try { return [int](((& $smi --query-gpu=memory.free --format=csv,noheader,nounits) | Select-Object -First 1) -replace '\D', '') } catch { return $null }
 }
 
-# GGUF basliginda MTP/nextn blogu var mi? (bkz. scripts\manage-qwen.ps1 Test-GgufHasMtp
+# GGUF basliginda MTP/nextn blogu var mi? (bkz. scripts\manage-mamidlabs.ps1 Test-GgufHasMtp
 # ve agent\mtp_inject.py). MTP dogrulama adimi bunu kullanir.
 function Test-MtpInGguf([string]$Path) {
     try {
@@ -126,10 +126,10 @@ function Test-ComfyRunning {
 function Invoke-ChatProbe {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     # reasoning_effort='low' + chat_template_kwargs, gercek uretim istegiyle
-    # (qwen-inference.ps1 icindeki Set-LowEffortRequest) ayni sekle getirir.
+    # (mamidlabs-inference.ps1 icindeki Set-LowEffortRequest) ayni sekle getirir.
     # Lite artik bir dusunme butcesi kullanmaz (dusunme acik ve sinirsizdir); dusunme
     # tokenlari CIKTI butcesini paylasir. Bu yuzden yanit icin LITE sunucusunun cikti
-    # siniri kadar pay birakilir (8192, manage-qwen.ps1 $predict); aksi halde model butun
+    # siniri kadar pay birakilir (8192, manage-mamidlabs.ps1 $predict); aksi halde model butun
     # limiti dusunerek harcayip gercek icerik uretmeden kesilebilir. Ayni hata gercek
     # makinede kucuk max_tokens ile yakalandi ("bos yanit").
     $body = @{
@@ -283,7 +283,7 @@ if ($SkipDocument) {
         & $python -c "from docx import Document; d = Document(); d.add_paragraph('$marker'); d.save(r'$docPath')"
         if ($LASTEXITCODE -ne 0) { throw 'Test belgesi olusturulamadi (python-docx).' }
         # office-tools.py'nin ACTIONS tablosunda 'read_document' diye bir islem yok
-        # (yalnizca read_docx/read_pdf/... var; 'read_document' sadece qwen-inference.ps1
+        # (yalnizca read_docx/read_pdf/... var; 'read_document' sadece mamidlabs-inference.ps1
         # icindeki arac ADI - uzantiya gore dogru action'a cevrilir). Gercek makinede
         # yakalandi: yanlis action adi "bilinmeyen islem" hatasi veriyordu.
         $job = @{ action = 'read_docx'; path = $docPath } | ConvertTo-Json -Compress
@@ -314,7 +314,7 @@ if ($SkipOffline) {
         $env:HTTP_PROXY = 'http://127.0.0.1:9'; $env:HTTPS_PROXY = 'http://127.0.0.1:9'
         try {
             $payload = @{ action = 'search_web'; query = 'offline smoke test'; count = 2 } | ConvertTo-Json -Compress
-            $out = $payload | & $python (Join-Path $Root 'agent\qwen-agent-tools.py') 2>&1 | Out-String
+            $out = $payload | & $python (Join-Path $Root 'agent\mamidlabs-agent-tools.py') 2>&1 | Out-String
             $code = $LASTEXITCODE
         } finally {
             $env:HTTP_PROXY = $savedHttp; $env:HTTPS_PROXY = $savedHttps
@@ -362,7 +362,7 @@ if ($SkipNetworkSwitch) {
             }
             $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
                 AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
-            $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+            $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData, $shared
             $items = @(Receive-Job -Job $job -Wait)
             Remove-Job -Job $job -Force
             $err = @($items | Where-Object { $_.kind -eq 'error' })
@@ -410,7 +410,7 @@ if ($SkipHistoryResume) {
         }
         $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
             AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
-        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData, $shared
         $items = @(Receive-Job -Job $job -Wait); Remove-Job -Job $job -Force
         $err1 = @($items | Where-Object { $_.kind -eq 'error' })
         if ($err1.Count) { throw "Ilk tur hata verdi: $($err1[0].text)" }
@@ -441,7 +441,7 @@ if ($SkipHistoryResume) {
         $jobData2 = $jobData.Clone(); $jobData2.messages = @($reloaded) + @(@{ role = 'user'; content = 'Peki bunu bir cumlede ozetle.' })
         $shared2 = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
             AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
-        $job2 = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData2, $shared2
+        $job2 = Start-ThreadJob -FilePath (Join-Path $Root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData2, $shared2
         $items2 = @(Receive-Job -Job $job2 -Wait); Remove-Job -Job $job2 -Force
         $err2 = @($items2 | Where-Object { $_.kind -eq 'error' })
         if ($err2.Count) { throw "Devam turu hata verdi: $($err2[0].text)" }
@@ -596,7 +596,7 @@ if (!$script:chatBaseline -or !$script:lastImage) {
         $comfyState = if (Test-ComfyRunning) { 'ComfyUI acik (modeller bosaltilmis)' } else { 'ComfyUI kapali' }
         $detail = "$($probe.tps) tok/s (ilk olcum $($script:chatBaseline.tps), oran $([math]::Round($ratio, 2))), bos VRAM $(if ($null -ne $free) { "$free MiB" } else { 'olculemedi' }), $comfyState"
         if ($ratio -lt $MinSpeedRatio) {
-            throw "Sohbet hizi dustu: $detail. VRAM tasmasi olabilir; logs\qwen-$Profile.stderr.log dosyasina bak."
+            throw "Sohbet hizi dustu: $detail. VRAM tasmasi olabilir; logs\mamidlabs-$Profile.stderr.log dosyasina bak."
         }
         Report 'medya_sonrasi_gecis' $true $detail
     } catch {
@@ -679,12 +679,12 @@ public static class Smk { [DllImport("user32.dll")] public static extern IntPtr 
         }
 
         # Onceki ornekleri kapat, sunucuyu durdur (temiz baslangic).
-        Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like '*qwen-desktop.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like '*mamidlabs-desktop.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         & $manage -Action stop | Out-Null
         & $manage -Action closecomfy | Out-Null
 
         $appPwsh = Join-Path $Root 'runtime\pwsh\pwsh.exe'
-        $appProcess = Start-Process -FilePath $appPwsh -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', (Join-Path $Root 'qwen-desktop.ps1'))
+        $appProcess = Start-Process -FilePath $appPwsh -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', (Join-Path $Root 'mamidlabs-desktop.ps1'))
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $win = $null; $end = (Get-Date).AddSeconds(120)
         while ((Get-Date) -lt $end -and !$win) { if ($appProcess.HasExited) { throw "Uygulama penceresi acilmadan kapandi (kod $($appProcess.ExitCode))." }; $win = Find-UiWin $appProcess.Id 5 }
@@ -722,9 +722,9 @@ public static class Smk { [DllImport("user32.dll")] public static extern IntPtr 
 }
 
 # ------------------------------------------------------------------ arayuz
-# Gercek masaustu arayuzunu (qwen-desktop.ps1) baslatir; pencerenin ve dil
+# Gercek masaustu arayuzunu (mamidlabs-desktop.ps1) baslatir; pencerenin ve dil
 # modelinin hazir oldugunu dogrular. Ardindan arayuzun kullandigi gercek cikarim
-# iscisini (agent\qwen-inference.ps1) ayni sekilde calistirip "yerel sunucu
+# iscisini (agent\mamidlabs-inference.ps1) ayni sekilde calistirip "yerel sunucu
 # baglantisi koptu / istek baslatilamadi" turu bir hatanin OLMADIGINI ve MTP'nin
 # (--spec-type draft-mtp) gercekten calistigini kanitlar. Uygulama kapaninca
 # sunucuyu da durdurur; bu yuzden adim en sonda (video sonrasi) calisir.
@@ -742,11 +742,11 @@ if ($SkipUi) {
 
         # Onceki testlerden acik kalmis bir arayuz varsa kapat (dosya kilitlenmesin).
         Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" -ErrorAction SilentlyContinue | Where-Object {
-            $_.CommandLine -and $_.CommandLine -like '*qwen-desktop.ps1*' } | ForEach-Object {
+            $_.CommandLine -and $_.CommandLine -like '*mamidlabs-desktop.ps1*' } | ForEach-Object {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         & $manage -Action stop | Out-Null
 
-        $appScript = Join-Path $Root 'qwen-desktop.ps1'
+        $appScript = Join-Path $Root 'mamidlabs-desktop.ps1'
         $appPwsh = Join-Path $Root 'runtime\pwsh\pwsh.exe'
         if (!(Test-Path -LiteralPath $appScript -PathType Leaf)) { throw "Uygulama bulunamadi: $appScript" }
         if (!(Test-Path -LiteralPath $appPwsh -PathType Leaf)) { throw "Gomulu pwsh bulunamadi: $appPwsh" }
@@ -772,7 +772,7 @@ if ($SkipUi) {
         }
 
         # Arayuzun kullandigi gercek isci ile bir tur: hata ve watchdog metni olmamali.
-        # maxTokens gercek arayuzle AYNI olmali (qwen-desktop.ps1: 8192; sunucu --predict 8192;
+        # maxTokens gercek arayuzle AYNI olmali (mamidlabs-desktop.ps1: 8192; sunucu --predict 8192;
         # bkz. sohbet probe'u). LITE'ta dusunme SINIRSIZDIR (--reasoning-budget yoktur ve
         # `reasoning_effort=low` Qwen3.5 9B sablonunca yok sayilir), dusunme tokenlari CIKTI
         # butcesini paylasir. 300 verilirse model tamamen dusunup GORUNUR YANIT uretmeden
@@ -788,7 +788,7 @@ if ($SkipUi) {
         }
         $shared = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full'
             AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null })
-        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $shared
+        $job = Start-ThreadJob -FilePath (Join-Path $Root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData, $shared
         $items = @(Receive-Job -Job $job -Wait); Remove-Job -Job $job -Force
         $errEvent = @($items | Where-Object { $_.kind -eq 'error' })
         if ($errEvent.Count) { throw "Arayuz turu hata verdi: $($errEvent[0].text)" }

@@ -1,4 +1,4 @@
-"""Masaustu kisayolu calismiyordu: launch-qwen-desktop.vbs UTF-8 BOM ile
+"""Masaustu kisayolu calismiyordu: launch-mamidlabs-desktop.vbs UTF-8 BOM ile
 kaydedilmisti (0xEF 0xBB 0xBF ile baslayan bayt dizisi). Klasik VBScript
 motoru (cscript/wscript - WinForms uygulamasini baslatan .vbs dosyasi bunu
 kullanir) UTF-8 BOM'u ANLAMAZ; dosyayi "Geçersiz karakter" derleme
@@ -19,13 +19,13 @@ yoktur, guvenle BOM'suz kaydedilebilir.
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VBS = ROOT / "launch-qwen-desktop.vbs"
+VBS = ROOT / "launch-mamidlabs-desktop.vbs"
 
 
 def test_launcher_has_no_utf8_bom():
     data = VBS.read_bytes()
     assert not data.startswith(b"\xef\xbb\xbf"), (
-        "launch-qwen-desktop.vbs UTF-8 BOM ile kaydedilmis; klasik VBScript "
+        "launch-mamidlabs-desktop.vbs UTF-8 BOM ile kaydedilmis; klasik VBScript "
         "motoru bunu 'Gecersiz karakter' derleme hatasiyla reddeder ve "
         "masaustu kisayolu sessizce hicbir sey acmaz."
     )
@@ -40,7 +40,7 @@ def test_launcher_is_pure_ascii():
         data.decode("ascii")
     except UnicodeDecodeError as exc:
         raise AssertionError(
-            "launch-qwen-desktop.vbs artik ASCII olmayan bir karakter iceriyor; "
+            "launch-mamidlabs-desktop.vbs artik ASCII olmayan bir karakter iceriyor; "
             "klasik VBScript motoru icin dogru kodlamayi (ANSI/UTF-16LE+BOM) "
             "ayrica dogrula, sessizce UTF-8'e guvenme."
         ) from exc

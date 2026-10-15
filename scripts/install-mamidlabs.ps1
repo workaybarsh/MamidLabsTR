@@ -254,8 +254,8 @@ function Invoke-Preflight {
         Write-Warn 'Visual C++ Redistributable (2015-2022, x64) bulunamadi; llama-server calismayabilir.'
     } else { Write-Ok 'Visual C++ Redistributable mevcut' }
 
-    if (!(Test-Path -LiteralPath (Join-Path $Source 'qwen-desktop.ps1') -PathType Leaf)) {
-        throw ('Kaynak klasorde qwen-desktop.ps1 yok: ' + $Source)
+    if (!(Test-Path -LiteralPath (Join-Path $Source 'mamidlabs-desktop.ps1') -PathType Leaf)) {
+        throw ('Kaynak klasorde mamidlabs-desktop.ps1 yok: ' + $Source)
     }
     Write-Ok ('Kaynak paket: ' + $Source)
 }
@@ -316,7 +316,7 @@ function Invoke-Layout {
 
     # Uygulama aciksa simgeler ve betikler kilitlidir; kopyalama yarida kalir ve kurulum
     # karisik surumde kalir. Once acik bir sey olup olmadigina bakilir.
-    $app = Join-Path $Root 'qwen-desktop.ps1'
+    $app = Join-Path $Root 'mamidlabs-desktop.ps1'
     $running = @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object {
         $_.CommandLine -and $_.CommandLine.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
     if ($running) { throw 'MamidLabs acik; program dosyalari kilitli. Uygulamayi kapatip kurulumu tekrar calistir.' }
@@ -342,7 +342,7 @@ function Invoke-Layout {
 
         # EULA.txt sihirbazin lisans sayfasinda gosterilir ve .iss [Files] ile kaynak pakete
         # gomulur; betik tabanli kurulumda da koke ve kurulum-kaynak'e kopyalanmali.
-        foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
+        foreach ($file in @('mamidlabs-desktop.ps1', 'launch-mamidlabs-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
             $from = Join-Path $Source $file
             if (Test-Path -LiteralPath $from -PathType Leaf) {
                 Copy-Item -LiteralPath $from -Destination (Join-Path $Root $file) -Force
@@ -383,7 +383,7 @@ function Invoke-Layout {
                 Remove-ProgramDir (Join-Path $kaynak $folder)
             }
             # Ayni ust dosya listesi (EULA.txt dahil) kaynak pakete de yazilir.
-            foreach ($file in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
+            foreach ($file in @('mamidlabs-desktop.ps1', 'launch-mamidlabs-desktop.vbs', 'README.md', 'LICENSE', 'EULA.txt')) {
                 $from = Join-Path $Source $file
                 if (Test-Path -LiteralPath $from -PathType Leaf) { Copy-Item -LiteralPath $from -Destination $kaynak -Force }
             }
@@ -423,7 +423,7 @@ function Invoke-Layout {
             $pointsHere = (($existing.TargetPath + ' ' + $existing.Arguments + ' ' + $existing.WorkingDirectory).IndexOf($Root, [StringComparison]::OrdinalIgnoreCase) -ge 0)
             if (!$pointsHere) { $linkPath = Join-Path $desktop ('MamidLabs (' + (Split-Path -Leaf $Root) + ').lnk') }
         }
-        $target = Join-Path $Root 'launch-qwen-desktop.vbs'
+        $target = Join-Path $Root 'launch-mamidlabs-desktop.vbs'
         $icon = Join-Path $Root 'assets\icons\mamidlabs.ico'
         if ((Test-Path -LiteralPath $target -PathType Leaf) -and (!(Test-Path -LiteralPath $linkPath) -or $Force)) {
             $shortcut = $shell.CreateShortcut($linkPath)
@@ -724,10 +724,10 @@ function Invoke-ComfyUI {
 function Invoke-Verify {
     Write-Step 'Kurulum dogrulamasi'
     $checks = @(
-        @{ label = 'Uygulama';            path = 'qwen-desktop.ps1' },
+        @{ label = 'Uygulama';            path = 'mamidlabs-desktop.ps1' },
         @{ label = 'Profil katalogu';     path = 'agent\profiles.json' },
         @{ label = 'Profil modulu';       path = 'agent\profile-catalog.ps1' },
-        @{ label = 'Model yoneticisi';    path = 'scripts\manage-qwen.ps1' },
+        @{ label = 'Model yoneticisi';    path = 'scripts\manage-mamidlabs.ps1' },
         @{ label = 'Gomulu PowerShell 7'; path = 'runtime\pwsh\pwsh.exe' },
         @{ label = 'llama-server';        path = ('llama.cpp\' + $script:LlamaBuild + '\llama-server.exe') },
         @{ label = 'uygulama ortami';    path = 'venv\app\Scripts\python.exe' }
@@ -786,7 +786,7 @@ function Invoke-Verify {
     } else {
         Write-Host '   Kurulum tamam. Siradaki adimlar:' -ForegroundColor Green
         Write-Host ''
-        Write-Host ('   1. Uygulamayi ac:  ' + (Join-Path $Root 'launch-qwen-desktop.vbs'))
+        Write-Host ('   1. Uygulamayi ac:  ' + (Join-Path $Root 'launch-mamidlabs-desktop.vbs'))
         Write-Host '   2. Sol ustteki Profiller menusunden profili sec.'
         Write-Host '   3. Eksik model dosyalarini "Profil yoneticisi -> Eksikleri indir" ile cek.'
         if ($Profile -eq 'lite') {

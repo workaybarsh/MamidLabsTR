@@ -38,8 +38,8 @@ def make_install(base: Path) -> Path:
                    "runtime/pwsh", "tools/pip-cache", "tools/hf-home", "chats", "outputs/images", "settings"):
         (root / folder).mkdir(parents=True, exist_ok=True)
     (root / "agent/profiles.json").write_text("{}", encoding="utf-8")
-    (root / "qwen-desktop.ps1").write_text("# app", encoding="utf-8")
-    (root / "launch-qwen-desktop.vbs").write_text("' launcher", encoding="utf-8")
+    (root / "mamidlabs-desktop.ps1").write_text("# app", encoding="utf-8")
+    (root / "launch-mamidlabs-desktop.vbs").write_text("' launcher", encoding="utf-8")
     (root / "EULA.txt").write_text("lisans", encoding="utf-8")
     (root / "requirements/app.txt").write_text("pytest", encoding="utf-8")
     (root / "models/model.gguf").write_bytes(b"x" * 1024)
@@ -59,7 +59,7 @@ def make_shortcut(desktop: Path, target_root: Path, name: str = "MamidLabs.lnk")
     link = desktop / name
     result = ps(
         f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{link}'); "
-        f"$s.TargetPath = 'C:\\Windows\\System32\\wscript.exe'; $s.Arguments = '\"{target_root}\\launch-qwen-desktop.vbs\"'; "
+        f"$s.TargetPath = 'C:\\Windows\\System32\\wscript.exe'; $s.Arguments = '\"{target_root}\\launch-mamidlabs-desktop.vbs\"'; "
         f"$s.WorkingDirectory = '{target_root}'; $s.Save()")
     assert result.returncode == 0, result.stderr
     return link

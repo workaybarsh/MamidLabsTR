@@ -154,7 +154,7 @@ if ($second.timings.predicted_per_second -and [double]$second.timings.predicted_
 
 # ---------------------------------------------------------------- 4. sunucu logu
 Write-Head '4) Sunucu logunda yeniden isleme izleri'
-$logs = @(Get-ChildItem -LiteralPath $LogDir -Filter 'qwen-*.std*.log' -File -ErrorAction SilentlyContinue)
+$logs = @(Get-ChildItem -LiteralPath $LogDir -Filter 'mamidlabs-*.std*.log' -File -ErrorAction SilentlyContinue)
 if (!$logs) { Write-Host "Log bulunamadi: $LogDir" -ForegroundColor DarkYellow }
 foreach ($log in $logs) {
     $hits = @(Select-String -LiteralPath $log.FullName -Pattern 'forcing full prompt re-processing|n_past|prompt processing progress|cache_n|slot released' -ErrorAction SilentlyContinue | Select-Object -Last 8)

@@ -177,8 +177,8 @@ Kaldırıcı Windows PowerShell 5.1 ile çalışır; gömülü PowerShell 7 de s
 ## Model sunucusunu elle yönetmek
 
 ```powershell
-%LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\manage-qwen.ps1 -Action switch -Profile max
-%LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\manage-qwen.ps1 -Action stop
+%LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\manage-mamidlabs.ps1 -Action switch -Profile max
+%LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\manage-mamidlabs.ps1 -Action stop
 ```
 
 `-Action` değerleri: `start`, `switch`, `stop`, `closecomfy`. Profil değerleri: `max`, `flash`, `lite`.
@@ -193,4 +193,4 @@ Kaldırıcı Windows PowerShell 5.1 ile çalışır; gömülü PowerShell 7 de s
 | Görsel ya da video üretilemiyor | `logs\comfyui.stderr.log` dosyasına bakın. `WinError 10022` satırları zararsızdır. |
 | “Fotoğraf duzenleme LoRA'si bulunamadi” | Profil yöneticisinde **Eksikleri indir** ile LoRA'yı indirin (`krea2_identity_edit_v1_2.safetensors`, [conradlocke/krea2-identity-edit](https://huggingface.co/conradlocke/krea2-identity-edit), ~1,7 GB). |
 | “comfyui-krea2edit dugum paketi kurulu degil” | `install-mamidlabs.ps1 -Stage comfyui` ile düğüm paketini kurun. |
-| Kısayol çalışmıyor | Kurulumu yeniden çalıştırın; kısayol `launch-qwen-desktop.vbs` üzerinden gömülü PowerShell 7 ile açar. |
+| Kısayol çalışmıyor | Kurulumu yeniden çalıştırın; kısayol `launch-mamidlabs-desktop.vbs` üzerinden gömülü PowerShell 7 ile açar. |

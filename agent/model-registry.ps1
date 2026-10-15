@@ -1,5 +1,5 @@
-﻿# Profil basina llama-server alias'i. scripts\manage-qwen.ps1 icindeki
-# $profileAliases tablosuyla birebir ayni kalmalidir; test_qwen_contracts bunu denetler.
+﻿# Profil basina llama-server alias'i. scripts\manage-mamidlabs.ps1 icindeki
+# $profileAliases tablosuyla birebir ayni kalmalidir; test_mamidlabs_contracts bunu denetler.
 # Tablo bilerek fonksiyon icinde kurulur: dosya sadece fonksiyonlari alinarak
 # yuklendiginde de tanimli olur, null uzerinde metot cagrilmaz.
 function Get-LocalProfileAliases {
@@ -41,7 +41,7 @@ function Update-ProviderSelection {
         # Yalnizca dil modeli dosyalari diskte olan profiller listelenir (ComfyUI medya
         # modelleri haric - -SkipMedia ile kurulmus olabilir, sohbet icin gerekmezler);
         # aksi halde MAX kurulu bir PC'de LITE de (ya da tersi) secilebilir gorunuyordu,
-        # secilince manage-qwen.ps1 dosya bulunamadi hatasi veriyordu.
+        # secilince manage-mamidlabs.ps1 dosya bulunamadi hatasi veriyordu.
         $script:modelEntries=@()
         foreach ($def in (Get-BuiltinProfileDefinitions)) {
             if (Test-LocalProfileChatFilesPresent $def.profile) {
@@ -95,10 +95,10 @@ function Select-RegisteredModel {
     $script:providerId=$entry.provider
     $script:ctxLimit=$entry.contextLimit;$script:compactAt=[int]($script:ctxLimit*.67)
     Save-ApiSettings;Update-LiveMetrics
-    if($entry.profile -eq 'off'){Stop-LocalQwen}
-    elseif($entry.provider -eq 'local'){Restart-LocalQwen $entry.profile}
+    if($entry.profile -eq 'off'){Stop-LocalMamidLabs}
+    elseif($entry.provider -eq 'local'){Restart-LocalMamidLabs $entry.profile}
     else{
-        Stop-LocalQwen
+        Stop-LocalMamidLabs
         $metric.Text="$($entry.label) seçildi."
     }
 }

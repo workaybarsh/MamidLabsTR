@@ -1,7 +1,7 @@
 """Gercek regresyon: tek mesajli, arac-yok bir sohbet turu 400 hatasiyla
 patliyordu (Amp #28 duzeltmesinin yan etkisi).
 
-qwen-inference.ps1 icinde $body.messages "if (...) {...} else {...}" seklinde
+mamidlabs-inference.ps1 icinde $body.messages "if (...) {...} else {...}" seklinde
 DOGRUDAN hashtable degeri olarak atanmisti. PowerShell'de bir if/else
 ifadesinin ciktisi bir hashtable degerine ya da degiskene bu sekilde
 yakalandiginda, TEK ELEMANLI bir dizi tek nesneye "acilir" (array

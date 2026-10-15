@@ -116,13 +116,13 @@ MamidLabs'in kurduğu ön koşullar dahil her şey silinir; bilgisayar hiç kuru
 
 ```mermaid
 flowchart TD
-    UI["Arayüz<br>qwen-desktop.ps1 · WinForms"] --> AG["Ajan katmanı<br>qwen-inference.ps1"]
+    UI["Arayüz<br>mamidlabs-desktop.ps1 · WinForms"] --> AG["Ajan katmanı<br>mamidlabs-inference.ps1"]
     AG --> LL["llama.cpp b10998<br>dil modeli ve görsel projektör"]
     AG --> PY["Python araçları<br>belge · OCR · web"]
     AG --> API["API sağlayıcıları<br>OpenAI · Claude · Gemini · DeepSeek · özel"]
     UI --> MED["Medya hattı<br>imagegen-run · videogen-run"]
     MED --> CU["ComfyUI b0f4b7b<br>Krea-2 · Identity Edit · Wan 2.2"]
-    MQ["manage-qwen.ps1<br>profil ve bellek kapısı"] --> LL
+    MQ["manage-mamidlabs.ps1<br>profil ve bellek kapısı"] --> LL
     MED --> SW["media-model-swap.ps1<br>VRAM devri"]
     SW --> MQ
 ```

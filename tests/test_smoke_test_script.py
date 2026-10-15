@@ -26,10 +26,10 @@ def test_ui_step_launches_real_app_and_checks_mtp_and_no_connection_error():
     script = read_text("scripts/smoke-test.ps1")
 
     # Gerçek uygulama (masaüstü) başlatılır.
-    assert "Join-Path $Root 'qwen-desktop.ps1'" in script
+    assert "Join-Path $Root 'mamidlabs-desktop.ps1'" in script
     assert "'-STA'" in script
     # Arayüz turu gerçek işçiyle (arayüzün kullandığı kod) çalışır.
-    assert "agent\\qwen-inference.ps1" in script
+    assert "agent\\mamidlabs-inference.ps1" in script
     # MTP bayrağı ve gerçek draft kabulü doğrulanır.
     assert "--spec-type\\s+draft-mtp" in script
     assert "draft_n_accepted" in script
@@ -152,7 +152,7 @@ def test_chat_check_matches_production_request_shape():
     dusunmesi artik sinirsizdir (butce yok); model kucuk limitin tamamini
     dusunerek tuketip gercek icerik uretmeden kesiyordu - "Model bos yanit
     dondurdu" hatasi. Gercek uretim istegi
-    (qwen-inference.ps1 icindeki Set-LowEffortRequest) reasoning_effort'u
+    (mamidlabs-inference.ps1 icindeki Set-LowEffortRequest) reasoning_effort'u
     her zaman gonderir; smoke test de ayni sekli kullanmali."""
     script = read_text("scripts/smoke-test.ps1")
     # Istek Invoke-ChatProbe'dadir; sohbet adimi ve medya sonrasi gecis adimi ayni sekli kullanir.
@@ -167,7 +167,7 @@ def test_chat_check_matches_production_request_shape():
 def test_document_check_uses_a_valid_office_tools_action():
     """Gercek makinede yakalandi: office-tools.py'nin ACTIONS tablosunda
     'read_document' diye bir islem yok (yalnizca read_docx/read_pdf/... var;
-    'read_document' yalnizca qwen-inference.ps1 icindeki arac ADI, uzantiya
+    'read_document' yalnizca mamidlabs-inference.ps1 icindeki arac ADI, uzantiya
     gore dogru action'a orada cevrilir). Smoke test office-tools.py'yi
     dogrudan cagirdigi icin gercek action adini kullanmali - yanlis olursa
     "bilinmeyen islem" hatasi verir, testin kendisi hep basarisiz olur."""

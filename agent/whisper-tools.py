@@ -127,7 +127,7 @@ def unload(_req: dict | None = None) -> dict:
     """Yuklu ASR/AST/konusmaci modellerini bellekten cikarir (VRAM/RAM iadesi).
 
     Kalici (sicak) isci modelleri surec icinde tutar; dil modeli VRAM'e geri yuklenmeden
-    ONCE ses modellerinin bosaltilmasi icin cagrilir (bkz. qwen-inference.ps1). Surec
+    ONCE ses modellerinin bosaltilmasi icin cagrilir (bkz. mamidlabs-inference.ps1). Surec
     YASAMAYA DEVAM EDER (yalnizca modeller atilir): importlar/onbellekler sicak kalir.
     """
     from transcriber import asr, diarize, events

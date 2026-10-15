@@ -24,7 +24,7 @@ def test_intent_helpers_classify_prompts(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     defs = "\n".join(
         extract_function(desktop, name)
         for name in ("Test-DocumentRequestIntent", "Test-VideoRequestIntent", "Test-ChartRequestIntent")
@@ -66,7 +66,7 @@ def test_intent_helpers_classify_prompts(tmp_path):
 def test_worker_refuses_unprompted_generation_calls():
     """Arac dongusunde niyet yoksa create_document/generate_video/generate_chart
     calistirilmaz (generate_image'daki korumanin aynisi)."""
-    worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    worker = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     assert "function Test-DocumentRequestIntent" in worker
     assert "function Test-VideoRequestIntent" in worker
     assert "function Test-ChartRequestIntent" in worker
@@ -83,7 +83,7 @@ def test_web_failure_note_is_appended(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     fn = extract_function(desktop, "Add-WebFailureNote")
     body = (
         "$ErrorActionPreference = 'Stop'\n" + fn + "\n"
@@ -107,7 +107,7 @@ def test_web_failure_note_is_appended(tmp_path):
 def test_document_tool_requires_a_document_context():
     """read_document yalnizca ekli belge ya da dosya niyeti varsa sunulur (kucuk model
     olmayan bir dosyayi uydurup cagiriyordu)."""
-    worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    worker = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     assert "function Add-WebFailureNote" in worker
     assert "function Get-FinalAnswer" in worker
     assert "Emit 'done' (Get-FinalAnswer $final $userText ([bool]$JobData.internet)) $lastUsage $toolExchange" in worker
@@ -121,7 +121,7 @@ def test_document_tool_requires_a_document_context():
 def test_web_research_turn_does_not_offer_generation_tools():
     """Web arastirmasi (guncel bilgi) turunda acikca istenmedikce gorsel/video/belge/grafik
     araclari hic sunulmaz; model bu islere girisemez."""
-    worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    worker = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     assert "if (Test-CurrentInfoIntent $userText) {" in worker
     assert "$defs = @($defs | Where-Object { $_.function.name -notin @('generate_image', 'generate_video', 'create_document', 'generate_chart') })" in worker
     assert "Test-DocumentRequestIntent $userText" in worker
@@ -134,7 +134,7 @@ def test_final_answer_blocks_fabrication_and_empty(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     defs = "\n".join(
         extract_function(desktop, n)
         for n in ("Test-CurrentInfoIntent", "Add-WebFailureNote", "Get-FinalAnswer")
@@ -174,7 +174,7 @@ def test_strict_fabrication_guard_strips_citations_and_blocks_current_info(tmp_p
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     defs = "\n".join(
         extract_function(desktop, n)
         for n in ("Test-CurrentInfoIntent", "Add-WebFailureNote", "Remove-FabricatedCitations", "Get-FinalAnswer")
@@ -217,7 +217,7 @@ def test_friendly_error_message_maps_raw_dotnet(tmp_path):
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
-    desktop = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    desktop = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     fn = extract_function(desktop, "Get-FriendlyErrorMessage")
     raw = _ps_quote("The response ended prematurely. (ResponseEnded)")
     unknown = _ps_quote("Beklenmedik ozel hata")
@@ -239,6 +239,6 @@ def test_friendly_error_message_maps_raw_dotnet(tmp_path):
     assert got["unknown"] == "Beklenmedik ozel hata"
     assert "Beklenmeyen" in got["empty"]
     # Sadece dusunme birikmisken kopan akis HATA degil (kurtarma yoluna gider).
-    worker = (ROOT / "agent" / "qwen-inference.ps1").read_text(encoding="utf-8-sig")
+    worker = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
     assert "$usable = $result.finishReason -or ![string]::IsNullOrWhiteSpace($result.content) -or $result.toolParts.Count -gt 0 -or ![string]::IsNullOrWhiteSpace($result.reasoning)" in worker
     assert "Get-FriendlyErrorMessage $cause.Message" in worker

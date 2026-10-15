@@ -1,4 +1,4 @@
-"""agent/qwen-agent-tools.py icin DNS rebinding korumasi.
+"""agent/mamidlabs-agent-tools.py icin DNS rebinding korumasi.
 
 URL dogrulanirken cozulen IP adresleri baglanti icin sabitlenir. Aksi halde gercek
 baglanti ayri bir DNS sorgusuyla yapilir ve dusuk TTL'li kotu niyetli bir kayit,
@@ -29,12 +29,12 @@ requires_internet = pytest.mark.skipif(not _has_internet(), reason="bu makinede 
 
 @pytest.fixture
 def qat(monkeypatch):
-    """qwen-agent-tools.py'yi tirenli dosya adi yuzunden import degil, dosya
+    """mamidlabs-agent-tools.py'yi tirenli dosya adi yuzunden import degil, dosya
     yolundan yukler. Her testten sonra socket.getaddrinfo ve pin tablosu
     gercek modul durumuna geri alinir; modul import-time'da socket.getaddrinfo'yu
     degistirdigi icin testler arasi sizinti onlenir."""
     real_getaddrinfo = socket.getaddrinfo
-    spec = importlib.util.spec_from_file_location("qat_under_test", ROOT / "agent" / "qwen-agent-tools.py")
+    spec = importlib.util.spec_from_file_location("qat_under_test", ROOT / "agent" / "mamidlabs-agent-tools.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     try:

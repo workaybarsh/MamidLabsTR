@@ -32,7 +32,7 @@ def run_pwsh(tmp_path, body: str) -> dict:
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $job = @{{ messages = @(@{{ role = 'user'; content = 'selam' }}); compactOnly = $true; provider = 'local'; model = 'test'; contextLimit = 32768; maxTokens = 100; agent = $true; internet = $false; office = $false; documentCreate = $true }}
 $shared = [hashtable]::Synchronized(@{{ Cancel = $false; AccessMode = 'ask'; AskTool = $null; AskDetail = $null; AskAnswer = $null; AskId = $null; AskDeadline = $null }})
-. '{ROOT}\\agent\\qwen-inference.ps1' $job $shared | Out-Null
+. '{ROOT}\\agent\\mamidlabs-inference.ps1' $job $shared | Out-Null
 {body}
 """,
         encoding="utf-8-sig",
@@ -115,7 +115,7 @@ $second = Invoke-Tool 'run_command' ([pscustomobject]@{ command = 'py selam.py' 
 
 
 def test_desktop_uses_self_closing_approval_dialog_instead_of_messagebox():
-    desktop = read_text("qwen-desktop.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
     assert "Ajan bilgisayarında bir değişiklik yapmak istiyor" not in desktop.split("function Show-ApprovalDialog")[0]
     assert "[System.Windows.Forms.MessageBox]::Show(\n                \"Ajan" not in desktop
     update = desktop.split("function Update-ApprovalDialog")[1].split("function Show-ApprovalDialog")[0]
@@ -132,8 +132,8 @@ def test_desktop_uses_self_closing_approval_dialog_instead_of_messagebox():
 
 
 def test_denied_note_is_shown_but_not_sent_back_to_the_model():
-    desktop = read_text("qwen-desktop.ps1")
-    inference = read_text("agent/qwen-inference.ps1")
+    desktop = read_text("mamidlabs-desktop.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     assert "if ($script:deniedNote) { Emit 'denied' $script:deniedNote }" in inference
     done = desktop.split("        'done' {")[1].split("        'cancelled' {")[0]
     assert "$b.deniedNote" in done
@@ -145,7 +145,7 @@ def test_denial_note_is_added_to_the_request_copy_only():
     """Red sonrasi model cagrisina acik bir not eklenir; kalici gecmise ($messages) yazilmaz,
     boylece KV onbellek oneki bozulmaz. Not, web-hatasi notuyla birlesebildigi icin
     $systemNotes'a eklenir ve istek-kopyasina ([Sistem notu]) yazilir."""
-    inference = read_text("agent/qwen-inference.ps1")
+    inference = read_text("agent/mamidlabs-inference.ps1")
     # Denial notu istek-kopyasina yazilan $systemNotes listesine eklenir.
     assert "$systemNotes += (" in inference
     assert "REDDETTI" in inference and "nedenini tahmin etme" in inference

@@ -19,7 +19,7 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   (`%USERPROFILE%\.cache\huggingface`); AST modeli orada olmadığından `events.tag()` modeli yüklerken
   istisna atıyor ve **tüm döküm** "Can't load feature extractor ..." hatasıyla düşüyordu (yalnızca
   sessiz "olay yok" durumu ele alınmıştı). İki düzeltme: (1) uygulama başlarken `HF_HOME`'u kurulum
-  önbelleğine ayarlar (`qwen-desktop.ps1`) ve işçi/araçlara açıkça verilir (`agent/qwen-inference.ps1`
+  önbelleğine ayarlar (`mamidlabs-desktop.ps1`) ve işçi/araçlara açıkça verilir (`agent/mamidlabs-inference.ps1`
   içinde `Get-HfHome`; tek-atımlık `Invoke-PythonTool` ve kalıcı `Start-AsrServerProcess`), böylece iki
   model de çevrimdışı bulunur; (2) `events.tag()` model yüklemesini korur; model bir gün eksikse
   olaylar dökümü düşürmek yerine **atlanır** (boş liste). Testler: `tests/test_transcriber.py`
@@ -27,11 +27,27 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   doğrulanması + statik bağlama).
 
 ### Değişen
+- **Motor/altyapı adları ürün adına (MamidLabs) taşındı; "qwen" yalnızca gerçek model kimliğinde kaldı.**
+  Ürün adı "Qwen" değildir; iç motor/altyapı adları ürün adıyla anılır. Yeniden adlandırılanlar:
+  dosyalar `qwen-desktop.ps1`→`mamidlabs-desktop.ps1`, `launch-qwen-desktop.vbs`→
+  `launch-mamidlabs-desktop.vbs`, `agent/qwen-inference.ps1`→`agent/mamidlabs-inference.ps1`,
+  `agent/qwen-agent-tools.py`→`agent/mamidlabs-agent-tools.py`, `scripts/manage-qwen.ps1`→
+  `scripts/manage-mamidlabs.ps1`, `tests/test_qwen_contracts.py`→`tests/test_mamidlabs_contracts.py`;
+  çalışma zamanı sözleşmeleri `QwenWindow`→`MamidLabsWindow`, `Stop-LocalQwen`→`Stop-LocalMamidLabs`,
+  `Restart-LocalQwen`→`Restart-LocalMamidLabs`, `Get-ManageQwenPath`→`Get-ManageMamidLabsPath`,
+  mutex `Local\QwenLocalModelControl`→`Local\MamidLabsModelControl`, günlük deseni
+  `qwen-<profil>.std{out,err}.log`→`mamidlabs-<profil>.std{out,err}.log`, User-Agent
+  `QwenLocal/1.0`→`MamidLabs/1.0`, sihirbaz seçeneği `OptQwen38`→`OptPro`. **Korunanlar (gerçek model
+  kimliği):** profil alias'ları (`qwen3.8-27b-max`/`flash`, `qwen3.5-9b-lite`), GGUF/mmproj dosya
+  adları, HF depo kimlikleri, ComfyUI dosyaları (`qwen3vl_4b_fp8_scaled.safetensors`,
+  `qwen_image_vae.safetensors`, `TextEncodeQwenImageEditPlus`), `qwen35.*` mimari anahtarları ve
+  model adı geçen metinler. Araç adları değişmedi (hiçbiri "qwen" içermiyordu). Kurulum/kaldırma,
+  CI yol filtreleri ve dokümanlar bu adlarla birlikte güncellendi.
 - **Model yüklenmeden önce otomatik VRAM temizliği.** Uygulamaya ait artık/kaçak GPU işçileri
   (boşta kalmış kalıcı ses işçisi `whisper-tools.py --serve` ve OCR işçisi `ocr-tools.py`) dil
   modeli yüklenmeden **önce** otomatik kapatılır: çökme/zorla kapatma sonrası kalan CUDA bağlamları
   (~140–600 MiB) 27B'nin ince payını yiyip "yetersiz VRAM" hatasına yol açabiliyordu.
-  `scripts/manage-qwen.ps1` bunları `Get-AppGpuWorkers`/`Stop-OrphanWorkers` ile temizler, sürücünün
+  `scripts/manage-mamidlabs.ps1` bunları `Get-AppGpuWorkers`/`Stop-OrphanWorkers` ile temizler, sürücünün
   VRAM'i bırakmasını bekler ve bellek kapısını sınırlı kez yeniden dener (6→8 deneme). Yalnızca
   kurulum kökü altındaki MamidLabs süreçleri hedeflenir; başka uygulamalara dokunulmaz. Test:
   `tests/test_memory_admission.py` (statik sıra + gerçek pwsh ile süreç seçimi).
@@ -129,8 +145,8 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   üretilmez; web araması başarısızsa ya da İnternet kapalıyken güncel bilgi istenirse uydurmak yerine
   durum dürüstçe bildirilir) eklendi. `AGENTS.md` §1 ürün özeti grafik çizimiyle hizalandı.
 - **Doküman tutarlılık geçişi (davranış değişmedi).** `AGENTS.md`, `docs/kurulum.md`,
-  `docs/teknik-notlar.md`, `packaging/windows/mamidlabs.iss` (yorum), `qwen-desktop.ps1` (yorum),
-  `scripts/manage-qwen.ps1` (yorum) ve `agent/transcriber/__init__.py` (yorum) güncel kodla
+  `docs/teknik-notlar.md`, `packaging/windows/mamidlabs.iss` (yorum), `mamidlabs-desktop.ps1` (yorum),
+  `scripts/manage-mamidlabs.ps1` (yorum) ve `agent/transcriber/__init__.py` (yorum) güncel kodla
   hizalandı: ses motoru açıklamaları `faster-whisper large-v3-tr (agent\transcriber)` olarak
   düzeltildi, kurulum aşama listesine `asr` ve kullanım satırına `-AppVersion`/`-SkipAudio` eklendi,
   test sayısı/süresi ile MTP kabul oranı gerçek ölçümlere çekildi ve yinelenen/süperseded notlar
@@ -220,7 +236,7 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
 - **Zor soruda boş görünür yanıt regresyonu (düşünme tüm çıktı bütçesini yiyordu).** Uçtan uca
   matematik testinde LITE (9B) zor bir integral sorusunda **8192 tokenın tamamını** (~159,7 sn)
   düşünmeye harcayıp **görünür yanıt üretmedi**; baloncukta yalnızca "İntegral" kaldı
-  (`logs\qwen-lite.stderr.log`: `eval 159714 ms / 8192 tokens`). Kök neden: düşünme “sınırsız”,
+  (`logs\mamidlabs-lite.stderr.log`: `eval 159714 ms / 8192 tokens`). Kök neden: düşünme “sınırsız”,
   çıktı tavanı `--predict 8192` ve arayüz `maxTokens 8192` **aynı bütçeyi** paylaşır; “adımları
   iki kez kontrol et” talimatı düşünmeyi daha da uzatıyordu ve mevcut boş-yanıt yedeği de aynı
   8192'ye takılıyordu. (1) **Düşünme-kapalı kurtarma:** yeni `Set-NoThinkingRequest`
@@ -266,7 +282,7 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   süre yoksa 1800) — uzun CPU co-resident/swap dökümü sabit 180 sn zaman aşımıyla kesilmez;
   "Durdur" yine anında etkilidir. `tests/test_transcriber.py` ve `tests/test_requirements_files.py`
   bu sözleşmeleri korur. Ayrıca swap durum metni düzeltildi: dil modeli RAM'e taşınmıyor,
-  `manage-qwen -Action stop` ile **süreç kapatılıyor** (kod davranışı değişmedi).
+  `manage-mamidlabs -Action stop` ile **süreç kapatılıyor** (kod davranışı değişmedi).
 - **Ses dökümü: CPU yedeği PowerShell sözlük hatası yüzünden hiç çalışmıyordu (uçtan uca ses
   testinde bulundu).** `Invoke-TranscribeWithModelSwap` birincil cihaz (GPU) dökümü başarısız
   olunca CPU yedeğini `$payloadBase + @{ device = 'cpu' }` ile kuruyordu; ancak PowerShell'de
@@ -306,7 +322,7 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   açık bir yönlendirme notu eklenir. Motor tek başına sağlamdı (doğrudan `whisper-tools.py`
   çağrısı çalışıyor); kusur işçinin başarısızlığı yutup modele yanlış bağlam bırakmasıydı.
 - **Betik tabanlı güncellemede `EULA.txt` kopyalanmıyordu:** `install-mamidlabs.ps1` üst dosya
-  listesi (`qwen-desktop.ps1`, `launch-qwen-desktop.vbs`, `README.md`, `LICENSE`) köke ve
+  listesi (`mamidlabs-desktop.ps1`, `launch-mamidlabs-desktop.vbs`, `README.md`, `LICENSE`) köke ve
   `kurulum-kaynak` paketine kopyalanır; `EULA.txt` listede olmadığı için lisans dosyası betikle
   (sihirbazsız) güncellenen kurulumlarda eksik kalıyordu. Listeye eklendi.
 - **Sessiz/boş ses kaydında döküm sarmalayıcısı sızıyordu:** Qwen3-ASR çıktısını ayrıştıran

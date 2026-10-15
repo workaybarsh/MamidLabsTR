@@ -597,7 +597,7 @@ function Show-ProfileManager([string]$focusId) {
              "`r`nBaşka profillerle paylaşılan dosyalar korunur." + $warn + "`r`n`r`nSilinsin mi?"),
             'Profili sil', 'YesNo', 'Warning')
         if ($answer -ne 'Yes') { return }
-        if ($isActive) { try { Stop-LocalQwen } catch { } }
+        if ($isActive) { try { Stop-LocalMamidLabs } catch { } }
         $result = Remove-ProfileFiles $profile.id
         $list.Items[$index] = "$($profile.label) — $(Get-ProfileStatusLabel $profile.id)"
         & $refresh

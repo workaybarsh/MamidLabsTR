@@ -34,7 +34,7 @@ public static class MamidLabsAppId {
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class QwenWindow {
+public static class MamidLabsWindow {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int maxCount);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
@@ -62,7 +62,7 @@ public static class QwenWindow {
 $appTitle = 'MamidLabs'
 # DIKKAT: $null bir string parametresine baglanirken PowerShell onu "" yapar ve
 # FindWindow hicbir seyi bulamaz; sinif adini gercekten null gecmek icin [NullString]::Value sart.
-$existingWindow = [QwenWindow]::FindWindow([NullString]::Value, $appTitle)
+$existingWindow = [MamidLabsWindow]::FindWindow([NullString]::Value, $appTitle)
 # Yalnizca gercek uygulama penceresine (WinForms sinifi) gorev cubugu katmani.
 # Explorer'in "TabProxyWindow"lari da bu basligi tasiyabildigi icin basliga gore
 # bulmak, uygulama zorla kapatildiktan sonra kalinti pencere "zaten acik" sanilip
@@ -70,13 +70,13 @@ $existingWindow = [QwenWindow]::FindWindow([NullString]::Value, $appTitle)
 # denetimi bunu ayirt eder: gercek form sinifi WindowsForms10.* ile baslar.
 if ($existingWindow -ne [IntPtr]::Zero) {
     $className = New-Object System.Text.StringBuilder 256
-    [void][QwenWindow]::GetClassName($existingWindow, $className, 256)
+    [void][MamidLabsWindow]::GetClassName($existingWindow, $className, 256)
     if ($className.ToString() -notlike 'WindowsForms10.*') { $existingWindow = [IntPtr]::Zero }
 }
 if ($existingWindow -ne [IntPtr]::Zero) {
-    if ([QwenWindow]::IsIconic($existingWindow)) { [QwenWindow]::ShowWindow($existingWindow, 9) | Out-Null }
-    else { [QwenWindow]::ShowWindow($existingWindow, 5) | Out-Null }
-    [QwenWindow]::SetForegroundWindow($existingWindow) | Out-Null
+    if ([MamidLabsWindow]::IsIconic($existingWindow)) { [MamidLabsWindow]::ShowWindow($existingWindow, 9) | Out-Null }
+    else { [MamidLabsWindow]::ShowWindow($existingWindow, 5) | Out-Null }
+    [MamidLabsWindow]::SetForegroundWindow($existingWindow) | Out-Null
     return
 }
 
@@ -936,11 +936,11 @@ function Test-ChatNearBottom {
 function Append-ThinkingText($box, [string]$text) {
     # AppendText bile secimi/imleci asagi tasir. Hem okuma konumunu hem secimi koru.
     $handle = $box.Handle
-    $follow = [QwenWindow]::NearBottom($handle) -and $box.SelectionLength -eq 0
-    $position = [QwenWindow]::GetScroll($handle)
+    $follow = [MamidLabsWindow]::NearBottom($handle) -and $box.SelectionLength -eq 0
+    $position = [MamidLabsWindow]::GetScroll($handle)
     $selectionStart = $box.SelectionStart
     $selectionLength = $box.SelectionLength
-    [QwenWindow]::SetRedraw($handle, $false)
+    [MamidLabsWindow]::SetRedraw($handle, $false)
     try {
         $box.AppendText($text)
         if ($follow) {
@@ -949,10 +949,10 @@ function Append-ThinkingText($box, [string]$text) {
             $box.ScrollToCaret()
         } else {
             $box.Select($selectionStart, $selectionLength)
-            [QwenWindow]::SetScroll($handle, $position)
+            [MamidLabsWindow]::SetScroll($handle, $position)
         }
     } finally {
-        [QwenWindow]::SetRedraw($handle, $true)
+        [MamidLabsWindow]::SetRedraw($handle, $true)
         $box.Invalidate()
     }
 }
@@ -1873,7 +1873,7 @@ function Format-ModelSwitchError([string]$stderrText) {
 }
 
 function Invoke-Manage([string]$action, [string]$profile, [string]$modelId) {
-    $managePath = Join-Path $scripts 'manage-qwen.ps1'
+    $managePath = Join-Path $scripts 'manage-mamidlabs.ps1'
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     foreach ($argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $managePath, '-Action', $action)) {
@@ -1953,7 +1953,7 @@ function Cancel-Generation {
     }
 }
 
-function Stop-LocalQwen {
+function Stop-LocalMamidLabs {
     Cancel-Generation
     $script:modelReady = $false
     $script:activeModel = $null
@@ -1963,7 +1963,7 @@ function Stop-LocalQwen {
     $statusCtrl.Text = 'Model durduruluyor… Arayüz açık kalacak.'
 }
 
-function Restart-LocalQwen([string]$profile) {
+function Restart-LocalMamidLabs([string]$profile) {
     $wanted = Get-SelectedLocalAlias
     if ($script:modelReady -and $script:activeModel -eq $wanted -and !$script:switchProcess -and !$script:pendingModelChange) {
         $statusCtrl.Text = "$($profile.ToUpperInvariant()) zaten yüklü; model yeniden yüklenmedi."
@@ -2365,7 +2365,7 @@ function Get-SystemPrompt {
     # Sabit (tura ozel OLMAYAN) dogrulama talimati: onek degismedigi icin KV onbellegi
     # bozulmaz. Model kanitli/dogru cevap versin, kritik adimlari tekrar gozden gecirsin
     # AMA yanitini de mutlaka yazsin (cok uzun dusunup yanitsiz kalmasin; zor soruda
-    # dusunme cikti butcesini yiyebiliyor - bkz. qwen-inference.ps1 kurtarma yolu).
+    # dusunme cikti butcesini yiyebiliyor - bkz. mamidlabs-inference.ps1 kurtarma yolu).
     $lines += 'Kanitli ve dogru cevap ver. Bildigin, degismeyen ve kesin olan bilgiyi (tanim, matematik, kod, genel kultur, mantik, tarih) NET ve emin bir sekilde dogrudan cevapla; gereksiz yere "bilmiyorum" deme. ANCAK emin olmadigin bir seyi kesinmis gibi sunma. GUNCEL/zaman duyarli bir bilgi (hava durumu, haber, fiyat/kur, "en son cikan" bir urun, skor, bugune ait bir veri) SORULDUYSA ve bu bilgi elinde YOKSA ya da internet erisimin YOKSA: TAHMIN YURUTME, uydurma ve "muhtemelen/sanirim" diyerek yaklasik bir cevap verme. Yalnizca "bu bilgi internet baglantisi olmadan elde edemeyecegim bir bilgi" diye ACIKCA bildir ve BASKA BIR SEY yapma (veri, tablo, kaynak, senaryo uretme). ASLA uydurma kaynak, baglanti (URL), alinti, tarih, sayi, istatistik veya olay URETME; kaynak gosteremiyorsan gosterme. Emin olmadigin bir test, teorem, ozdeslik veya kaynak adi KULLANMA. Matematik, cebir, mantik ve cok adimli sorularda kritik adimlari ve sembolik/sayisal ARA SONUCLARI gozden gecir; gerekirse farkli bir yoldan dogrula. Ama YANITINI DA MUTLAKA YAZ: cok uzun dusunup yanitsiz kalma; yeterince emin oldugunda net ve eksiksiz yaniti hemen ver.'
     # LITE (kucuk 9B model): dusunme acik (sunucuda butce yok). Modeli derin ve adim adim
     # akil yurutmeye tesvik ederiz AMA dusunmeyi sinirsizca uzatmaya DEGIL: dusunme cikti
@@ -2530,7 +2530,7 @@ function Start-BackgroundCompaction {
     }
     $script:sharedCompact = [hashtable]::Synchronized(@{ Cancel = $false; Cts = $null; AccessMode = 'full' })
     try {
-        $script:compactJob = Start-ThreadJob -FilePath (Join-Path $root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $script:sharedCompact
+        $script:compactJob = Start-ThreadJob -FilePath (Join-Path $root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData, $script:sharedCompact
         $metric.Text = 'Bağlam arka planda sıkıştırılıyor…'
     } catch { $script:compactJob = $null }
 }
@@ -2665,7 +2665,7 @@ function Begin-Generation {
     $script:streamGenerating = $false
     $script:lastSpeed = 0
     try {
-        $script:chatJob = Start-ThreadJob -FilePath (Join-Path $root 'agent\qwen-inference.ps1') -ArgumentList $jobData, $script:sharedRequest
+        $script:chatJob = Start-ThreadJob -FilePath (Join-Path $root 'agent\mamidlabs-inference.ps1') -ArgumentList $jobData, $script:sharedRequest
         # Bu bayrak yalnızca gönderilen turu ifade eder; takip mesajları eski görseli
         # yeni eklenmiş gibi değerlendirmemelidir.
         $script:currentTurnHasImage = $false
@@ -3501,14 +3501,14 @@ $form.Add_FormClosed({
     if ($appIcon) { $appIcon.Dispose() }
 })
 $form.Add_Shown({
-    [QwenWindow]::ShowWindow($form.Handle, 5) | Out-Null
-    [QwenWindow]::SetForegroundWindow($form.Handle) | Out-Null
+    [MamidLabsWindow]::ShowWindow($form.Handle, 5) | Out-Null
+    [MamidLabsWindow]::SetForegroundWindow($form.Handle) | Out-Null
     Update-WelcomeLayout
     Relayout-Chat
     # Son seçim Kapalı ise uygulama modeli yeniden başlatmaz; açık bir eski sunucu varsa durdurur.
     if ($script:providerId -eq 'local') {
         if ([string]$script:apiSettings.selectedModel -eq 'off') {
-            Stop-LocalQwen
+            Stop-LocalMamidLabs
             $metric.Text = 'Model kapalı.'
         } else {
             $savedProfile = switch ([string]$script:apiSettings.selectedModel) {
@@ -3517,7 +3517,7 @@ $form.Add_Shown({
                 'builtin-lite' { 'lite'; break }
                 default { if ($script:apiSettings.localProfile) { [string]$script:apiSettings.localProfile } else { 'max' } }
             }
-            Restart-LocalQwen $savedProfile
+            Restart-LocalMamidLabs $savedProfile
             $metric.Text = 'Model yükleniyor…'
         }
     }

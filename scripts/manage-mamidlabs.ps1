@@ -67,7 +67,7 @@ if($settings){
         $projector=@(Get-ChildItem -LiteralPath (Split-Path $model) -Filter '*mmproj*.gguf' -File | Select-Object -First 1 -ExpandProperty FullName)[0]
     }
 }
-$gate = [System.Threading.Mutex]::new($false, 'Local\QwenLocalModelControl')
+$gate = [System.Threading.Mutex]::new($false, 'Local\MamidLabsModelControl')
 $ownsGate = $false
 
 # Bellek kapisi: tahmini ihtiyac + olculen bos VRAM + guvenlik payina gore ise
@@ -450,9 +450,9 @@ try {
     }
     # Start-Process joins ArgumentList on Windows; quote paths explicitly.
     $serverArgs=@($serverArgs | ForEach-Object {if($_ -match '\s'){'"'+$_+'"'}else{$_}})
-    # Cagiranin stdout borusunu devretmeden baslat; yoksa "manage-qwen | ..." bitmez.
+    # Cagiranin stdout borusunu devretmeden baslat; yoksa "manage-mamidlabs | ..." bitmez.
     $child = Start-DetachedProcess $server $serverArgs (Split-Path $server) `
-        (Join-Path $logs "qwen-$Profile.stdout.log") (Join-Path $logs "qwen-$Profile.stderr.log")
+        (Join-Path $logs "mamidlabs-$Profile.stdout.log") (Join-Path $logs "mamidlabs-$Profile.stderr.log")
     if (!$child) { throw 'Model süreci başlatılamadı.' }
     "Yükleniyor: $desiredAlias (PID $($child.Id))"
 }

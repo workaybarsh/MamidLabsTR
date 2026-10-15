@@ -1,6 +1,6 @@
 """Uzun yasayan alt surecler cagiranin stdout borusunu devralmamali.
 
-Gercek makinede: "smoke-test.ps1 *> dosya", "manage-qwen.ps1 | Out-String" ve
+Gercek makinede: "smoke-test.ps1 *> dosya", "manage-mamidlabs.ps1 | Out-String" ve
 Start-Process -Wait, llama-server/ComfyUI calistikca hic bitmedi; cunku
 Start-Process -Redirect* cocuga cagiranin devredilebilir tanitcilarini veriyordu.
 
@@ -79,7 +79,7 @@ def test_plain_start_process_redirect_holds_the_pipe(tmp_path):
 
 
 def test_long_lived_servers_use_detached_launch():
-    manage = (ROOT / "scripts" / "manage-qwen.ps1").read_text(encoding="utf-8-sig")
+    manage = (ROOT / "scripts" / "manage-mamidlabs.ps1").read_text(encoding="utf-8-sig")
     swap = (ROOT / "agent" / "media-model-swap.ps1").read_text(encoding="utf-8-sig")
     assert "$child = Start-DetachedProcess $server" in manage
     assert "$comfy = Start-DetachedProcess $python" in swap

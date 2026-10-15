@@ -20,11 +20,11 @@ Add-Type -AssemblyName System.Drawing
 # Kurulum kokunu kendi konumundan turet. ONEMLI: bu dosya Start-ThreadJob -FilePath
 # ile baslatilir; bu, hedef dosyayi METIN olarak okuyup yeni bir runspace'te
 # calistirir - $PSScriptRoot o baglamda HEP BOSTUR (gercek makinede dogrulandi).
-# Asil kaynak qwen-desktop.ps1'in JobData.root ile acikca gecirdigi degerdir;
+# Asil kaynak mamidlabs-desktop.ps1'in JobData.root ile acikca gecirdigi degerdir;
 # $PSScriptRoot yalnizca bu dosya '&' veya '-File' ile dogrudan calistirildiginda
 # (elle test/hata ayiklama) devreye girer.
 $root = if ($JobData.root) { [string]$JobData.root } elseif ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { (Get-Location).Path }
-$manage = Join-Path $root 'scripts\manage-qwen.ps1'
+$manage = Join-Path $root 'scripts\manage-mamidlabs.ps1'
 # Dil modeli durdur/geri-yukle akisi videogen-run.ps1 ile paylasilir (Amp #17).
 . (Join-Path $root 'agent\media-model-swap.ps1')
 $comfyDir = Join-Path $root 'ComfyUI'
@@ -270,7 +270,7 @@ try {
     }
     $sourceB = [string]$JobData.sourceImageB
     if ($mode -eq 'kimlik_duzenle') {
-        # LITE'ta (8 GB VRAM) sunulmaz (qwen-inference.ps1 aracin enum'undan cikarir); model
+        # LITE'ta (8 GB VRAM) sunulmaz (mamidlabs-inference.ps1 aracin enum'undan cikarir); model
         # yine de eski/onbellek bir arac cagrisiyla isterse burada acikca reddedilir. Sebep:
         # GGUF difuzyon modeli + metin/gorsel kodlayici ayni anda VRAM'e sigmayip 10-15 dk'ya
         # cikiyor (bkz. AGENTS.md donanim tablosu; r64/r128 kucuk LoRA da cozmuyor).
@@ -314,7 +314,7 @@ try {
     Emit 'status' $(if ($lite) { 'Krea-2 Turbo (GGUF, dusuk VRAM modu) yukleniyor...' } else { 'Krea-2 Turbo yukleniyor...' })
     $comfy = Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 180 $Shared
 
-    # Yalnizca kullanici acikca gercekci gorsel istediginde acik gelir (qwen-inference.ps1 Test-RealismIntent).
+    # Yalnizca kullanici acikca gercekci gorsel istediginde acik gelir (mamidlabs-inference.ps1 Test-RealismIntent).
     $realism = [bool]$JobData.realism
     # Kimlik duzenlemede gercekcilik LoRA'si zincire eklenmez; kaynak fotograf zaten gercekci.
     if ($mode -eq 'kimlik_duzenle') { $realism = $false }

@@ -1,4 +1,4 @@
-"""VRAM'e gore is kabulu (manage-qwen.ps1 Test-MemoryBudget).
+"""VRAM'e gore is kabulu (manage-mamidlabs.ps1 Test-MemoryBudget).
 
 Gereken bellek = model dosyasi + guvenlik payi; gorsel projektoru (mmproj) artik
 uc profilde de CPU'da (--no-mmproj-offload) oldugundan VRAM butcesine girmez. Bos
@@ -18,7 +18,7 @@ def read_text(path: str) -> str:
 
 
 def run_pwsh_functions(script: str) -> str:
-    """PowerShell fonksiyonlarini gercek pwsh'ta calistirir (manage-qwen.ps1'den AST ile
+    """PowerShell fonksiyonlarini gercek pwsh'ta calistirir (manage-mamidlabs.ps1'den AST ile
     cikarilan fonksiyonlar `Get-Functions` prelude'u ile yuklenir)."""
     import shutil
     import subprocess
@@ -45,7 +45,7 @@ function Get-Functions([string]$path) {
 
 
 def test_memory_budget_function_exists_and_is_called_before_start():
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "function Test-MemoryBudget" in manager
     # Gorsel projektoru de VRAM'e yuklendigi icin butceye dahil edilir.
     assert "Test-MemoryBudget $model $Profile $projector" in manager
@@ -67,7 +67,7 @@ def test_idle_comfy_policy_is_profile_aware():
     LITE hedef makinesi 8 GB VRAM / 16 GB RAM; 9B model kartin sinirinda, ComfyUI baglami
     tasirir. 16 GB'ta LITE isteyen `comfyKeepAlive=true` ile acik tutabilir; MAX/FLASH her
     durumda kapatir. API modunda betik cagrilmaz, ComfyUI acik kalir. Kaçak/mukerrer once temizlenir."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     # Varsayilan KAPALI: ComfyUI yalnizca medya uretiminde calisir; bosta VRAM/RAM tutmaz.
     assert "$comfyKeepAlive = $false" in manager
     assert "$settings.comfyKeepAlive" in manager
@@ -85,14 +85,14 @@ def test_idle_comfy_policy_is_profile_aware():
 
 
 def test_idle_comfy_is_only_stopped_when_its_queue_is_empty():
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     stop = manager.split("function Stop-IdleComfy")[1].split("function Get-ManagedServers")[0]
     assert "http://127.0.0.1:8188/queue" in stop
     assert "@($queue.queue_running).Count -gt 0 -or @($queue.queue_pending).Count -gt 0) { return $false }" in stop
 
 
 def test_memory_budget_uses_measured_free_vram_and_estimated_need():
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "memory.free" in manager
     assert "(Get-Item -LiteralPath $modelPath).Length" in manager
     assert "$freeMiB -lt $neededMiB" in manager
@@ -102,12 +102,12 @@ def test_memory_budget_skips_cleanly_when_no_nvidia_gpu():
     """nvidia-smi yoksa (AMD/Intel GPU veya surucu kurulu degil) kontrol
     sessizce atlanmali - kurulumu engellememeli, asil hatayi llama-server
     zaten verecektir."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "if (!$smi) { return }" in manager
 
 
 def test_start_action_accepts_skip_memory_check_switch():
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "[switch]$SkipMemoryCheck" in manager
 
 
@@ -117,7 +117,7 @@ def test_memory_budget_tolerates_small_overflow_for_mtp_grown_lite():
     tensorunu CPU'da tutup kucuk asimi kaldirir. Projektor CPU'ya alininca (~636 MiB
     VRAM bosalir) model 7249/8188 MiB'ye yerlesir (708 MiB bos) ve asim olmadan yuklenir;
     LITE'ta kucuk asim yine de engellenmemeli."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "$toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }" in manager
     assert "if ($freeMiB -lt ($neededMiB - $toleranceMiB))" in manager
     # Kucuk asimda kullanici uyarilir ama yukleme surer.
@@ -128,7 +128,7 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
     """16 GB MAX/FLASH'ta tolerans 0'dır: 27B model kartın sınırında çalışır ve
     ~185 MiB'lik küçük bir aşım bile MTP draft bağlamını CPU'ya taşıyıp üretimi
     ~6-7 tok/s'ye düşürüyordu. LITE'ta geniş tolerans korunur."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     line = next(
         (l for l in manager.splitlines() if "$toleranceMiB = if" in l), ""
     )
@@ -147,7 +147,7 @@ def test_max_budget_requires_a_full_vram_fit():
     15095 MiB -> taştı ~30 tok/s). Asıl koruma yine ComfyUI'nin her zaman kapatılmasıdır."""
     import re
 
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
     assert match, "profil-farkinda overheadMiB satiri bulunamadi"
     overhead = int(match.group(2))  # else dali = MAX/FLASH
@@ -167,7 +167,7 @@ def test_lite_budget_is_not_tightened_by_the_max_fix():
     reddedilirdi. Bu yüzden LITE payı 300 MiB ve toleransı 1024 kalmalı."""
     import re
 
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
     assert match, "profil-farkinda overheadMiB satiri bulunamadi"
     assert int(match.group(1)) == 300, "LITE payi buyutulmus (LITE kurulumu bozulur)"
@@ -182,7 +182,7 @@ def test_projector_runs_on_cpu_and_stays_out_of_vram_budget():
     8 GB karta sigmiyor ve buyuk gomme tensorunu CPU'ya itiyordu; CPU'da VRAM
     7249/8188 MiB'ye iner (708 MiB bos), sohbet hizi degismez. Bu yuzden UC
     profilde de mmproj CPU'da calisir ve VRAM butcesine girmez."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     # Iki profil blogunnda da --no-mmproj-offload kullaniliyor (LITE + MAX/FLASH).
     assert manager.count("'--mmproj', $projector, '--no-mmproj-offload'") >= 2
     # Lite butcesi artik projektoru model boyutuna EKLEMEZ (CPU'da, VRAM'e girmez).
@@ -196,7 +196,7 @@ def test_orphan_app_gpu_workers_are_cleaned_before_model_load():
     Cokme/zorla kapatma sonrasi kalan CUDA baglamlari (~140-600 MiB) dil modelinin ince
     payini yiyip "yetersiz VRAM" hatasina yol acabiliyordu. Temizlik YALNIZCA kurulum koku
     altindaki surecleri hedefler; baska uygulamalara dokunulmaz."""
-    manager = read_text("scripts/manage-qwen.ps1")
+    manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "function Get-AppGpuWorkers" in manager
     assert "function Stop-OrphanWorkers" in manager
     # GPU isçisi betikleri hedeflenir (ses + OCR); ComfyUI kendi yasam dongusunde (main.py).
@@ -210,7 +210,7 @@ def test_orphan_app_gpu_workers_are_cleaned_before_model_load():
 def test_orphan_worker_selection_only_matches_app_gpu_workers():
     """Davranis (gercek pwsh): Get-AppGpuWorkers YALNIZCA kurulum koku altindaki
     python'lardan calisan ses/OCR isçilerini secer; baska koke ait python'u, ComfyUI'yi ve
-    GPU kullanmayan araclari (qwen-agent-tools.py) dislar."""
+    GPU kullanmayan araclari (mamidlabs-agent-tools.py) dislar."""
     script = r"""
 $root = 'C:\fake\root'
 function Get-CimInstance { param([string]$Class, [string]$Filter, $ErrorAction) $script:fake }
@@ -219,11 +219,11 @@ $script:fake = @(
   [pscustomobject]@{ ProcessId=111; ExecutablePath='C:\fake\root\venv\asr\Scripts\python.exe'; CommandLine='"C:\fake\root\venv\asr\Scripts\python.exe" "C:\fake\root\agent\whisper-tools.py" --serve' },
   [pscustomobject]@{ ProcessId=222; ExecutablePath='C:\fake\root\venv\ocr\Scripts\python.exe'; CommandLine='"C:\fake\root\venv\ocr\Scripts\python.exe" "C:\fake\root\agent\ocr-tools.py"' },
   [pscustomobject]@{ ProcessId=333; ExecutablePath='C:\Other\python.exe'; CommandLine='whisper-tools.py' },
-  [pscustomobject]@{ ProcessId=444; ExecutablePath='C:\fake\root\venv\app\Scripts\python.exe'; CommandLine='"C:\fake\root\agent\qwen-agent-tools.py"' },
+  [pscustomobject]@{ ProcessId=444; ExecutablePath='C:\fake\root\venv\app\Scripts\python.exe'; CommandLine='"C:\fake\root\agent\mamidlabs-agent-tools.py"' },
   [pscustomobject]@{ ProcessId=555; ExecutablePath='C:\fake\root\venv\imagegen\Scripts\python.exe'; CommandLine='C:\fake\root\ComfyUI\main.py' }
 )
 (Get-AppGpuWorkers | ForEach-Object { [int]$_.ProcessId } | Sort-Object) -join ','
 """
-    script = script.replace("MANAGER_PATH", str(ROOT / "scripts" / "manage-qwen.ps1"))
+    script = script.replace("MANAGER_PATH", str(ROOT / "scripts" / "manage-mamidlabs.ps1"))
     out = run_pwsh_functions(script)
     assert out.strip() == "111,222", out

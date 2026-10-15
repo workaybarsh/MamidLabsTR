@@ -16,11 +16,11 @@ Add-Type -AssemblyName System.Drawing
 # Kurulum kokunu kendi konumundan turet. ONEMLI: bu dosya Start-ThreadJob -FilePath
 # ile baslatilir; bu, hedef dosyayi METIN olarak okuyup yeni bir runspace'te
 # calistirir - $PSScriptRoot o baglamda HEP BOSTUR (gercek makinede dogrulandi).
-# Asil kaynak qwen-desktop.ps1'in JobData.root ile acikca gecirdigi degerdir;
+# Asil kaynak mamidlabs-desktop.ps1'in JobData.root ile acikca gecirdigi degerdir;
 # $PSScriptRoot yalnizca bu dosya '&' veya '-File' ile dogrudan calistirildiginda
 # (elle test/hata ayiklama) devreye girer.
 $root = if ($JobData.root) { [string]$JobData.root } elseif ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { (Get-Location).Path }
-$manage = Join-Path $root 'scripts\manage-qwen.ps1'
+$manage = Join-Path $root 'scripts\manage-mamidlabs.ps1'
 # Dil modeli durdur/geri-yukle akisi imagegen-run.ps1 ile paylasilir (Amp #17).
 . (Join-Path $root 'agent\media-model-swap.ps1')
 $comfyDir = Join-Path $root 'ComfyUI'
