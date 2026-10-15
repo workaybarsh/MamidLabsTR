@@ -98,13 +98,14 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # kurulumdan mahrum birakirdi.
     #
     # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, MTP acik, llama.cpp):
-    # temiz GPU'da (ComfyUI kapali) 14600 MiB'lik dosya GPU'da ~15170-15650 MiB yer
-    # kaplar; llama.cpp musait bellege gore buyuk gomme tensorunu CPU'da tutar ve
-    # kucuk farklari boyle kaldirir. Bos VRAM 15244 MiB iken model yuklendi ve
-    # ~45 tok/s ile calisti (olculdu). 1000 MiB'lik pay (esik 15600) ve 800 MiB'lik
-    # pay (esik 15400) bu durumu yanlislikla reddediyordu (gercek makinede goruldu):
-    # "Model islemi basarisiz" hatasi. Bu yuzden 16 GB profillerinde pay 600 MiB'dir
-    # (esik 15200); temiz GPU + makul masaustu kullanimiyla model yuklenir.
+    # 14600 MiB'lik dosya GPU'da (KV cache q4_0 onceden ayrilir + hesap tamponlari + MTP
+    # draft baglami) ~15378-15444 MiB yer kaplar; yani GERCEK tam-sigma ihtiyaci ~15380'dir.
+    # "Bos vramin tamamini kullan" icin --gpu-layers 99 KORUNUR (modeli tumuyle VRAM'e koyar;
+    # tam siginca ~55 tok/s). llama.cpp'nin --fit otomatik yerlestirmesi denendi ve daha
+    # TEMKINLI cikti (tum VRAM'i kullanmadi, ~23 tok/s) - bu yuzden kullanilmaz.
+    # Pay tam-sigma ihtiyacina gore 750 MiB'dir (esik 15350 = olculen model ayak izi): model tam
+    # sigacaksa yuklenir ve TUM bos VRAM'i kullanir; altinda tasacagi icin net "yetersiz VRAM"
+    # mesaji verilir. (Bu, tasmayi onleyen EN DUSUK esiktir; daha asagisi tasmaya izin verir.)
     # ASIL koruma, bos VRAM'e bakmaktan cok ComfyUI'nin HER ZAMAN kapatilmasidir
     # (bkz. asagidaki akis): baska bir CUDA baglami varken pay yetse/VRAM "bos"
     # gorunse bile surucu bellegi parcalar ve model paylasilan bellege tasip
@@ -115,21 +116,25 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # kaldirir ve sohbet hizini korur (icerige bagli ~40-79 tok/s; bkz. asagidaki tolerans
     # notu). Pay burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB
     # VRAM tutarken) LITE'i bos yere reddedip calisan kurulumu bozardi.
-    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 600 }
+    # Pay GERCEK tam-sigma ihtiyacini karsilamalidir: 27B dosyasi 14600 MiB ama GPU'da
+    # (KV cache q4_0 onceden ayrilir + hesap tamponlari + MTP draft baglami) ~15378-15444 MiB
+    # yer kaplar; yani gercek pay ~778-844 MiB'dir. Pay 600 iken bos VRAM 15200-15450 arasi
+    # olan yuklemeler sessizce PAYLASILAN bellege tasiyor ve sohbet ~20 tok/s'ye dusuyordu.
+    # Pay 850 (esik 15450) ile model ancak TAM SIGACAKSA yuklenir: tasma hic olusmaz, ya tam
+    # hizda calisir ya da net "yetersiz VRAM" mesaji verir (bkz. asagidaki tolerans notu).
+    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 750 }
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi dosyayi ~464 MiB buyutur; 8 GB
     # kartta model sinirda kalir, ama projektor CPU'da oldugundan artik 7249/8188 MiB'ye
     # yerlesir (708 MiB bos) ve asim olusmaz. Yine de LITE icin tolerans genis tutulur:
     # ambiyans/ASR gecisi sirasinda olusabilecek kucuk asim engellenmez.
-    # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: 27B model zaten kartin sinirinda calisir
-    # ve bir CUDA baglami (ComfyUI) acikken kucuk bir asim bile bir bileseni paylasilan
-    # bellege tasiyip uretimi ~6 tok/s'ye dusurur. Bu yuzden olcumden once ComfyUI her
-    # zaman kapatilir (bkz. asagidaki akis); toleransla asim kabul edilmez.
-    # Olcum (RTX 5060 Ti): 15244 MiB bos VRAM'de 27B TAM sigdi ve ~45 tok/s ile calisti;
-    # 15095 MiB'de ise tasip ~30 tok/s'ye dustu. Yani esik (15200) tam-sigma siniridir;
-    # kucuk bir asim bile TASMA demektir, kabul edilmez. Tarayici gibi GPU kullanan
-    # masaustu uygulamalari kapatilinca bos alan artar ve model tam sigar.
+    # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: model ancak TAM sigacaksa yuklenir (bkz. pay
+    # notu). Kucuk bir asim bile paylasilan bellege tasma demektir; taşan model ~20 tok/s'ye
+    # dustugu icin (olculdu: 15244 MiB bos -> 27B tam sigdi ~55 tok/s; 15095 MiB -> tasti
+    # ~30 tok/s) paylasilan bellege calismasina izin verilmez. Bos alan yetmezse kullaniciya
+    # net "yetersiz VRAM" mesaji gosterilir; tarayici gibi GPU kullanan uygulamalar kapatilinca
+    # bos alan artar ve model tam hizda yuklenir.
     $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +

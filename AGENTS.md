@@ -140,8 +140,8 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası + **600 MiB**
-(LITE'ta 300 MiB); görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
+**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası + **750 MiB**
+(MAX/FLASH; LITE'ta 300 MiB); görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
 olduğundan bütçeye girmez. **ComfyUI yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
 **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil modeli yüklenmeden önce
 kapatılır — böylece **boşta ne VRAM ne de RAM tutar** (boşta ComfyUI ~300 MiB CUDA bağlamı + süreç
@@ -162,12 +162,14 @@ sağlıklı örnek zaten 2 süreçtir. Örnekler, parent'i ComfyUI eşleşmeyen 
 Bütçe yetmezse ComfyUI kapatılıp yeniden ölçülür (güvenlik ağı). Açık temizlik için `manage-qwen.ps1`
 `-Action closecomfy`. ComfyUI'yi yeniden açmanın maliyeti medya işi başına ~27 sn
 (ölçüldü: soğuk 55 sn, sıcak 28 sn).
-Ölçüm: temiz GPU'da 15244 MiB boş iken 27B model yüklendi ve ~45 tok/s
-ile çalıştı (dosya 14.600 MiB → gerçek pay ~600 MiB). Önceki denemelerdeki 800/1000 MiB paylar (eşik
-15400/15600) bu çalışan durumu yanlış reddedip jenerik "Model işlemi başarısız" hatası veriyordu.
-Tolerans profile göredir: **LITE 1024 MiB** (9B MTP modelinin 8 GB karttaki küçük aşımı;
-llama.cpp büyük gömme tensorünü CPU'da tutar), **MAX/FLASH 0** (27B kartın sınırında; küçük bir
-aşım bile felaket). Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97 tok/s.
+Ölçüm: 27B dosyası 14.600 MiB ama GPU'da (KV cache q4_0 + hesap tamponları + MTP draft bağlamı)
+**~15350 MiB** yer kaplar. Pay bu yüzden MAX/FLASH'ta **750 MiB** (eşik 15350 = ölçülen ayak izi):
+model ancak **tam sığacaksa** yüklenir ve **tüm boş VRAM'i kullanır**; normal masaüstünde (tarayıcı
+kapalı, ~15450+ boş) **hatasız yüklenir**, altında taşacağı için net "yetersiz VRAM" mesajı verilir.
+Bu, taşmayı önleyen **en düşük** eşiktir. `--gpu-layers 99` korunur (modeli tümüyle VRAM'e koyar;
+tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi ve daha **temkinli**
+çıktı (tüm VRAM'i kullanmadı, ~23 tok/s), bu yüzden kullanılmaz.
+Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97 tok/s.
 
 ## 6. Sohbet isteğinin akışı
 
@@ -433,8 +435,9 @@ LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve 
    kullanıcı mesajına koy.
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-qwen | …` asılı kalır.
-7. **VRAM payı profile göre küçük tutulur** (MAX/FLASH 600 MiB, LITE 300 MiB). Büyük pay 16 GB
-   kartta MAX'ı hiç açtırmaz. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
+7. **VRAM payı profile göre tutulur** (MAX/FLASH 750 MiB, LITE 300 MiB). Pay, ölçülen model ayak
+   izine eşittir (27B GPU'da ~15350 MiB): model ancak **tam sığacaksa** yüklenir, **tüm boş VRAM'i
+   kullanır** ve **taşmaz**; normal masaüstünde hatasız açılır. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
    Kaçak örnek 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
    19 tok/s'ye düşer.
@@ -518,7 +521,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
-| 2026-10-15 | **Ön-işleme/düşünme gecikmesi teşhisi + VRAM taşma uyarısı.** Ölçüm (RTX 5060 Ti, MAX): KV önbelleği **çalışıyor** (2. turda 19.988 token önbellekten geldi, ilk token 0,6 sn) ve temiz yüklemede ön-işleme ~415 tok/s; buna karşılık uzun bağlamda **tam yeniden işleme** ~48 sn (20k token) sürüyor. Sorunlu turdaki ~20 tok/s ise ~20x yavaşlık: model VRAM'e tam sığmayıp **paylaşılan belleğe taşmıştı**. Arayüz artık yükleme sonrası **bir kez** `Get-LlamaSpillMiB` (llama-server'ın `GPU Process Memory(*)\Shared Usage` değeri) ölçüp >1000 MiB ise **"Yavaş mod (VRAM taşması)"** uyarısını metrik + durum panelinde gösterir (sessiz yavaşlık yerine). Model/durum değişiminde uyarı sıfırlanır. | qwen-desktop.ps1, tests/test_desktop_behavior.py, AGENTS.md, CHANGELOG.md |
+| 2026-10-15 | **Ön-işleme gecikmesi teşhisi + "boş VRAM'in tamamını kullan / taşma yok" düzeltmesi.** Ölçüm (RTX 5060 Ti, MAX): KV önbelleği **çalışıyor** (2. turda 19.988 token önbellekten geldi, ilk token 0,6 sn) ve temiz yüklemede ön-işleme ~415 tok/s; buna karşılık uzun bağlamda **tam yeniden işleme** ~48 sn (20k token) sürüyor. Sorunlu turdaki ~20 tok/s ise ~20x yavaşlık: model VRAM'e tam sığmayıp **paylaşılan belleğe taşmıştı**. **Ölçülen model ayak izi 15350 MiB** (dosya 14.600 iken GPU'da KV cache q4_0 + hesap tamponları + MTP draft bağlamı ile; temiz yükleme 15454 MiB boşta ~41-55 tok/s). MAX/FLASH bellek payı **750 MiB** (eşik 15350) yapıldı: model **ancak tam sığacaksa** yüklenir, **tüm boş VRAM'i kullanır** ve **taşmaz**; normal masaüstünde (tarayıcı kapalı) **hatasız yüklenir**; altında net "yetersiz VRAM" verilir. `--gpu-layers 99` korunur; llama.cpp `--fit` otomatik yerleştirmesi denendi ve daha **temkinli** çıktı (tüm VRAM'i kullanmadı, ~23 tok/s) → kullanılmaz. (Önceki "Yavaş mod uyarısı" yaklaşımı kaldırıldı: taşma doğrudan engellenir.) | scripts/manage-qwen.ps1, tests/test_memory_admission.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Arayüz, model yükleme hatasının gerçek nedenini gösterir.** `Invoke-Manage` artık `RedirectStandardError` ile yönetici sürecinin stderr'ini yakalar; `Update-ModelSwitch` başarısız çıkışta yeni `Format-ModelSwitchError` ile anlamlı satırı (ör. "Yetersiz boş VRAM: …") gösterir; önce yalnızca jenerik "Model işlemi başarısız" görünüyordu. Ölçüm notu: MAX/FLASH bellek toleransı **0** kalır — 27B, 15244 MiB boş VRAM'de ~45 tok/s ile tam sığar; 15095 MiB'de ise taşıp ~30 tok/s'ye düşer, yani taşma yavaşlatır ve engellenmesi doğrudur. Test: `tests/test_desktop_behavior.py`. | qwen-desktop.ps1, tests/test_desktop_behavior.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Sistem isteminden düşen anti-uydurma cümlesi geri getirildi (test yakaladı).** Önceki "sert anti-uydurma" yeniden yazımı sabit sistem isteminden "test, teorem, özdeşlik veya kaynak adı KULLANMA" talimatını düşürmüştü; `tests/test_qwen_contracts.py` bunu kırıyordu. Sabit istem yeniden eklendi (önek sabit kaldığı için KV önbelleği bozulmaz). Bu değişiklikle pytest TR 462 / ENG 459 yeşil. | qwen-desktop.ps1, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Kurulu program dosyaları repoyla birebir aynı (assets\installer dışlaması kaldırıldı).** `layout` ve `kurulum-kaynak` tazelemesi artık `assets\installer\*` (sihirbaz görselleri) dosyalarını **dışlamaz**; `.iss` `[Files]` `Excludes: "installer\*"` kaldırıldı ve `Remove-ProgramExcludes` yalnızca `agent\__pycache__\*`/`*.pyc` temizler. Böylece kurulu kökün program dosyaları (`agent\`, `scripts\`, `assets\`, `requirements\` ve üst dosyalar) repoyla byte-for-byte aynıdır. | scripts/install-mamidlabs.ps1, packaging/windows/mamidlabs.iss, tests/test_install_layout_source.py, tests/test_install_update_gaps.py, AGENTS.md, CHANGELOG.md |

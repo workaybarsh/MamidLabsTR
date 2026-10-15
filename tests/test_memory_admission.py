@@ -109,27 +109,26 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
     assert "$profileName -eq 'lite'" in line
 
 
-def test_max_budget_fits_a_16_gb_card():
-    """RTX 5060 Ti 16 GB'ta ölçüldü: temiz GPU'da (ComfyUI kapalı) 27B model 15244 MiB
-    boş VRAM ile yüklendi ve ~44–58 tok/s (MTP açık) çalıştı; dosya 14600 MiB olduğundan
-    gerçek pay ~600 MiB'dır. Eski 800/1000 MiB paylar (eşik 15400/15600) bu durumu yanlış
-    reddedip "Model işlemi başarısız" hatası veriyordu. Asıl koruma paydan çok ComfyUI'nin
-    her zaman kapatılmasıdır: başka bir CUDA bağlamı varken 15290 MiB boş VRAM bile taşıp
-    ~6 tok/s'ye düşürüyordu."""
+def test_max_budget_requires_a_full_vram_fit():
+    """RTX 5060 Ti 16 GB'ta ölçüldü: 27B dosyası 14600 MiB ama GPU'da (KV cache q4_0 önceden
+    ayrılır + hesap tamponları + MTP draft bağlamı) ~15378-15444 MiB yer kaplar; gerçek pay
+    ~778-844 MiB'dır. Pay 600 (eşik 15200) iken 15200-15450 arası yüklemeler sessizce
+    paylaşılan belleğe taşıp sohbeti ~20 tok/s'ye düşürüyordu. Pay 850 (eşik 15450) ile model
+    ancak TAM sığacaksa yüklenir; taşma oluşmaz (ölçüm: 15529 MiB boş -> tam sığdı ~55 tok/s;
+    15095 MiB -> taştı ~30 tok/s). Asıl koruma yine ComfyUI'nin her zaman kapatılmasıdır."""
     import re
 
     manager = read_text("scripts/manage-qwen.ps1")
     match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
     assert match, "profil-farkinda overheadMiB satiri bulunamadi"
     overhead = int(match.group(2))  # else dali = MAX/FLASH
-    assert overhead == 600
+    assert overhead == 750, "MAX/FLASH tam-sigma payi 750 (esik 15350 = olculen ayak izi) olmali; tasmayi onleyen EN DUSUK esik"
     max_model_mib = 14600
-    measured_free_ok = 15244  # temiz GPU'da ~44-58 tok/s (MTP acik) ile yuklendi
-    needed = max_model_mib + overhead  # 15200
-    # Model bu boş değerle yüklenebilmeli...
-    assert needed <= measured_free_ok
-    # ...ama eski 800 MiB'lik pay (eşik 15400) makineyi yanlış reddediyordu.
-    assert needed < max_model_mib + 800
+    threshold = max_model_mib + overhead  # 15350
+    full_fit_free = 15529  # olculdu: tam sigdi, ~55 tok/s
+    spill_free = 15095     # olculdu: tasti, ~30 tok/s
+    assert threshold <= full_fit_free, "tam-sigma durumu kabul edilmeli"
+    assert threshold > spill_free, "tasacak durum REDDEDILMELI (spill onlenir)"
 
 
 def test_lite_budget_is_not_tightened_by_the_max_fix():

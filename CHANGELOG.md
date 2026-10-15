@@ -22,10 +22,13 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   dışlanır). Kullanıcı verisine dokunulmaz.
 
 ### Düzeltilen
-- **Yavaş model (VRAM taşması) artık açıkça bildirilir.** Model VRAM'e tam sığmayıp paylaşılan
-  belleğe taştığında sohbet ~20x yavaşlıyordu (ölçüm: 27B tam sığınca ~55 tok/s; taşınca ön-işleme
-  ~20 tok/s) ve bu sessizce yaşanıyordu. Arayüz yükleme sonrası bir kez ölçüp **"Yavaş mod (VRAM
-  taşması)"** uyarısını gösterir.
+- **Taşma doğrudan engelleniyor; model boş VRAM'in tamamını kullanır.** Model VRAM'e tam sığmayıp
+  paylaşılan belleğe taşındığında sohbet ~20x yavaşlıyordu (ölçüm: temiz yükleme 15454 MiB boşta
+  ~41-55 tok/s; taşınca ön-işleme ~20 tok/s). Ölçülen model ayak izi **15350 MiB** olduğundan
+  MAX/FLASH bellek payı **750 MiB** (eşik 15350) yapıldı: model **ancak tam sığacaksa** yüklenir,
+  tüm boş VRAM'i kullanır ve **taşmaz**; normal masaüstünde hatasız açılır. llama.cpp'nin `--fit`
+  otomatik yerleştirmesi denendi ve daha temkinli çıktığı (tüm VRAM'i kullanmadı, ~23 tok/s) için
+  kullanılmaz; `--gpu-layers 99` korunur.
 - **Arayüzde model hatasının gerçek nedeni gösterilir.** Yetersiz VRAM gibi durumlarda jenerik
   "Model işlemi başarısız" yerine gerçek neden (ör. "Yetersiz boş VRAM: …") görünür; yönetici
   sürecinin stderr'i arayüze taşınır (`Format-ModelSwitchError`).
