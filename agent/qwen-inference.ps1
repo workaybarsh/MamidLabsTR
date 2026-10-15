@@ -503,6 +503,157 @@ function Get-AudioTimeoutSeconds([double]$durationSeconds) {
     return $t
 }
 
+# --- Sicak (kalici) ses dokum iscisi -----------------------------------------
+# Her ses turunda tekrarlanan SABIT maliyet (Python baslatma + torch/transformers/
+# faster-whisper importlari) oturumda BIR kez odenir: tek bir kalici isci sureci tutulur
+# (agent/whisper-tools.py --serve). Olculdu (RTX 5060 Ti, venv\asr): `import transformers`
+# tek basina ~25 sn; ses olaylari (AST) varsayilan ACIK oldugundan bu maliyet HER soguk
+# turda odeniyordu. Isci 127.0.0.1 uzerinde dinler; port/pid `logs\asr-server.json`'da
+# yayimlanir. Uygulama kapaninca (parent-pid) ya da bosta kalinca (idle-timeout) kendini
+# bitirir -> orphan surec/VRAM/RAM sizintisi olmaz. Isci ULASILAMAZSA/transport hatasinda
+# tek-atimlik Invoke-PythonTool yoluna DUSULUR; boylece ses hatti her kosulda calisir.
+function Get-AsrServerStatePath { Join-Path (Get-InstallRoot) 'logs\asr-server.json' }
+
+# Isci bosta bu kadar saniye kalirsa kendini bitirir (RAM/VRAM'i geri verir); sonraki ses
+# turunda yeniden baslar. Back-to-back ses turlarinda sicak kalir.
+function Get-AsrServerIdleSeconds { return 600 }
+
+function Send-AsrServerLine($state, [hashtable]$payload, [int]$timeoutSeconds = 15) {
+    # Tek satir JSON istegi gonderir ve tek satir JSON yanitini doner (kisa islemler:
+    # ping/unload). Uzun suren transcribe icin Invoke-AsrServerRequest kullanilir.
+    $client = [Net.Sockets.TcpClient]::new()
+    try {
+        $iar = $client.BeginConnect('127.0.0.1', [int]$state.port, $null, $null)
+        if (!$iar.AsyncWaitHandle.WaitOne(2000)) { throw 'ASR sunucusuna baglanilamadi.' }
+        $client.EndConnect($iar)
+        $stream = $client.GetStream()
+        if ($timeoutSeconds -gt 0) { $stream.ReadTimeout = $timeoutSeconds * 1000; $stream.WriteTimeout = $timeoutSeconds * 1000 }
+        $bytes = [Text.Encoding]::UTF8.GetBytes((($payload | ConvertTo-Json -Compress -Depth 10) + "`n"))
+        $stream.Write($bytes, 0, $bytes.Length); $stream.Flush()
+        $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false))
+        $line = $reader.ReadLine()
+        if ($null -eq $line) { throw 'ASR sunucusu yanit vermedi.' }
+        return $line
+    } finally { $client.Dispose() }
+}
+
+function Test-AsrServerAlive($state) {
+    try {
+        $parsed = (Send-AsrServerLine $state @{ action = 'ping' } 5) | ConvertFrom-Json -ErrorAction Stop
+        return [bool]$parsed.ok
+    } catch { return $false }
+}
+
+function Get-AsrServerEndpoint {
+    # Durum dosyasini okur ve isci CANLI mi diye yoklar; olu/bayat ise $null.
+    $path = Get-AsrServerStatePath
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $state = $null
+    try { $state = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json } catch { return $null }
+    if (!$state -or !$state.port) { return $null }
+    if (Test-AsrServerAlive $state) { return $state }
+    return $null
+}
+
+function Start-AsrServerProcess {
+    # Kalici isci surecini baslatir ve HEMEN doner (hazir olmasini beklemez).
+    # Start-Process bosluklu yollari guvenilir aktarsin diye her arguman acikca tirnaklanir.
+    $python = Get-AsrPythonExe; $worker = Get-WhisperPyPath
+    if (!(Test-Path -LiteralPath $python -PathType Leaf) -or !(Test-Path -LiteralPath $worker -PathType Leaf)) { return $null }
+    $statePath = Get-AsrServerStatePath
+    $logDir = Split-Path -Parent $statePath
+    if (!(Test-Path -LiteralPath $logDir -PathType Container)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+    Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+    $argList = @($worker, '--serve', '--state-file', $statePath, '--parent-pid', "$PID", '--idle-timeout', "$(Get-AsrServerIdleSeconds)")
+    $quoted = ($argList | ForEach-Object { '"' + [string]$_ + '"' }) -join ' '
+    try { return (Start-Process -FilePath $python -ArgumentList $quoted -WindowStyle Hidden -PassThru) } catch { return $null }
+}
+
+function Start-AsrServer {
+    # Kalici isciyi baslatir ve hazir olana (durum dosyasi + ping) kadar bekler. Importlar
+    # ~10 sn surer (ilk/disk sogukken ~25 sn); surec olurse $null doner (tek-atimlik yola dusulur).
+    $proc = Start-AsrServerProcess
+    if (!$proc) { return $null }
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if ($Shared -and $Shared.Cancel) { return $null }
+        Start-Sleep -Milliseconds 300
+        $state = Get-AsrServerEndpoint
+        if ($state) { return $state }
+        if ($proc.HasExited) { return $null }
+    }
+    return $null
+}
+
+function Start-AsrServerAsync {
+    # Isciyi ARKA PLANDA baslatir (beklemez): importlar bir SONRAKI ses turuna kadar tamamlanir,
+    # boylece dökum kritik yolu yalnizca model YUKLEME maliyetini oder. Ses modeli VRAM
+    # kullanmadigi icin (henuz transkript yok) dil modelinin yuklenmesini etkilemez.
+    [void](Start-AsrServerProcess)
+}
+
+function Ensure-AsrServer {
+    $state = Get-AsrServerEndpoint
+    if ($state) { return $state }
+    return Start-AsrServer
+}
+
+function Stop-AsrServer {
+    # Isci surecini ve durum dosyasini temizler (iptal/zaman asimi/uygulama kapanisi).
+    $path = Get-AsrServerStatePath
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    try {
+        $state = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($state -and $state.pid) { Stop-Process -Id ([int]$state.pid) -Force -ErrorAction SilentlyContinue }
+    } catch { }
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+}
+
+function Unload-AsrServerModels {
+    # Dil modeli VRAM'e geri yuklenmeden ONCE ses modellerini bosaltir; isci SURECI yasar
+    # (importlar sicak kalir), yalnizca modeller atilir.
+    $state = Get-AsrServerEndpoint
+    if (!$state) { return }
+    try { [void](Send-AsrServerLine $state @{ action = 'unload' } 60) } catch { }
+}
+
+function Invoke-AsrServerRequest([hashtable]$payload, [int]$timeoutSeconds = 0) {
+    # Sicak isciye istek gonderir. Isci yoksa/ulasilamazsa $null doner (cagiran tek-atimlik
+    # Invoke-PythonTool yoluna duser). "Durdur" ANINDA isler: iptalde isci sureci oldurulur.
+    if ($timeoutSeconds -le 0) { $timeoutSeconds = 180 }
+    $state = Ensure-AsrServer
+    if (!$state) { return $null }
+    $client = [Net.Sockets.TcpClient]::new()
+    try {
+        $iar = $client.BeginConnect('127.0.0.1', [int]$state.port, $null, $null)
+        if (!$iar.AsyncWaitHandle.WaitOne(2000)) { return $null }
+        $client.EndConnect($iar)
+        $stream = $client.GetStream()
+        $bytes = [Text.Encoding]::UTF8.GetBytes((($payload | ConvertTo-Json -Compress -Depth 10) + "`n"))
+        $stream.Write($bytes, 0, $bytes.Length); $stream.Flush()
+        $reader = [IO.StreamReader]::new($stream, [Text.UTF8Encoding]::new($false))
+        $task = $reader.ReadLineAsync()
+        $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+        while (!$task.IsCompleted) {
+            if ($Shared -and $Shared.Cancel) {
+                $client.Dispose(); Stop-AsrServer
+                throw [OperationCanceledException]::new()
+            }
+            if ([DateTime]::UtcNow -ge $deadline) {
+                # Yanit gelmedi: isciyi oldur (takili kalmasin) ve tek-atimlik yola dus.
+                $client.Dispose(); Stop-AsrServer
+                return $null
+            }
+            Start-Sleep -Milliseconds 150
+        }
+        return $task.GetAwaiter().GetResult()
+    } catch [OperationCanceledException] {
+        throw
+    } catch {
+        return $null
+    } finally { $client.Dispose() }
+}
+
 function Get-AudioTranscriptionPlan([string]$path) {
     # Olculemezse GUVENLI taraf: yerel saglayicida swap et; API modunda GPU zaten bostur.
     $fallback = [pscustomobject]@{ device = 'cuda'; need_swap = ($provider -eq 'local'); duration_seconds = $null }
@@ -513,7 +664,9 @@ function Get-AudioTranscriptionPlan([string]$path) {
         $planPayload = @{ action = 'plan'; local_model_loaded = ($provider -eq 'local'); path = $path }
         $asrProfile = Get-AsrProfileName
         if ($asrProfile) { $planPayload.profile = $asrProfile }
-        $raw = Invoke-PythonTool $planPayload $whisperPy $asrPy
+        # Sicak isci once denenir (importlar tur arasinda korunur); ULASILAMAZSA tek-atimlik yol.
+        $raw = Invoke-AsrServerRequest $planPayload 120
+        if (!$raw) { $raw = Invoke-PythonTool $planPayload $whisperPy $asrPy }
         $plan = $null
         try { $plan = $raw | ConvertFrom-Json -ErrorAction Stop } catch { }
         if ($plan -and $plan.device) {
@@ -554,7 +707,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         if ($asrProfile) { $payloadBase.profile = $asrProfile }
         try {
             Emit 'status' ("Ses large-v3-tr ile yaziya cevriliyor (" + $device + ")…") | Out-Null
-            $candidate = Invoke-PythonTool $payloadBase $whisperPy $asrPy
+            $candidate = Invoke-AsrServerRequest $payloadBase $audioTimeout
+            if (!$candidate) { $candidate = Invoke-PythonTool $payloadBase $whisperPy $asrPy }
             $parsed = $null
             try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
             if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
@@ -568,7 +722,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
                 # Hashtable '+' AYNI ANAHTARDA istisna atar ('device'/'need_swap' zaten var);
                 # bu yuzden CPU yedegi hic calismiyordu. Kopyala, sonra alani ez.
                 $cpuPayload = $payloadBase.Clone(); $cpuPayload['device'] = 'cpu'
-                $candidate = Invoke-PythonTool $cpuPayload $whisperPy $asrPy
+                $candidate = Invoke-AsrServerRequest $cpuPayload $audioTimeout
+                if (!$candidate) { $candidate = Invoke-PythonTool $cpuPayload $whisperPy $asrPy }
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
@@ -587,7 +742,8 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
                 Wait-LocalModelStopped
                 $swapModel = $true
                 $retryPayload = $payloadBase.Clone(); $retryPayload['device'] = 'cuda'; $retryPayload['need_swap'] = $true
-                $candidate = Invoke-PythonTool $retryPayload $whisperPy $asrPy
+                $candidate = Invoke-AsrServerRequest $retryPayload $audioTimeout
+                if (!$candidate) { $candidate = Invoke-PythonTool $retryPayload $whisperPy $asrPy }
                 $parsed = $null
                 try { $parsed = $candidate | ConvertFrom-Json -ErrorAction Stop } catch { }
                 if ($parsed -and !$parsed.error) { $resp = $candidate; $err = $null }
@@ -597,6 +753,11 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
         }
     }
     if ($swapModel) {
+        # Dil modeli VRAM'e geri yuklenmeden ONCE ses modelleri bosaltilir ve sicak isci
+        # DURDURULUR: isci surecinin kalan CUDA baglami (~140 MiB) 27B'nin ince VRAM payini
+        # yiyebilir (bkz. AGENTS §5/§13). Isci tur sonunda ARKA PLANDA yeniden baslatilir.
+        Unload-AsrServerModels
+        Stop-AsrServer
         try {
             Emit 'status' 'Transkripsiyon tamamlandı; dil modeli arka planda geri yükleniyor…' | Out-Null
             Start-LocalModelRestore ([string]$JobData.profile)
@@ -609,6 +770,9 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
             Emit 'status' "Transkripsiyon tamamlandı; dil modeli geri başlatılamadı: $($_.Exception.Message)" | Out-Null
         }
     }
+    # Sicak isciyi ARKA PLANDA yeniden baslat: importlar bir SONRAKI ses turuna kadar
+    # tamamlanir (kritik yol yalnizca model yukleme maliyetini oder). Iptalde baslatilmaz.
+    if ($swapModel -and !$Shared.Cancel) { Start-AsrServerAsync }
     if ($Shared.Cancel) { throw [OperationCanceledException]::new() }
     if ($err) { throw $err }
     return $resp

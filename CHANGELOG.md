@@ -12,6 +12,15 @@ modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışı
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
 ### Değişen
+- **Sesli giriş gecikmesi düşürüldü: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan
+  sabit maliyet (Python başlatma + `torch`/`transformers`/`faster-whisper` importları; ölçüldü ~10 sn,
+  ilk/disk soğukken ~25 sn) artık oturumda **bir kez** ödenir: `agent/whisper-tools.py --serve` tek bir
+  kalıcı işçi süreci olarak 127.0.0.1 üzerinde dinler (port/pid `logs\asr-server.json`'da) ve modelleri
+  süreç içinde tutar. Dil modeli VRAM'e geri yüklenmeden **önce** ses modelleri boşaltılır ve işçi
+  **durdurulur** (kalan CUDA bağlamı ~140 MiB, 27B'nin ince payını yemesin), tur sonunda arka planda
+  yeniden başlatılır; işçi boşta 600 sn sonra ya da uygulama kapanınca kendini bitirir (artık
+  süreç/VRAM/RAM sızıntısı yok). İşçi ulaşılamazsa döküm yine tek-atımlık `Invoke-PythonTool` yoluna
+  düşer; davranış korunur.
 - **LITE görsel projektörü (mmproj) CPU'ya taşındı:** LITE artık 8 GB VRAM'e sığıyor
   (kullanılan 7885 → 7249 MiB, boş alan 72 → 708 MiB). Üç profilde de mmproj CPU'da çalışır ve
   VRAM bütçesine girmez; sohbet hızı değişmedi (içeriğe bağlı ~40–79 tok/s), yalnızca görsel

@@ -114,6 +114,7 @@ kurulum-kaynak\                  sihirbazın açtığı kaynak paket
 |---|---|---|---|
 | `llama-server.exe` | 8080 | `scripts/manage-qwen.ps1` | Mutex `Local\QwenLocalModelControl`; `--alias` ile profil tanınır |
 | ComfyUI (`venv\imagegen\Scripts\python.exe ComfyUI\main.py`) | 8188 | `agent/media-model-swap.ps1` | Varsayılan: iş bitince kapatılır (boşta VRAM/RAM tutmaz); `comfyKeepAlive=true` (LITE) ile açık kalır |
+| Ses döküm işçisi (`venv\asr` python, `whisper-tools.py --serve`) | rastgele, yalnız 127.0.0.1 (`logs\asr-server.json`) | `agent/qwen-inference.ps1` | **Sıcak/oturumluk:** sabit import maliyeti (Python + torch/transformers/faster-whisper, ~10 sn) oturumda bir kez ödenir; dil modeli VRAM'e geri yüklenmeden önce ses modelleri boşaltılıp işçi **durdurulur** (kalan CUDA bağlamı ~140 MiB 27B'nin payını yemesin), tur sonunda **arka planda** yeniden başlar; boşta 600 sn sonra ya da uygulama kapanınca kendini bitirir (artık süreç/VRAM/RAM sızıntısı yok) |
 | Uygulama | — | `pwsh.exe … qwen-desktop.ps1` | İşçiler aynı süreçte `Start-ThreadJob` runspace'leri |
 
 **Profiller** (`manage-qwen.ps1`, alias'lar `model-registry.ps1` ile birebir aynı olmalı):
@@ -368,7 +369,7 @@ tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~466 test (470 toplanır; 466 geçti, 4 atlandı), ~176 sn; ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~245 sn (473 toplanır; 469 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -415,6 +416,13 @@ yüklenir. `Krea2EditGroundedEncode` ise görseli aynı grafikte ikisine birden 
 ikisini aynı anda VRAM'de tutmaya çalışır: 5 + 7,5 GB > 8 GB, `--lowvram` ~2 GB'ı CPU'ya taşır ve
 iş 641–884 sn sürer (16 GB'taki sürenin 5–8 katı). Küçük LoRA (r64) da çözmez (641 sn). Bu yüzden
 LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve katalogda LoRA yoktur.
+
+**Ses dökümü ve VRAM bağlamı (ölçülmüş):** ses dökümü (faster-whisper large-v3 + AST) GPU'da
+~3,9 GB tutar; 27B (~15350 MiB) ile aynı 16 GB karta **sığmaz**, bu yüzden döküm öncesi dil modeli
+kapatılır (mecburi swap). Yükleme + boşaltma sonrası süreçte kalan CUDA bağlamı **~140 MiB** ölçüldü
+(oyun açıkken 8860 → 8720 MiB boş). Bu yüzden **sıcak ses işçisi** dil modeli geri yüklenmeden önce
+DURDURULUR ve tur sonunda arka planda yeniden başlatılır: işçi henüz transkript yapmadıysa CUDA
+bağlamı zaten yoktur, dolayısıyla boşta VRAM tutmaz ve 27B'nin ince payını yemez (bkz. §5).
 
 ## 14. Kritik tuzaklar
 
@@ -521,6 +529,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-15 | **Sesli giriş gecikmesi: sıcak (kalıcı) ses döküm işçisi.** Her ses turunda tekrarlanan sabit maliyet (Python başlatma + torch/transformers/faster-whisper importları; ölçüldü ~10 sn, ilk/disk soğukken ~25 sn) artık oturumda BİR kez ödenir: `whisper-tools.py --serve` tek bir kalıcı süreç olarak 127.0.0.1'de dinler (port/pid `logs\asr-server.json`), modelleri süreç içinde tutar; `{"action":"unload"}` ses modellerini boşaltır (süreç yaşar). Dil modeli VRAM'e geri yüklenmeden ÖNCE işçi boşaltılıp DURDURULUR (kalan CUDA bağlamı ~140 MiB, 27B'nin ince payını yemesin), tur sonunda ARKA PLANDA yeniden başlar; boşta 600 sn / uygulama kapanınca kendini bitirir. İşçi ulaşılamazsa tek-atımlık `Invoke-PythonTool` yoluna düşer. Tek-atımlık stdin/stdout sözleşmesi korunur. Testler: `tests/test_transcriber.py` (serve sözleşmesi + `_dispatch` + `_parent_gone` + gerçek `--serve` ping/idle-çıkış + PS kablolama statik). | agent/whisper-tools.py, agent/qwen-inference.ps1, tests/test_transcriber.py, CHANGELOG.md, AGENTS.md |
 | 2026-10-15 | **Belge/atıf temizliği (kod davranışı değişmedi).** `README.md`'den lisans karşılaştırma cümlesi, `AGENTS.md` girişinden dış yapay zekâ aracı adları ve `CLAUDE.md` satırı kaldırıldı; `CLAUDE.md` dosyası silindi; `tests/ui-automation` geçici/ekran görüntüsü yolu `%TEMP%\mamidlabs\ui` olarak nötrlendi; `docs/teknik-notlar.md` abonelik-girişi cümlesindeki tüketici asistan adı ürünün sağlayıcı adına çevrildi. Ürün özelliği olan API sağlayıcıları korunur. | README.md, AGENTS.md, docs/teknik-notlar.md, CLAUDE.md (silindi), tests/ui-automation/ui.ps1, tests/ui-automation/win32.ps1, tests/ui-automation/README.md |
 | 2026-10-15 | **Ön-işleme gecikmesi teşhisi + "boş VRAM'in tamamını kullan / taşma yok" düzeltmesi.** Ölçüm (RTX 5060 Ti, MAX): KV önbelleği **çalışıyor** (2. turda 19.988 token önbellekten geldi, ilk token 0,6 sn) ve temiz yüklemede ön-işleme ~415 tok/s; buna karşılık uzun bağlamda **tam yeniden işleme** ~48 sn (20k token) sürüyor. Sorunlu turdaki ~20 tok/s ise ~20x yavaşlık: model VRAM'e tam sığmayıp **paylaşılan belleğe taşmıştı**. **Ölçülen model ayak izi 15350 MiB** (dosya 14.600 iken GPU'da KV cache q4_0 + hesap tamponları + MTP draft bağlamı ile; temiz yükleme 15454 MiB boşta ~41-55 tok/s). MAX/FLASH bellek payı **750 MiB** (eşik 15350) yapıldı: model **ancak tam sığacaksa** yüklenir, **tüm boş VRAM'i kullanır** ve **taşmaz**; normal masaüstünde (tarayıcı kapalı) **hatasız yüklenir**; altında net "yetersiz VRAM" verilir. `--gpu-layers 99` korunur; llama.cpp `--fit` otomatik yerleştirmesi denendi ve daha **temkinli** çıktı (tüm VRAM'i kullanmadı, ~23 tok/s) → kullanılmaz. (Önceki "Yavaş mod uyarısı" yaklaşımı kaldırıldı: taşma doğrudan engellenir.) | scripts/manage-qwen.ps1, tests/test_memory_admission.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-14 | **Arayüz, model yükleme hatasının gerçek nedenini gösterir.** `Invoke-Manage` artık `RedirectStandardError` ile yönetici sürecinin stderr'ini yakalar; `Update-ModelSwitch` başarısız çıkışta yeni `Format-ModelSwitchError` ile anlamlı satırı (ör. "Yetersiz boş VRAM: …") gösterir; önce yalnızca jenerik "Model işlemi başarısız" görünüyordu. Ölçüm notu: MAX/FLASH bellek toleransı **0** kalır — 27B, 15244 MiB boş VRAM'de ~45 tok/s ile tam sığar; 15095 MiB'de ise taşıp ~30 tok/s'ye düşer, yani taşma yavaşlatır ve engellenmesi doğrudur. Test: `tests/test_desktop_behavior.py`. | qwen-desktop.ps1, tests/test_desktop_behavior.py, AGENTS.md, CHANGELOG.md |

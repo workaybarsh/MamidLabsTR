@@ -6,7 +6,9 @@ sozlesmeler her zaman denetlenir.
 """
 import importlib.util
 import json
+import os
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -354,6 +356,94 @@ def test_worker_rejects_missing_file():
     module = load_worker()
     with pytest.raises(ValueError):
         module.transcribe({"path": str(ROOT / "does-not-exist.wav")})
+
+
+def test_worker_exposes_serve_and_unload_contract():
+    """Sicak (kalici) isci sozlesmesi: `--serve` + `unload` + ping. Model YUKLEMEZ."""
+    src = read_text("agent/whisper-tools.py")
+    assert "--serve" in src
+    assert "def serve(" in src
+    assert "'unload'" in src
+    assert "def _dispatch(" in src
+    assert "def _parent_gone(" in src
+
+
+@pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")
+def test_worker_dispatch_ping_unknown_and_unload(monkeypatch):
+    """`_dispatch`: ping -> ok; bilinmeyen islem -> hata; unload -> yuklu modelleri bosaltir
+    (surec YASAR, yalnizca modeller atilir). Model YUKLEMEZ."""
+    module = load_worker()
+    assert module._dispatch({"action": "ping"})["ok"] is True
+    assert "error" in module._dispatch({"action": "yok-boyle-bir-sey"})
+
+    from transcriber import asr, diarize, events
+    calls = []
+    monkeypatch.setattr(asr, "unload_model", lambda: calls.append("asr"))
+    monkeypatch.setattr(events, "unload_events_model", lambda: calls.append("events"))
+    monkeypatch.setattr(diarize, "unload_pipeline", lambda: calls.append("diarize"))
+    out = module._dispatch({"action": "unload"})
+    assert out["ok"] is True
+    assert calls == ["asr", "events", "diarize"]
+
+
+@pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")
+def test_parent_gone_detects_live_and_dead_pid():
+    """Ust surec (uygulama) kapaninca isci kendini bitirmeli: canli pid -> False, olu pid ->
+    True, 0 -> izleme kapali (False)."""
+    module = load_worker()
+    assert module._parent_gone(os.getpid()) is False
+    assert module._parent_gone(999999999) is True
+    assert module._parent_gone(0) is False
+
+
+@pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")
+def test_serve_mode_ping_and_idle_exit(tmp_path):
+    """`--serve` gercek surecte: durum dosyasi + ping + bilinmeyen islem + boslukta kendini
+    bitirme + durum dosyasi temizligi. Model YUKLEMEZ (yalnizca import/protokol)."""
+    state = tmp_path / "asr-server.json"
+    proc = subprocess.Popen(
+        [sys.executable, str(WORKER), "--serve", "--state-file", str(state),
+         "--parent-pid", "0", "--idle-timeout", "2"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(ROOT / "agent"))
+    try:
+        deadline = time.time() + 40
+        info = None
+        while time.time() < deadline:
+            if state.is_file():
+                try:
+                    info = json.loads(state.read_text(encoding="utf-8"))
+                    break
+                except Exception:
+                    pass
+            if proc.poll() is not None:
+                break
+            time.sleep(0.2)
+        assert info and info.get("port"), "isci durum dosyasini yayimlamadi"
+
+        def request(payload):
+            with socket.create_connection(("127.0.0.1", info["port"]), timeout=10) as conn:
+                conn.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+                buf = b""
+                while not buf.endswith(b"\n"):
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                return json.loads(buf.decode("utf-8"))
+
+        assert request({"action": "ping"})["ok"] is True
+        assert "error" in request({"action": "bilinmeyen-islem"})
+
+        # Bosluk zaman asimi (2 sn) sonrasi surec kendini bitirir ve durum dosyasini siler.
+        deadline = time.time() + 20
+        while time.time() < deadline and proc.poll() is None:
+            time.sleep(0.3)
+        assert proc.poll() is not None, "isci boslukta kendini bitirmedi"
+        assert not state.exists(), "durum dosyasi temizlenmedi"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.communicate(timeout=10)
 
 
 def _patch_transcriber_pipeline(monkeypatch, duration, capture):
@@ -768,6 +858,39 @@ def test_transcription_honors_cancel_and_stop_does_not_wait_for_restore():
     assert "if (!$Shared.Cancel) { Emit 'status' 'Dil modeli geri yüklendi" in block
     caller = worker.split("$currentAudioPaths = @($JobData.currentAudioPaths")[1].split("Otomatik baglam")[0]
     assert "Emit 'cancelled'" in caller
+
+
+def test_inference_uses_warm_asr_server_with_fallback():
+    """Ses dökümü SICAK (kalici) isciyi kullanir: her ses turunda tekrarlanan SABIT maliyet
+    (Python baslatma + torch/transformers/faster-whisper importlari; ölçüldü ~10 sn) oturumda
+    BIR kez odenir. Isci ULASILAMAZSA/transport hatasinda tek-atimlik `Invoke-PythonTool`
+    yoluna DUSULUR; boylece ses hatti her kosulda calisir (davranis korunur). Ayrica dil
+    modeli VRAM'e geri yuklenmeden ONCE ses modelleri bosaltilir ve isci DURDURULUR (kalan
+    CUDA baglami ~140 MiB, 27B'nin ince payini yemesin); tur sonunda ARKA PLANDA yeniden
+    baslatilir ki sonraki tur sicak olsun."""
+    worker = read_text("agent/qwen-inference.ps1")
+    for fn in ("Get-AsrServerStatePath", "Send-AsrServerLine", "Get-AsrServerEndpoint",
+               "Start-AsrServerProcess", "Start-AsrServer", "Start-AsrServerAsync",
+               "Ensure-AsrServer", "Stop-AsrServer", "Unload-AsrServerModels",
+               "Invoke-AsrServerRequest"):
+        assert f"function {fn}" in worker
+    # Plan: once sicak isci, olmazsa tek-atimlik yol.
+    plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]
+    assert "Invoke-AsrServerRequest $planPayload 120" in plan
+    assert "if (!$raw) { $raw = Invoke-PythonTool $planPayload $whisperPy $asrPy }" in plan
+    # Dokum: birincil (GPU) + CPU yedegi + "modeli bosalt ve yeniden dene" yollarinin HEPSI
+    # sicak isciyi once dener, olmazsa tek-atimlik yola duser.
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "Invoke-AsrServerRequest $payloadBase $audioTimeout" in block
+    assert "if (!$candidate) { $candidate = Invoke-PythonTool $payloadBase $whisperPy $asrPy }" in block
+    assert "Invoke-AsrServerRequest $cpuPayload $audioTimeout" in block
+    assert "Invoke-AsrServerRequest $retryPayload $audioTimeout" in block
+    # Geri yukleme ONCESI: bosalt + durdur; SONRA: arka planda yeniden baslat.
+    assert block.index("Unload-AsrServerModels") < block.index("Start-LocalModelRestore")
+    assert block.index("Stop-AsrServer") < block.index("Start-LocalModelRestore")
+    assert "Start-AsrServerAsync" in block
+    # Durum dosyasi kurulum koku altinda (kok disina yazilmaz; kaldirici etkisi yok).
+    assert "logs\\asr-server.json" in worker
 
 
 def test_worker_steers_model_away_from_reading_failed_audio():
