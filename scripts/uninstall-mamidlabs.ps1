@@ -108,6 +108,7 @@ if (!($markers | Where-Object { Test-Path -LiteralPath (Join-Path $Root $_) })) 
 # Kurulumun kokte olusturdugu her sey. Burada olmayan girisler kullaniciya sorulur.
 $programEntries = @('agent', 'scripts', 'assets', 'requirements', 'models', 'logs', 'llama.cpp', 'ComfyUI', 'venv',
     'runtime', 'tools', 'kurulum-kaynak', 'mamidlabs-desktop.ps1', 'launch-mamidlabs-desktop.vbs',
+    'qwen-desktop.ps1', 'launch-qwen-desktop.vbs',
     'README.md', 'LICENSE', 'EULA.txt')
 $userEntries = @('chats', 'outputs', 'settings')
 $wizardEntries = @('unins000.exe', 'unins000.dat', 'unins000.msg')

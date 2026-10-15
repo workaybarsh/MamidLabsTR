@@ -103,6 +103,12 @@ Source: "..\..\agent\profiles.json"; Flags: dontcopy
 [Run]
 Filename: "{app}\launch-mamidlabs-desktop.vbs"; Description: "MamidLabs'i şimdi aç"; Flags: postinstall shellexec nowait skipifsilent; Check: LauncherExists
 
+[InstallDelete]
+; Yeniden adlandirilan eski "qwen" motor adli ust duzey dosyalar surum yukseltmesinde
+; kalmasin (Inno ignoreversion eski dosyayi silmez).
+Type: files; Name: "{app}\qwen-desktop.ps1"
+Type: files; Name: "{app}\launch-qwen-desktop.vbs"
+
 [UninstallDelete]
 ; Asil temizligi scripts\uninstall-mamidlabs.ps1 yapar (CurUninstallStepChanged): surecleri
 ; durdurur, modelleri/onbellekleri/sohbetleri, bu kuruluma ait masaustu kisayolunu ve
@@ -120,6 +126,8 @@ Type: filesandordirs; Name: "{app}\requirements"
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\mamidlabs-desktop.ps1"
 Type: files; Name: "{app}\launch-mamidlabs-desktop.vbs"
+Type: files; Name: "{app}\qwen-desktop.ps1"
+Type: files; Name: "{app}\launch-qwen-desktop.vbs"
 Type: files; Name: "{app}\README.md"
 Type: files; Name: "{app}\LICENSE"
 Type: files; Name: "{app}\EULA.txt"

@@ -12,6 +12,12 @@ modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışı
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
 ### Düzeltildi
+- **Yeniden adlandırılan eski motor dosyaları güncellemede geride kalmıyor.** Motor/altyapı adları
+  MamidLabs'a taşındığında üst düzey `qwen-desktop.ps1` / `launch-qwen-desktop.vbs` dosyaları eski
+  kurulumlarda kalıyordu (Inno `ignoreversion` / `Copy-Item -Force` eski dosyayı silmez). `layout`
+  artık bu adları kökten ve `kurulum-kaynak`ten siler (`Remove-LegacyTopFiles`); `.iss`
+  `[InstallDelete]` (yükseltme) + `[UninstallDelete]` (kaldırma) ve kaldırıcı `$programEntries`
+  aynı adları hedefler.
 - **Normal başlatılan uygulamada sesli giriş çalışmıyordu: `HF_HOME` çalışma anında hiç
   ayarlanmıyordu.** Ses modelleri (whisper large-v3-tr + AST ses olayı modeli) kurulum kökünün HF
   önbelleğinde (`tools\hf-home`) durur; kurulum `HF_HOME`'u oraya yalnızca kurulum sırasında ayarlar.

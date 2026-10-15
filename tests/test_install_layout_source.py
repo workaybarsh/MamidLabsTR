@@ -51,3 +51,21 @@ def test_layout_copies_eula_to_root_and_source_package():
     # .iss de ayni kume ile uyusmali.
     iss = read_text("packaging/windows/mamidlabs.iss")
     assert 'Source: "..\\..\\EULA.txt"; DestDir: "{app}\\kurulum-kaynak"' in iss
+
+
+def test_layout_removes_legacy_renamed_top_files():
+    """Yeniden adlandirilan eski motor dosyalari (`qwen-desktop.ps1` / `launch-qwen-desktop.vbs`)
+    guncellemede geride kalmamali: Inno `ignoreversion` / `Copy-Item -Force` eski dosyayi silmez.
+    `layout` hem koke hem `kurulum-kaynak`e temizler; .iss `[InstallDelete]`/`[UninstallDelete]`
+    ve kaldirici `$programEntries` ayni adlari hedefler."""
+    script = read_text("scripts/install-mamidlabs.ps1")
+    assert "function Remove-LegacyTopFiles" in script
+    # Tanim + iki cagri (kok ve kurulum-kaynak).
+    assert script.count("Remove-LegacyTopFiles") >= 3
+    assert "'qwen-desktop.ps1', 'launch-qwen-desktop.vbs'" in script
+    iss = read_text("packaging/windows/mamidlabs.iss")
+    assert "[InstallDelete]" in iss
+    assert 'Type: files; Name: "{app}\\qwen-desktop.ps1"' in iss
+    assert 'Type: files; Name: "{app}\\launch-qwen-desktop.vbs"' in iss
+    uninstall = read_text("scripts/uninstall-mamidlabs.ps1")
+    assert "'qwen-desktop.ps1', 'launch-qwen-desktop.vbs'" in uninstall

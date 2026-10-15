@@ -301,6 +301,19 @@ function Remove-ProgramExcludes([string]$agentDir) {
     }
 }
 
+# Yeniden adlandirilan eski "qwen" motor adli UST DUZEY dosyalar guncellemede geride kalmasin:
+# Inno `ignoreversion` / `Copy-Item -Force` eski dosyayi SILMEZ. Klasor icindeki yeniden
+# adlandirmalar zaten sahip olunan klasorler bosaltilirken temizlenir; yalnizca ust duzey
+# dosyalar (kok + kurulum-kaynak) burada elle silinir. .iss [InstallDelete]/[UninstallDelete]
+# ve kaldirici $programEntries ayni adlari hedefler.
+function Remove-LegacyTopFiles([string]$dir) {
+    if (!$dir -or !(Test-Path -LiteralPath $dir)) { return }
+    foreach ($legacy in @('qwen-desktop.ps1', 'launch-qwen-desktop.vbs')) {
+        $path = Join-Path $dir $legacy
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Invoke-Layout {
     Write-Step 'Klasor duzeni ve program dosyalari'
     $folders = @(
@@ -366,6 +379,9 @@ function Invoke-Layout {
         Write-Ok ('Program dosyalari kopyalandi -> ' + $Root)
     }
 
+    # Eski "qwen" motor adli ust duzey dosyalar (varsa) guncellemede kalmasin.
+    Remove-LegacyTopFiles $Root
+
     # Sihirbazla kurulmus bir kok, program kaynagini {kok}\kurulum-kaynak altinda da tutar;
     # Inno iptal/geri alma ve yeniden kurulum bunu kullanir. Betik tabanli guncelleme
     # (bu asama) bu klasoru tazelemedigi icin onceki surumden kaliyordu; varsa ayni [Files]
@@ -402,6 +418,7 @@ function Invoke-Layout {
             }
             # .iss ile ayni dislama (agent onbellekleri) kaynak pakette de uygulanir.
             Remove-ProgramExcludes (Join-Path $kaynak 'agent')
+            Remove-LegacyTopFiles $kaynak
             $doc = Join-Path $Source 'docs\kurulum.md'
             if (Test-Path -LiteralPath $doc -PathType Leaf) {
                 New-Item -ItemType Directory -Path (Join-Path $kaynak 'docs') -Force | Out-Null
