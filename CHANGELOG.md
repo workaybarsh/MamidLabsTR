@@ -11,6 +11,12 @@ düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-ser
 modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
+### Belgeler
+- **README'ye "Platform desteği" bölümü eklendi.** Linux ve macOS portları
+  **deneysel** olarak işaretlendi ve tek tıkla o depolara götüren tıklanabilir
+  platform başlıkları (rozetler) eklendi; hızlı menüye de "Platform desteği"
+  bağlantısı eklendi.
+
 ### Düzeltildi
 - **Kısmi web başarısızlığı artık "arama başarısız" sayılmıyor.** Gerçek bir turda 7 web çağrısının
   4'ü başarılı olduğu hâlde yanıta "[İnternet araması başarısız oldu…]" notu ekleniyordu: not,
