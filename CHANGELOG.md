@@ -12,6 +12,15 @@ modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışı
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
 ### Düzeltildi
+- **Kısmi web başarısızlığı artık "arama başarısız" sayılmıyor.** Gerçek bir turda 7 web çağrısının
+  4'ü başarılı olduğu hâlde yanıta "[İnternet araması başarısız oldu…]" notu ekleniyordu: not,
+  `webToolFailCount > 0` koşuluna bağlıydı ve tek bir sayfanın 403 dönmesi ya da bir sorgunun
+  "sonuç yok" demesi aramayı başarısız gösteriyordu. Artık "web erişimi kurulamadı" kararı
+  **web denendi VE hiç başarılı çağrı olmadı** koşuluna bağlıdır (`webToolFailCount -gt 0 -and
+  -not webToolSuccess`); en az bir web çağrısı veri getirdiyse görünür not eklenmez, modele
+  "internet yok" sistem notu verilmez, ağ-probe komutları reddedilmez ve web araçları kilitlenmez.
+  Aynı düzeltme `Add-WebFailureNote`, `run_command` ağ-probe bloğu ve ana döngüdeki sistem
+  notu/araç kilidi için tutarlı uygulandı. Test: `tests/test_generation_intent_guard.py`.
 - **Yeniden adlandırılan eski motor dosyaları güncellemede geride kalmıyor.** Motor/altyapı adları
   MamidLabs'a taşındığında üst düzey `qwen-desktop.ps1` / `launch-qwen-desktop.vbs` dosyaları eski
   kurulumlarda kalıyordu (Inno `ignoreversion` / `Copy-Item -Force` eski dosyayı silmez). `layout`

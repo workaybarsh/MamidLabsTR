@@ -78,8 +78,10 @@ def test_worker_refuses_unprompted_generation_calls():
 
 
 def test_web_failure_note_is_appended(tmp_path):
-    """Web araci basarisiz olduysa ve yanit bunu belirtmiyorsa durust bir not eklenir;
-    zaten belirtiliyorsa yanit degismez."""
+    """Web araci DENENIP HIC basarili olmadiysa ve yanit bunu belirtmiyorsa durust bir not
+    eklenir; zaten belirtiliyorsa yanit degismez. Kismi basarisizlik (bir sayfa 403 / bir
+    sorgu 'sonuc yok') aramayi basarisiz YAPMAZ: en az bir web cagrisi basarili olduysa
+    'arama basarisiz' notu eklenmez (gercek testte 7 cagrinin 4'u basariliydi)."""
     pwsh = shutil.which("pwsh")
     if not pwsh:
         pytest.skip("pwsh bulunamadi")
@@ -91,6 +93,7 @@ def test_web_failure_note_is_appended(tmp_path):
         "$script:webToolFailCount = 0; $r['none'] = Add-WebFailureNote 'merhaba'\n"
         "$script:webToolFailCount = 1; $r['plain'] = Add-WebFailureNote 'merhaba'\n"
         "$script:webToolFailCount = 1; $r['ack'] = Add-WebFailureNote 'Web aramasi basarisiz oldu.'\n"
+        "$script:webToolFailCount = 1; $script:webToolSuccess = $true; $r['mixed'] = Add-WebFailureNote 'merhaba'\n"
         "$r | ConvertTo-Json -Compress -EscapeHandling EscapeNonAscii\n"
     )
     script = tmp_path / "note.ps1"
@@ -102,6 +105,7 @@ def test_web_failure_note_is_appended(tmp_path):
     assert got["none"] == "merhaba"
     assert "İnternet araması başarısız" in got["plain"]
     assert got["ack"] == "Web aramasi basarisiz oldu."
+    assert got["mixed"] == "merhaba"
 
 
 def test_document_tool_requires_a_document_context():
@@ -196,6 +200,10 @@ def test_strict_fabrication_guard_strips_citations_and_blocks_current_info(tmp_p
         # Web basarili -> metin aynen kalir.
         "$script:webToolAttempted = $true; $script:webToolSuccess = $true\n"
         f"$r['web_ok'] = Get-FinalAnswer 'Sonuc: iPhone 16. Kaynak: https://apple.com' {cur} $true\n"
+        # Kismi basarisizlik: bir cagri 403/bos dondu ama baska cagrilar veriyi getirdi
+        # -> 'arama basarisiz' notu EKLENMEZ ve atiflar korunur (gercek test bulgusu).
+        "$script:webToolFailCount = 1; $script:webToolAttempted = $true; $script:webToolSuccess = $true\n"
+        f"$r['partial'] = Get-FinalAnswer 'Zonguldak yarin 21 derece. Kaynak: https://www.hurriyet.com.tr/hava-durumu/zonguldak/' {cur} $true\n"
         "$r | ConvertTo-Json -Compress -EscapeHandling EscapeNonAscii\n"
     )
     script = tmp_path / "strict.ps1"
@@ -209,6 +217,7 @@ def test_strict_fabrication_guard_strips_citations_and_blocks_current_info(tmp_p
     assert "reversed()" in got["strip"]
     assert "docs.python.org" in got["no_web"]
     assert "apple.com" in got["web_ok"] and "iPhone 16" in got["web_ok"]
+    assert "hurriyet.com.tr" in got["partial"] and "İnternet araması başarısız" not in got["partial"]
 
 
 def test_friendly_error_message_maps_raw_dotnet(tmp_path):

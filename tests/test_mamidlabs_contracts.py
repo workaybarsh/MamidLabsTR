@@ -148,7 +148,7 @@ def test_web_tool_failure_is_detected_and_discourages_workarounds():
     # 2. web hatasindan sonra web araclari modele artik sunulmaz (arama dongusunu engeller).
     # (F1 baglam korumasi birinci kosul oldu; web-hatasi dali elseif olarak korunur.)
     assert "$offeredTools = if ($forceFinalAnswer)" in inference
-    assert "elseif ($script:webToolFailCount -ge 2)" in inference
+    assert "elseif ($script:webToolFailCount -ge 2 -and !$script:webToolSuccess)" in inference
     # Kullanici dosya sormadiysa dosya araclari da sunulmaz (cevabi dosyalarda aramasin).
     assert "function Test-FileIntent" in inference
     assert "$blocked += @('list_bound_files', 'read_bound_file')" in inference

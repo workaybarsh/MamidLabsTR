@@ -814,6 +814,11 @@ function Test-WebToolFailure([string]$name, $result) {
 # basarisiz oldu" bilgisini MUTLAKA gorur, arama yapilmis gibi sunulmaz.
 function Add-WebFailureNote([string]$text) {
     if ($script:webToolFailCount -le 0 -or [string]::IsNullOrWhiteSpace($text)) { return $text }
+    # Kismi basarisizlik "arama basarisiz" DEGILDIR: bir sayfa 403 verirken ya da bir sorgu
+    # "sonuc yok" donerken BASKA cagrilar veriyi getirdiyse yanit gercek kaynaga dayanir.
+    # Not yalnizca web DENENIP HIC basarili olmadiysa eklenir (bkz. gercek test: 7 web
+    # cagrisinin 4'u basariliydi ama yanita "arama basarisiz" notu dusuluyordu).
+    if ($script:webToolSuccess) { return $text }
     $normalized = ($text.ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD) -replace '\p{Mn}', '') -replace 'ı', 'i'
     if ($normalized -match 'basarisiz|basaramad|ulasila|baglanti (kurul|yok)|internet (yok|baglant|erisim)|kaynak (yok|bulun)|dogrulanam|error|failed|unavailable|unable to|could not') { return $text }
     return $text + "`n`n[İnternet araması başarısız oldu; yanıttaki bilgiler güncel bir kaynaktan doğrulanamadı.]"
@@ -1045,7 +1050,7 @@ function Invoke-Tool([string]$name, $arguments, [string]$folder) {
         # uymadigi icin ag-probe komutlari calistirilmadan reddedilir; model kullaniciya
         # web erisiminin kurulamadigini soyler. Kullanicinin acik komut istegini etkilemez
         # cunku yalnizca web hatasindan SONRA ve yalnizca ag-probe komutlarinda devreye girer.
-        if ($script:webToolFailCount -gt 0 -and
+        if ($script:webToolFailCount -gt 0 -and !$script:webToolSuccess -and
             $command -match '(?i)(^|[^a-z])(ping|tracert|traceroute|pathping|nslookup|resolve-dnsname|test-netconnection|test-connection|curl|wget|invoke-webrequest|invoke-restmethod|\biwr\b|\birm\b|telnet|ftp|ssh|ipconfig|netstat|\barp\b|\broute\b)([^a-z]|$)') {
             return 'Web araci basarisiz oldugu icin ag komutu calistirilmadi. Etrafindan dolasmiyoruz; kullaniciya web erisiminin su an kurulamadigini soyle ve sonucu uydurma.'
         }
@@ -2142,7 +2147,7 @@ try {
         # bulgularla gorunur bir yanit yazmasini iste.
         $offeredTools = if ($forceFinalAnswer) {
             @()
-        } elseif ($script:webToolFailCount -ge 2) {
+        } elseif ($script:webToolFailCount -ge 2 -and !$script:webToolSuccess) {
             $blocked = @('search_web', 'fetch_page', 'find_reference_image')
             if (!(Test-FileIntent $userText)) { $blocked += @('list_bound_files', 'read_bound_file') }
             @($toolDefinitions | Where-Object { $_.function.name -notin $blocked })
@@ -2169,7 +2174,7 @@ try {
                 'teshis ya da alternatif komut onerme ve sonucu tahmin edip sunma. Yanitinda yalnizca islemin, kullanici izin ' +
                 'vermedigi icin yapilmadigini kisaca soyle; istersen tekrar isteyebilecegini belirt.')
         }
-        if ($script:webToolFailCount -gt 0) {
+        if ($script:webToolFailCount -gt 0 -and !$script:webToolSuccess) {
             if ($script:webToolFailCount -ge 2) {
                 $systemNotes += (
                     'Web erisimi artik ACIKCA KURULAMIYOR (ust uste basarisiz oldu). Web aramayi/sayfa indirmeyi ' +
