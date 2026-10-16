@@ -9,12 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/workaybarsh/MamidLabsTR"><img src="https://img.shields.io/badge/Windows-kararl%C4%B1-0078D4?style=flat-square&logo=windows&logoColor=white" alt="Windows (kararlı)"></a>
-  <a href="https://github.com/workaybarsh/mamidlabs_linux"><img src="https://img.shields.io/badge/Linux-deneysel-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux (deneysel)"></a>
-  <a href="https://github.com/workaybarsh/mamidlabs_mac"><img src="https://img.shields.io/badge/macOS-deneysel-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS (deneysel)"></a>
-</p>
-
-<p align="center">
   <b>Tamamen yerel çalışan, çok modlu yapay zekâ çalışma alanı</b><br>
   Sohbet · Web araması · Belge · OCR · Ses dökümü · Görsel anlama · Görsel ve video üretimi · Fotoğraf düzenleme · Grafik çizimi
 </p>
@@ -50,26 +44,11 @@ API sağlayıcıları için kullanılır.
 MamidLabs **Windows** için üretilmiştir ve kararlı sürüm burasıdır. Aynı ürünün iki
 **deneysel** portu da vardır; ikisi de aynı araç kümesini ve sabitleri paylaşır:
 
-| Platform | Depo | Kurulum | Durum |
-|---|---|---|---|
-| **Windows** (bu depo) | `MamidLabsTR` / `MamidLabsENG` | `MamidLabs_Setup.exe` | **Kararlı** (PowerShell + WinForms) |
-| **Linux** | [workaybarsh/mamidlabs_linux](https://github.com/workaybarsh/mamidlabs_linux) | `.deb` (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
-| **macOS** | [workaybarsh/mamidlabs_mac](https://github.com/workaybarsh/mamidlabs_mac) | `.dmg` (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
-
-### Ayrıca Linux ve macOS için de var
-
-> **Also available for Linux and macOS.**
->
-> Windows dışındaki platformlar **deneysel** portlardır: arayüz Python + PySide6
-> (Qt6) ile yeniden yazılmıştır ve aynı modelleri (llama.cpp + ComfyUI) kullanır.
-> Her ikisi de TR/ENG arayüz dili seçimini ilk adımda soran bir **kurulum
-> sihirbazı** ile gelir.
->
-> - **Linux** → **[workaybarsh/mamidlabs_linux](https://github.com/workaybarsh/mamidlabs_linux)** — `.deb` paketi; sihirbaz donanımı ölçüp LITE/PRO profilini önerir.
-> - **macOS** → **[workaybarsh/mamidlabs_mac](https://github.com/workaybarsh/mamidlabs_mac)** — `.dmg` paketi; öneri Apple Silicon ve birleşik belleğe göre yapılır.
->
-> Windows sürümü bu depoda kararlı olarak kalır; Linux ve macOS portları
-> geliştirme aşamasındadır.
+| Platform | Kurulum | Durum |
+|---|---|---|
+| **Windows** (bu depo) | [MamidLabs_Setup.exe](https://github.com/workaybarsh/MamidLabsTR/releases/latest/download/MamidLabs_Setup.exe) | **Kararlı** (PowerShell + WinForms) |
+| **[Linux](https://github.com/workaybarsh/mamidlabs_linux)** | [.deb](https://github.com/workaybarsh/mamidlabs_linux/releases/latest/download/mamidlabs.deb) (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
+| **[macOS](https://github.com/workaybarsh/mamidlabs_mac)** | [.dmg](https://github.com/workaybarsh/mamidlabs_mac/releases/latest/download/MamidLabs.dmg) (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
 
 <p align="center">
   <img src="docs/media/sultan-papagani-terbiyecisi.jpg" alt="Sultan papağanlarını besleyen, kırmızı kaftanlı ve sarıklı yaşlı adam; çini süslemeli bir iç mekân" width="560">

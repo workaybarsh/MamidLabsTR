@@ -16,6 +16,16 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   **deneysel** olarak işaretlendi ve tek tıkla o depolara götüren tıklanabilir
   platform başlıkları (rozetler) eklendi; hızlı menüye de "Platform desteği"
   bağlantısı eklendi.
+- **README'nin platform bölümü sadeleştirildi.** Başlık altındaki platform
+  rozetleri ("etiketler") kaldırıldı; "Linux → depo" ve "macOS → depo"
+  satırlarındaki ok ve ayrı depo bağlantısı kaldırıldı, "Depo" sütunu tablodan
+  çıkarıldı. **Linux** ve **macOS** yazılarının kendisi tıklanabilir oldu ve
+  ilgili depoya yönlendiriyor. Kurulum sütunundaki `MamidLabs_Setup.exe`, `.deb`
+  ve `.dmg` tıklanabilir ve **doğrudan indirmeye** gider
+  (`releases/latest/download/...`). "Also available for Linux and macOS" bölümü
+  kaldırıldı. (`mamidlabs_linux` ve `mamidlabs_mac` depolarına, `v*` etiketinde
+  sabit adlı (`mamidlabs.deb` / `MamidLabs.dmg`) paketleri yükleyen GitHub Actions
+  iş akışları eklendi.)
 
 ### Düzeltildi
 - **`test_python_tool_sets_hf_home_for_child` kırılganlığı giderildi (CI'da bir kez düştü).**
