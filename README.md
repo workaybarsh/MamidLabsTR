@@ -47,8 +47,8 @@ MamidLabs **Windows** için üretilmiştir ve kararlı sürüm burasıdır. Ayn�
 | Platform | Kurulum | Durum |
 |---|---|---|
 | **Windows** (bu depo) | [MamidLabs_Setup.exe](https://github.com/workaybarsh/MamidLabsTR/releases/latest/download/MamidLabs_Setup.exe) | **Kararlı** (PowerShell + WinForms) |
-| **[Linux](https://github.com/workaybarsh/mamidlabs_linux)** | [.deb](https://github.com/workaybarsh/mamidlabs_linux/releases/latest/download/mamidlabs.deb) (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
-| **[macOS](https://github.com/workaybarsh/mamidlabs_mac)** | [.dmg](https://github.com/workaybarsh/mamidlabs_mac/releases/latest/download/MamidLabs.dmg) (kurulum sihirbazı) | **Deneysel** (Python 3.12 + PySide6) |
+| **[Linux](https://github.com/workaybarsh/mamidlabs_linux)** | [mamidlabs.deb](https://github.com/workaybarsh/mamidlabs_linux/releases/latest/download/mamidlabs.deb) | **Deneysel** (Python 3.12 + PySide6) |
+| **[macOS](https://github.com/workaybarsh/mamidlabs_mac)** | [MamidLabs.dmg](https://github.com/workaybarsh/mamidlabs_mac/releases/latest/download/MamidLabs.dmg) | **Deneysel** (Python 3.12 + PySide6) |
 
 <p align="center">
   <img src="docs/media/sultan-papagani-terbiyecisi.jpg" alt="Sultan papağanlarını besleyen, kırmızı kaftanlı ve sarıklı yaşlı adam; çini süslemeli bir iç mekân" width="560">

@@ -26,6 +26,10 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   kaldırıldı. (`mamidlabs_linux` ve `mamidlabs_mac` depolarına, `v*` etiketinde
   sabit adlı (`mamidlabs.deb` / `MamidLabs.dmg`) paketleri yükleyen GitHub Actions
   iş akışları eklendi.)
+- **README'nin Kurulum sütunu artık gerçek dosya adlarını gösteriyor.**
+  `.deb (kurulum sihirbazı)` / `.dmg (kurulum sihirbazı)` yerine Linux ve macOS
+  satırları `mamidlabs.deb` / `MamidLabs.dmg` yazar; Windows satırındaki
+  `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider.
 
 ### Düzeltildi
 - **`test_python_tool_sets_hf_home_for_child` kırılganlığı giderildi (CI'da bir kez düştü).**
