@@ -743,16 +743,29 @@ def test_python_tool_sets_hf_home_for_child(tmp_path):
     gercek Python)."""
     worker = read_text("agent/mamidlabs-inference.ps1")
     probe = tmp_path / "probe.py"
-    probe.write_text("import os\nprint(os.environ.get('HF_HOME',''))\n", encoding="utf-8")
+    # Alt surec HF_HOME'u HEM stdout'a HEM yanindaki isaretci dosyaya yazar; boylece iddia
+    # pwsh'in kendi stdout'una bagimli olmaz (yuklu bir kosucuda ara sira bos donup testi
+    # kirilgan yapiyordu).
+    probe.write_text(
+        "import os, pathlib\n"
+        "value = os.environ.get('HF_HOME', '')\n"
+        "print(value)\n"
+        "pathlib.Path(__file__).with_name('hf_home.txt').write_text(value, encoding='utf-8')\n",
+        encoding="utf-8")
     script = _invoke_python_tool_harness(worker) + f"""
 $shared = @{{ Cancel = $false }}
 $out = Invoke-PythonTool @{{}} '{probe}' '{sys.executable}' 15
 'HF=' + $out.Trim()
 """
     out = _run_ps1(script, tmp_path)
+    marker = tmp_path / "hf_home.txt"
+    assert marker.is_file(), out
+    value = marker.read_text(encoding="utf-8").strip().replace("/", "\\").lower()
+    assert value.endswith(r"tools\hf-home"), value
+    # pwsh'in kendi ciktisi da (gelirse) ayni degeri gostermeli.
     lines = [line for line in out.splitlines() if line.startswith("HF=")]
-    assert lines, out
-    assert lines[0][3:].replace("/", "\\").lower().endswith(r"tools\hf-home")
+    if lines:
+        assert lines[0][3:].replace("/", "\\").lower().endswith(r"tools\hf-home")
 
 
 def test_worker_maps_selected_profile_to_asr_tier():

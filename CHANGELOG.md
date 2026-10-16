@@ -18,6 +18,13 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   bağlantısı eklendi.
 
 ### Düzeltildi
+- **`test_python_tool_sets_hf_home_for_child` kırılganlığı giderildi (CI'da bir kez düştü).**
+  Test, `Invoke-PythonTool`'un alt sürece `HF_HOME` verdiğini yalnızca `pwsh`'in kendi
+  stdout'undan okuyordu; yüklü bir koşucuda bu çıktı ara sıra boş dönüyor ve test
+  **sahte kırmızı** veriyordu. Artık alt süreç `HF_HOME` değerini probe dosyasının
+  yanına `hf_home.txt` olarak da yazar; asıl iddia bu dosyaya bakar (dosya sistemi
+  kesin sinyal) ve `pwsh` çıktısı geldiğinde ek olarak doğrulanır. Aynı düzeltme ENG
+  sürümüne de uygulandı.
 - **Kısmi web başarısızlığı artık "arama başarısız" sayılmıyor.** Gerçek bir turda 7 web çağrısının
   4'ü başarılı olduğu hâlde yanıta "[İnternet araması başarısız oldu…]" notu ekleniyordu: not,
   `webToolFailCount > 0` koşuluna bağlıydı ve tek bir sayfanın 403 dönmesi ya da bir sorgunun
