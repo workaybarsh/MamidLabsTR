@@ -11,6 +11,13 @@ düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-ser
 modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
+### Değişti
+- **Lisans PolyForm Strict 1.0.0 oldu (kaynak-açık; yalnızca ticari olmayan kullanım).**
+  `LICENSE` ve `EULA.txt` resmî PolyForm Strict 1.0.0 metnini taşır: yazılımı dağıtma ve
+  değiştirme/türev eser üretme hakkı verilmez; ticari kullanım için önceden yazılı izin gerekir.
+  README lisans bölümü, `docs/kurulum.md` ve lisans testi buna göre güncellendi. Sürüm numarası
+  değişmedi (1.0.0).
+
 ### Belgeler
 - **README'ye "Platform desteği" bölümü eklendi.** Linux ve macOS portları
   **deneysel** olarak işaretlendi ve tek tıkla o depolara götüren tıklanabilir

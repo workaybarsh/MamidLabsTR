@@ -46,7 +46,7 @@ MamidLabs **Windows** için üretilmiştir ve kararlı sürüm burasıdır. Ayn�
 
 | Platform | Kurulum | Durum |
 |---|---|---|
-| **Windows** (bu depo) | [MamidLabs_Setup.exe](https://github.com/workaybarsh/MamidLabsTR/releases/latest/download/MamidLabs_Setup.exe) | **Kararlı** (PowerShell + WinForms) |
+| **Windows** | [MamidLabs_Setup.exe](https://github.com/workaybarsh/MamidLabsTR/releases/latest/download/MamidLabs_Setup.exe) | **Kararlı** (PowerShell + WinForms) |
 | **[Linux](https://github.com/workaybarsh/mamidlabs_linux)** | [mamidlabs.deb](https://github.com/workaybarsh/mamidlabs_linux/releases/latest/download/mamidlabs.deb) | **Deneysel** (Python 3.12 + PySide6) |
 | **[macOS](https://github.com/workaybarsh/mamidlabs_mac)** | [MamidLabs.dmg](https://github.com/workaybarsh/mamidlabs_mac/releases/latest/download/MamidLabs.dmg) | **Deneysel** (Python 3.12 + PySide6) |
 
@@ -206,9 +206,11 @@ Aşağıdaki görseller ve videolar MamidLabs ile yerelde üretilmiştir.
 
 ## Lisans
 
-MamidLabs kaynak kodu tescillidir ve kapalı tutulur (özel depo); **tüm hakları saklıdır** ve telif
-hakkı Aybars Haydar Altuntaş'a aittir. Yazılı izin olmadan kullanılamaz, kopyalanamaz,
-değiştirilemez veya dağıtılamaz. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.
+MamidLabs kaynak kodu **PolyForm Strict License 1.0.0** ile lisanslanmıştır (kaynak-açık;
+yalnızca **ticari olmayan** kullanım). Yazılımı dağıtamaz, değiştiremez veya üzerinde türev eser
+üretemezsiniz; ticari kullanım için Hak Sahibinden önceden yazılı izin gerekir. Telif hakkı
+Aybars Haydar Altuntaş'a aittir. Ayrıntılar için [LICENSE](LICENSE) dosyasına ve
+https://polyformproject.org/licenses/strict/1.0.0 adresine bakın.
 Kullanılan modeller (Qwen, Krea 2, Krea 2 Identity Edit LoRA, Wan 2.2 vb.) ve üçüncü taraf
 bileşenler (llama.cpp, ComfyUI, ComfyUI-GGUF, comfyui-krea2edit vb.) kendi lisanslarına tabidir; bu
 lisans onları kapsamaz.
