@@ -32,6 +32,18 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider.
 
 ### Düzeltildi
+- **PRO/FLASH hızını yarıya düşüren VRAM taşması, otomatik 32K → 16K bağlam düşüşüyle
+  giderildi.** Canlı ölçüm (llama.cpp'nin kendi tampon raporu, RTX 5060 Ti 16 GB) 27B'nin
+  **32K bağlamda gerçek GPU ayak izinin ~15,77 GiB** olduğunu gösterdi (model tamponu 13945 MiB +
+  KV 576 MiB + recurrent-state tamponu 598,5 MiB + hesap ~112 MiB + CUDA bağlamı); normal bir
+  Windows masaüstü ise yalnızca **~15,50 GiB boş** bırakır. Eski sabit **750 MiB** pay (eşik 15350)
+  bu yüzden 32K yüklemeyi kabul ediyor ve **~400 MiB Windows paylaşılan belleğine taşıyarak** üretimi
+  **~40 tok/s'den ~27 tok/s'ye** düşürüyordu. Pay artık **bağlam-duyarlıdır** (32K'da 1200 MiB,
+  16K'da 800; LITE'ta 300 değişmedi) ve MAX/FLASH **önce 32K dener, tam sığmazsa 16K'ya düşer** —
+  aynı model ve ağırlıklar, yarım KV cache — böylece model tümüyle VRAM'de kalır (ölçülen 16K ayak
+  izi 15324 MiB, ~40 tok/s, taşma yok). Seçilen bağlam hem bellek kapısını hem `--ctx-size`'ı
+  belirler ve arayüz gerçek bağlamı çalışan sunucudan (`/props` → `default_generation_settings.n_ctx`)
+  **geri okur**, böylece sıkıştırma eşiği uyuşur. Sürüm değişmedi (`MyAppVersion` 1.0.0 kalır).
 - **`test_python_tool_sets_hf_home_for_child` kırılganlığı giderildi (CI'da bir kez düştü).**
   Test, `Invoke-PythonTool`'un alt sürece `HF_HOME` verdiğini yalnızca `pwsh`'in kendi
   stdout'undan okuyordu; yüklü bir koşucuda bu çıktı ara sıra boş dönüyor ve test

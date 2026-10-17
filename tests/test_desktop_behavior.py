@@ -504,3 +504,20 @@ def test_desktop_captures_manager_stderr_for_specific_errors():
     assert "function Format-ModelSwitchError" in desktop
     assert "Format-ModelSwitchError $detail" in desktop
 
+
+def test_desktop_reads_the_real_context_back_from_the_server():
+    """MAX/FLASH arayuz varsayilanindan DAHA KUCUK bir baglamla yuklenebilir:
+    manage-mamidlabs.ps1 once 32K dener, 32K VRAM'e tam sigmazsa 16K'ya duser. Sikistirma esigi
+    sunucunun GERCEK baglamini izlemelidir; yoksa uzun bir tur --ctx-size'i asip hata verir. Bu
+    yuzden model hazir oldugunda arayuz /props'un n_ctx'ini okur ve ctxLimit/compactAt'i gunceller."""
+    desktop = (ROOT / "mamidlabs-desktop.ps1").read_text(encoding="utf-8-sig")
+    assert "$script:effectiveCtxAlias" in desktop
+    assert "if ($script:activeModel -ne $script:effectiveCtxAlias)" in desktop
+    assert "default_generation_settings.n_ctx" in desktop
+    # Okuma, model-hazir gecisine baglanmis olmali: modelReady'nin kuruldugu yerde.
+    idx_ready = desktop.index("$script:modelReady = $true")
+    idx_props = desktop.index("default_generation_settings.n_ctx")
+    assert idx_ready < idx_props
+    # compactAt GERCEK baglamdan yeniden hesaplanir; 32K varsayilaninda birakilmaz.
+    assert "$script:compactAt = [int]($realCtx * 0.67)" in desktop
+

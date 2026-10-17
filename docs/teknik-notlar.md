@@ -53,7 +53,8 @@ Başlatma: masaüstündeki **MamidLabs** kısayolu → `launch-mamidlabs-desktop
 | FLASH (hızlı) | Qwen3.8 27B IQ4_XS | 32K | `low` | 8192 | ~42-58 token/s |
 | LITE (8 GB) | Huihui-Qwen3.5 9B Q5_K_M | 32K | sınırsız (bütçe yok) | 8192 | ~40–79 token/s (8 GB) · ~97 token/s (16 GB) |
 
-MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam, `--gpu-layers 99`, flash-attn açık,
+MAX ve FLASH aynı 27B dosyasını paylaşır: 32K bağlam (32K VRAM'e tam sığmazsa otomatik 16K'ya
+düşülür, bkz. bellek bütçesi bölümü), `--gpu-layers 99`, flash-attn açık,
 KV cache q4_0, görsel projektörü (mmproj) CPU'da (`--no-mmproj-offload`; GPU'da 16 GB karta
 sığmayıp paylaşılan belleğe taşıyordu). Sağ alttaki seçiciyi **değiştirmezsen model yeniden yüklenmez**.
 
@@ -79,20 +80,29 @@ MTP layers" ile açılmaz. Gerekirse `%LOCALAPPDATA%\Programs\MamidLabs\settings
 
 ### 16 GB bellek bütçesi (MAX/FLASH)
 
-RTX 5060 Ti 16 GB üzerinde llama.cpp'nin bellek dökümüyle ölçüldü (32K bağlam):
+RTX 5060 Ti 16 GB üzerinde llama.cpp'nin kendi tampon raporuyla ölçüldü (llama.cpp b10998, q4_0 KV,
+MTP açık):
 
 | Bileşen | VRAM |
 |---|---|
-| Model ağırlıkları (GPU kısmı; `token_embd` CPU'da kalır) | 13.729 MiB |
-| KV önbelleği (q4_0) | 576 MiB |
-| Recurrent durum | 150 MiB |
-| Hesap tamponu | 184 MiB |
-| **Toplam** | **~14.640 MiB** |
+| Model ağırlıkları (GPU kısmı; `token_embd` CPU'da kalır) | 13.945 MiB |
+| KV önbelleği (q4_0) | 288 MiB @16K · 576 MiB @32K |
+| Recurrent durum | 598,5 MiB (sabit; küçültülemez) |
+| Hesap tamponu | 112 MiB |
+| CUDA bağlamı | ~380 MiB |
+| **Toplam ayak izi** | **~15,3 GiB @16K · ~15,8 GiB @32K** |
 
 Görsel projektör GPU'da ağırlık ve hesap tamponuyla 1.133 MiB daha istiyordu; toplam boş alanı
 aşıp ~420 MiB paylaşılan belleğe taşıyordu. Projektör CPU'ya alınınca sohbet 19,6'dan 25,0 tok/s'ye,
-tek görsel okuma 56–58 sn'den 29 sn'ye indi. `scripts/manage-mamidlabs.ps1` içindeki bellek kontrolü
-model dosyası + 750 MiB ister (eşik 15350 = ölçülen ayak izi). **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
+tek görsel okuma 56–58 sn'den 29 sn'ye indi.
+
+**32K bağlam normal bir masaüstüne sığmaz:** yalnızca Windows masaüstü açıkken boş VRAM ~15,5 GiB
+iken 32K bağlam ~15,8 GiB ister; bu yüzden ~400 MiB paylaşılan belleğe taşıyor ve sohbet ~40'tan
+~27 tok/s'ye düşüyordu. 16K'da ayak izi 15.324 MiB olur, tam sığar ve ~40 tok/s ile çalışır.
+`scripts/manage-mamidlabs.ps1` içindeki bellek kontrolü bu yüzden **bağlam-duyarlıdır**
+(`Get-ModelOverheadMiB`: 1200 MiB @32K, 800 @16K, altında 600) ve MAX/FLASH **önce 32K dener, 32K
+tam sığmazsa 16K'ya düşer** (aynı ağırlıklar, yarım KV cache). Seçilen değer `--ctx-size` için de
+kullanılır ve arayüz gerçek bağlamı sunucudan geri okur, böylece sıkıştırma eşiği uyuşur. **ComfyUI yaşam döngüsü** (`settings/api.json` → `comfyKeepAlive`,
 varsayılan `false`): ComfyUI **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil
 modeli yüklenmeden önce kapatılır, böylece boşta ne VRAM ne RAM tutar (boşta ComfyUI ~300 MiB CUDA
 bağlamı + süreç RAM'i tutuyordu). Medya gerektiğinde yeniden açılır (~27 sn). MAX/FLASH'ta dil
@@ -284,6 +294,7 @@ Yorumu:
 | 2. turda `onbellekten gelen` ≈ 0 | Prompt öneki değişiyor; KV önbelleği kullanılmıyor |
 | ön işleme < ~200 token/s | Katmanlar GPU'da değil ya da VRAM taşıyor |
 | üretim < ~12 token/s | VRAM taşması (Windows paylaşılan bellek) kuvvetle muhtemel |
+| PRO'da üretim ~27 tok/s | 32K bağlam tam sığmadı ve ~400 MiB paylaşılan belleğe taştı; otomatik 16K düşüşü bunu önler (bkz. bellek bütçesi bölümü) |
 | VRAM %95+ | `--ctx-size` düşür veya `--image-min-tokens` küçült |
 
 Yanıt boş kalırsa (düşünme tek başına yanıt için ayrılan tokenları tüketmiş olabilir) tek bir

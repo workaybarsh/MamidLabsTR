@@ -47,8 +47,8 @@ function Get-Functions([string]$path) {
 def test_memory_budget_function_exists_and_is_called_before_start():
     manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "function Test-MemoryBudget" in manager
-    # Gorsel projektoru de VRAM'e yuklendigi icin butceye dahil edilir.
-    assert "Test-MemoryBudget $model $Profile $projector" in manager
+    # Projektor butceye GIRMEZ: uc profilde de CPU'da calisir.
+    assert "Test-MemoryBudget $model $Profile $projector $candidate" in manager
     # Tek GPU sahibi: bizim CUDA baglamimiz (ComfyUI) olcumden once ele alinir. Varsayilan
     # acik tutmak; mukerrer/kacak varsa kapatilir; butce yetmezse kapatilip tekrar olculur.
     # Bkz. test_idle_comfy_is_kept_open_but_leaks_are_cleaned.
@@ -56,7 +56,7 @@ def test_memory_budget_function_exists_and_is_called_before_start():
     # Kontrol, dosya varlik kontrollerinden SONRA (model yolu belliyken) ama
     # model sureci baslatilmadan ONCE calismali; ComfyUI kapatma da olcumden once.
     idx_comfy = manager.index("[void](Stop-IdleComfy)")
-    idx_check = manager.index("Test-MemoryBudget $model $Profile $projector")
+    idx_check = manager.index("Test-MemoryBudget $model $Profile $projector $candidate")
     idx_start = manager.index("$child = Start-DetachedProcess $server")
     assert idx_comfy < idx_check < idx_start
 
@@ -138,39 +138,48 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
     assert "$profileName -eq 'lite'" in line
 
 
-def test_max_budget_requires_a_full_vram_fit():
-    """RTX 5060 Ti 16 GB'ta ölçüldü: 27B dosyası 14600 MiB ama GPU'da (KV cache q4_0 önceden
-    ayrılır + hesap tamponları + MTP draft bağlamı) ~15378-15444 MiB yer kaplar; gerçek pay
-    ~778-844 MiB'dır. Pay 600 (eşik 15200) iken 15200-15450 arası yüklemeler sessizce
-    paylaşılan belleğe taşıp sohbeti ~20 tok/s'ye düşürüyordu. Pay 850 (eşik 15450) ile model
-    ancak TAM sığacaksa yüklenir; taşma oluşmaz (ölçüm: 15529 MiB boş -> tam sığdı ~55 tok/s;
-    15095 MiB -> taştı ~30 tok/s). Asıl koruma yine ComfyUI'nin her zaman kapatılmasıdır."""
+def test_max_budget_margin_is_context_aware_and_prevents_spill():
+    """RTX 5060 Ti 16 GB'ta 27B ile llama.cpp'nin KENDI raporundan olculdu (b10998, q4_0 KV,
+    MTP acik): CUDA0 model tamponu 13945 MiB, KV cache 576 MiB @32768 / 288 @16384,
+    recurrent-state tamponu 598,5 MiB (sabit), hesap tamponu ~112 MiB. Yani agirlik disi pay
+    32K'da ~1200 MiB, 16K'da yalnizca ~800 MiB'dir. Eski SABIT 750 MiB pay (esik 15350) yalnizca
+    ~15,50 GiB bos VRAM varken 32K'yi kabul ediyordu: ~400 MiB Windows paylasilan bellegine
+    TASIYOR ve sohbet ~40'tan ~27 tok/s'ye dusuyordu. Olculen ayak izleri (dedicated+shared)
+    15324 MiB @16384 (tasik yok, ~40 tok/s) ve ~15770 @32768 (tasti)."""
     import re
 
     manager = read_text("scripts/manage-mamidlabs.ps1")
-    match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
-    assert match, "profil-farkinda overheadMiB satiri bulunamadi"
-    overhead = int(match.group(2))  # else dali = MAX/FLASH
-    assert overhead == 750, "MAX/FLASH tam-sigma payi 750 (esik 15350 = olculen ayak izi) olmali; tasmayi onleyen EN DUSUK esik"
-    max_model_mib = 14600
-    threshold = max_model_mib + overhead  # 15350
-    full_fit_free = 15529  # olculdu: tam sigdi, ~55 tok/s
-    spill_free = 15095     # olculdu: tasti, ~30 tok/s
-    assert threshold <= full_fit_free, "tam-sigma durumu kabul edilmeli"
-    assert threshold > spill_free, "tasacak durum REDDEDILMELI (spill onlenir)"
+    assert "function Get-ModelOverheadMiB" in manager
+    m32 = re.search(r"if \(\$ctx -ge 32768\) \{ return (\d+) \}", manager)
+    m16 = re.search(r"if \(\$ctx -ge 16384\) \{ return (\d+) \}", manager)
+    assert m32, "32K pay girisi bulunamadi"
+    assert m16, "16K pay girisi bulunamadi"
+    model_mib = 14600
+    threshold_32k = model_mib + int(m32.group(1))  # 15800
+    threshold_16k = model_mib + int(m16.group(1))  # 15400
+    free_normal_desktop = 15497  # yalnizca Windows masaustu acikken olculdu
+    assert threshold_16k <= free_normal_desktop, "16K normal masaustune sigmali"
+    assert threshold_32k > free_normal_desktop, "32K tasacaksa YUKLENMEMELI"
+    assert threshold_32k >= 15770, "32K payi olculen tasmis ayak izini kapsamali"
+
+
+def test_max_flash_falls_back_from_32k_to_16k_context():
+    """MAX/FLASH once 32K dener, 32K VRAM'e tam sigmazsa 16K'ya duser (eskiden paylasilan
+    bellege tasiyordu). Secilen baglam HEM bellek kapisina HEM --ctx-size'a verilir."""
+    manager = read_text("scripts/manage-mamidlabs.ps1")
+    assert "$ctxCandidates = if ($Profile -eq 'lite') { @([int]$liteCtx) } else { @(32768, 16384) }" in manager
+    assert "foreach ($candidate in $ctxCandidates)" in manager
+    assert "if ($chosenCtx) { $modelCtx = $chosenCtx; $budgetOk = $true; break }" in manager
+    assert "'--ctx-size', \"$modelCtx\", '--predict', $predict, '--parallel', '1'" in manager
 
 
 def test_lite_budget_is_not_tightened_by_the_max_fix():
-    """Kök neden düzeltmesi (pay artışı, tolerans 0) yalnızca 16 GB profillerine
-    uygulanmalı. LITE 8 GB kartta zaten sınırda çalışır ve küçük aşımı llama.cpp
-    (token_embd CPU'da) kaldırır; pay orada büyütülürse çalışan LITE kurulumu boşa
-    reddedilirdi. Bu yüzden LITE payı 300 MiB ve toleransı 1024 kalmalı."""
-    import re
-
+    """Bağlam-duyarli pay (ve 32K -> 16K düşüşü) yalnızca 16 GB profillerine uygulanmalı.
+    LITE 8 GB kartta sınırda çalışır ve küçük aşımı llama.cpp (token_embd CPU'da) kaldırır;
+    pay orada büyütülürse çalışan LITE kurulumu boşa reddedilirdi. Bu yüzden LITE payı
+    300 MiB ve toleransı 1024 kalmalı."""
     manager = read_text("scripts/manage-mamidlabs.ps1")
-    match = re.search(r"\$overheadMiB = if \(\$profileName -eq 'lite'\) \{ (\d+) \} else \{ (\d+) \}", manager)
-    assert match, "profil-farkinda overheadMiB satiri bulunamadi"
-    assert int(match.group(1)) == 300, "LITE payi buyutulmus (LITE kurulumu bozulur)"
+    assert "if ($profileName -eq 'lite') { return 300 }" in manager
     tol = next((l for l in manager.splitlines() if "$toleranceMiB = if" in l), "")
     assert "{ 1024 } else { 0 }" in tol
 
@@ -203,7 +212,7 @@ def test_orphan_app_gpu_workers_are_cleaned_before_model_load():
     assert "(whisper-tools|ocr-tools)" in manager
     # Butce kontrolunden ONCE calisir (model sureci baslatilmadan once VRAM temizligi).
     idx_clean = manager.index("[void](Stop-OrphanWorkers)")
-    idx_check = manager.index("Test-MemoryBudget $model $Profile $projector")
+    idx_check = manager.index("Test-MemoryBudget $model $Profile $projector $candidate")
     assert idx_clean < idx_check
 
 

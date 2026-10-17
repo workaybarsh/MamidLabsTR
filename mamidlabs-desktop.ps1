@@ -105,6 +105,9 @@ $chatDir = Join-Path $root 'chats'
 if (!(Test-Path -LiteralPath $chatDir)) { New-Item -ItemType Directory -Path $chatDir -Force | Out-Null }
 $script:ctxLimit = 32768
 $script:compactAt = 22000
+# Gercek sunucu baglami zaten okunmus alias (bkz. model hazir zamanlayicisi): yonetici
+# MAX/FLASH'i arayuz varsayilanindan DAHA KUCUK bir baglamla yukleyebilir (32K -> 16K dususu).
+$script:effectiveCtxAlias = $null
 
 $chatMessages = New-Object System.Collections.ArrayList
 $bubbles = New-Object System.Collections.ArrayList
@@ -3430,6 +3433,21 @@ $timer.Add_Tick({
         if (!$active -or $active -ne (Get-SelectedLocalAlias)) { throw 'Seçilen model henüz hazır değil' }
         $script:activeModel = $active
         $script:modelReady = $true
+        # Yonetici modeli arayuz varsayilanindan DAHA KUCUK bir baglamla yukleyebilir: MAX/FLASH
+        # once 32K dener, 32K VRAM'e tam sigmazsa 16K'ya duser (bkz. manage-mamidlabs.ps1).
+        # Sikistirma esigi sunucunun GERCEK baglamini izlemelidir; yoksa uzun bir tur --ctx-size'i
+        # asip hata verir. Yukleme basina bir kez okunur.
+        if ($script:activeModel -ne $script:effectiveCtxAlias) {
+            $script:effectiveCtxAlias = $script:activeModel
+            try {
+                $props = Invoke-RestMethod 'http://127.0.0.1:8080/props' -TimeoutSec 2 -ErrorAction Stop
+                $realCtx = [int]$props.default_generation_settings.n_ctx
+                if ($realCtx -gt 0 -and $realCtx -ne [int]$script:ctxLimit) {
+                    $script:ctxLimit = $realCtx
+                    $script:compactAt = [int]($realCtx * 0.67)
+                }
+            } catch { }
+        }
         if ($script:pendingSend) { Begin-Generation }
         $state = if ($script:busy) { 'Yanıtlıyor' } elseif ($script:multiImageOcrMode) { 'Çoklu görsel okuma aktif' } else { 'Hazır' }
         $warn = if ($script:contextTokens -gt $script:compactAt) { '  [sıkıştırma sırada]' } else { '' }

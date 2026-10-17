@@ -104,11 +104,12 @@ def test_max_flash_server_args_are_locked():
     """MAX/FLASH (else) sunucu argumanlari KILITLI: gercek 16 GB makinede smoke'la dogrulanmistir.
     Sessiz bir duzenleme PRO'yu bozabilir; bu test demetin tamamini kilitler (mmproj CPU'da,
     --image-min-tokens 1024, batch 512/256, threads 6/12, xhigh/low; MTP yalnizca GGUF'ta MTP
-    varsa eklenir)."""
+    varsa eklenir). Baglam calisma aninda secilir: `$modelCtx` VRAM'e tam sigarsa 32768, aksi
+    halde 16384 olur (bkz. test_memory_admission.py)."""
     manager = read_text("scripts/manage-mamidlabs.ps1")
     for frag in [
         "'--model', $model, '--mmproj', $projector, '--no-mmproj-offload', '--image-min-tokens', '1024'",
-        "'--ctx-size', '32768', '--predict', $predict, '--parallel', '1'",
+        "'--ctx-size', \"$modelCtx\", '--predict', $predict, '--parallel', '1'",
         "'--gpu-layers', '99', '--flash-attn', 'on', '--cache-type-k', 'q4_0'",
         "'--cache-type-v', 'q4_0', '--cache-reuse', '256', '--batch-size', '512', '--ubatch-size', '256'",
         "'--threads', '6', '--threads-batch', '12', '--jinja', '--reasoning', 'on'",

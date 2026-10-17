@@ -74,7 +74,26 @@ $ownsGate = $false
 # baslama karari verir. GPU'yu baska bir uygulama tutuyorsa llama-server
 # baslatilmaz; aksi halde katmanlar Windows'un paylasilan bellegine tasar ve sohbet
 # kat kat yavaslar. Kullaniciya nedeni acikca soylenir.
-function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$projectorPath) {
+# Agirlik disi VRAM payi (KV cache + recurrent-state tamponu + hesap tamponlari + CUDA
+# baglami) RTX 5060 Ti 16 GB'da 27B MAX/FLASH icin llama.cpp'nin KENDI raporundan okundu
+# (llama.cpp b10998, q4_0 KV, MTP acik): CUDA0 model tamponu 13945 MiB, KV 144 MiB @8192 /
+# 288 @16384 / 576 @32768, recurrent-state tamponu 598,5 MiB (sabit), hesap tamponu 76-112 MiB;
+# kalan CUDA baglamidir. Yani KV cache 1K token basina ~18 MiB buyur, gerisi sabittir.
+# Olculen GPU ayak izi (dedicated + shared): 15112 MiB @8192, 15324 @16384,
+# ~15770 @32768. 32K degeri SABIT 750 MiB payinin neden yanlis oldugunu gosterir: yalnizca
+# ~15,50 GiB bos VRAM varken modeli kabul ediyordu, bu yuzden ~400 MiB Windows paylasilan
+# bellegine tasip sohbet ~40'tan ~27 tok/s'ye dusuyordu. LITE kendi kucuk payini korur
+# (9B zaten 8 GB karta sigar).
+function Get-ModelOverheadMiB([string]$profileName, [int]$ctx) {
+    if ($profileName -eq 'lite') { return 300 }
+    if ($ctx -ge 32768) { return 1200 }
+    if ($ctx -ge 16384) { return 800 }
+    return 600
+}
+
+# $ctx, modelin yuklenecegi baglam boyutudur; payin KV-cache kismi buna bagli oldugundan
+# tahmin baglama duyarli yapilir.
+function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$projectorPath, [int]$ctx) {
     $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
     if (!$smi) { return }  # NVIDIA suruculeri yoksa kontrol anlamsiz; asil hata llama-server'dan gelir.
     $freeMiB = 0
@@ -97,44 +116,40 @@ function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$pr
     # VRAM tutarken) varsayilan profili sessizce reddedip kullaniciyi calisan bir
     # kurulumdan mahrum birakirdi.
     #
-    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, 32K baglam, MTP acik, llama.cpp):
-    # 14600 MiB'lik dosya GPU'da (KV cache q4_0 onceden ayrilir + hesap tamponlari + MTP
-    # draft baglami) ~15378-15444 MiB yer kaplar; yani GERCEK tam-sigma ihtiyaci ~15380'dir.
-    # "Bos vramin tamamini kullan" icin --gpu-layers 99 KORUNUR (modeli tumuyle VRAM'e koyar;
-    # tam siginca ~55 tok/s). llama.cpp'nin --fit otomatik yerlestirmesi denendi ve daha
-    # TEMKINLI cikti (tum VRAM'i kullanmadi, ~23 tok/s) - bu yuzden kullanilmaz.
-    # Pay tam-sigma ihtiyacina gore 750 MiB'dir (esik 15350 = olculen model ayak izi): model tam
-    # sigacaksa yuklenir ve TUM bos VRAM'i kullanir; altinda tasacagi icin net "yetersiz VRAM"
-    # mesaji verilir. (Bu, tasmayi onleyen EN DUSUK esiktir; daha asagisi tasmaya izin verir.)
+    # MAX/FLASH gercek olcum (RTX 5060 Ti 16 GB, MTP acik, llama.cpp; kirilimi icin
+    # Get-ModelOverheadMiB'e bak): 14600 MiB'lik dosya arti sabit tamponlar gercek GPU ayak
+    # izini 16K baglamda ~15,32 GiB, 32K baglamda ~15,77 GiB yapar (llama.cpp'nin kendi KV
+    # raporu: 288 / 576 MiB). "Bos VRAM'in tamamini kullan" icin --gpu-layers 99 KORUNUR
+    # (modeli tumuyle VRAM'e koyar; tam siginca ~40-55 tok/s). llama.cpp'nin --fit otomatik
+    # yerlestirmesi denendi ve daha TEMKINLI cikti (tum VRAM'i kullanmadi, ~23 tok/s) - bu
+    # yuzden kullanilmaz.
+    # Pay bu yuzden baglama duyarlidir (16K'da 800 MiB, 32K'da 1200 MiB = olculen ayak izi):
+    # model ancak tam sigacaksa yuklenir ve TUM bos VRAM'i kullanir; altinda tasacagi icin
+    # net "yetersiz VRAM" mesaji verilir. Cagiran once 32K dener, 32K sigmazsa 16K'ya duser
+    # (bkz. asagidaki baglam secimi).
     # ASIL koruma, bos VRAM'e bakmaktan cok ComfyUI'nin HER ZAMAN kapatilmasidir
-    # (bkz. asagidaki akis): baska bir CUDA baglami varken pay yetse/VRAM "bos"
-    # gorunse bile surucu bellegi parcalar ve model paylasilan bellege tasip
-    # ~6 tok/s'ye duser (15.290 MiB bos + baska baglam -> 6 tok/s olculdu).
+    # (bkz. asagidaki akis): baska bir CUDA baglami varken VRAM "bos" gorunse bile surucu
+    # bellegi parcalar ve model paylasilan bellege tasip ~6 tok/s'ye duser.
     #
     # LITE'ta pay BILEREK kucuk (300 MiB) ve tolerans genistir: 8 GB kartta model zaten
     # sinirda calisir; llama.cpp buyuk gomme tensorunu CPU'da tutup kucuk asimi sorunsuz
-    # kaldirir ve sohbet hizini korur (icerige bagli ~40-79 tok/s; bkz. asagidaki tolerans
-    # notu). Pay burada buyutmek, ayni ambiyans kosullarinda (tarayici + masaustu ~1,5 GB
-    # VRAM tutarken) LITE'i bos yere reddedip calisan kurulumu bozardi.
-    # Pay GERCEK tam-sigma ihtiyacini karsilamalidir: 27B dosyasi 14600 MiB ama GPU'da
-    # (KV cache q4_0 onceden ayrilir + hesap tamponlari + MTP draft baglami) ~15378-15444 MiB
-    # yer kaplar; yani gercek pay ~778-844 MiB'dir. Pay 600 iken bos VRAM 15200-15450 arasi
-    # olan yuklemeler sessizce PAYLASILAN bellege tasiyor ve sohbet ~20 tok/s'ye dusuyordu.
-    # Pay 850 (esik 15450) ile model ancak TAM SIGACAKSA yuklenir: tasma hic olusmaz, ya tam
-    # hizda calisir ya da net "yetersiz VRAM" mesaji verir (bkz. asagidaki tolerans notu).
-    $overheadMiB = if ($profileName -eq 'lite') { 300 } else { 750 }
+    # kaldirir ve sohbet hizini korur (icerige bagli ~40-79 tok/s). Pay burada buyutmek,
+    # calisan bir LITE kurulumunu bos yere reddederdi.
+    $overheadMiB = Get-ModelOverheadMiB $profileName $ctx
     $neededMiB = $modelMiB + $overheadMiB
     # llama.cpp, VRAM tam yetmediginde buyuk gomme (token_embd) tensorunu CPU'da tutar ve
     # kucuk bir asimi sorunsuz kaldirir. LITE'ta MTP basligi dosyayi ~464 MiB buyutur; 8 GB
     # kartta model sinirda kalir, ama projektor CPU'da oldugundan artik 7249/8188 MiB'ye
     # yerlesir (708 MiB bos) ve asim olusmaz. Yine de LITE icin tolerans genis tutulur:
     # ambiyans/ASR gecisi sirasinda olusabilecek kucuk asim engellenmez.
-    # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: model ancak TAM sigacaksa yuklenir (bkz. pay
-    # notu). Kucuk bir asim bile paylasilan bellege tasma demektir; taşan model ~20 tok/s'ye
-    # dustugu icin (olculdu: 15244 MiB bos -> 27B tam sigdi ~55 tok/s; 15095 MiB -> tasti
-    # ~30 tok/s) paylasilan bellege calismasina izin verilmez. Bos alan yetmezse kullaniciya
-    # net "yetersiz VRAM" mesaji gosterilir; tarayici gibi GPU kullanan uygulamalar kapatilinca
-    # bos alan artar ve model tam hizda yuklenir.
+    # MAX/FLASH (16 GB) icin tolerans SIFIRDIR: model ancak TAM sigacaksa yuklenir ve, acik bir
+    # CUDA baglami (ComfyUI) varken kucuk bir asim bile bir bileseni paylasilan bellege itip
+    # uretimi ~6 tok/s'ye dusurur. Bu yuzden olcumden once ComfyUI her zaman kapatilir (bkz.
+    # asagidaki akis); asim toleransla kabul edilmez.
+    # Olculdu (RTX 5060 Ti): 32K baglamda 15095-15497 MiB bos VRAM'de 27B TASTI (~400 MiB
+    # paylasilan bellege, ~27 tok/s); 16K baglamda 15497 MiB bosta TAM SIGDI (15324 MiB,
+    # ~40 tok/s). Bu yuzden tasacagi bilinen bir yapilandirmayi yuklemek yerine baglam
+    # sigacak sekilde secilir (32K -> 16K dususu).
     $toleranceMiB = if ($profileName -eq 'lite') { 1024 } else { 0 }
     if ($freeMiB -lt ($neededMiB - $toleranceMiB)) {
         throw ("Yetersiz bos VRAM: $freeMiB MiB bos, `"$profileName`" profili icin " +
@@ -349,19 +364,31 @@ try {
     # bir YARIS vardir: transkripsiyon/PaddleOCR alt sureci cikar ama WDDM VRAM'i aninda
     # serbest birakmaz; hemen baslayan dil modeli "yer yetmiyor" ile reddedilir ve model
     # kapali kalir. Bu yuzden yer kontrolu sinirli kez (kisa araliklarla) yeniden denenir.
+    # Baglam secimi (MAX/FLASH): once 32K denenir, sigmazsa 16K'ya dusulur. Olculdu: 32K,
+    # 16 GB kartta ~15,77 GiB ister ama normal bir Windows masaustu yalnizca ~15,50 GiB
+    # bos birakir; bu yuzden yuklendiginde ~400 MiB paylasilan bellege tasip sohbet
+    # ~27 tok/s'ye dusuyordu. 16K'da ayak izi ~15,32 GiB olur, tam sigar ve ~40 tok/s ile
+    # calisir (ayni model/agirliklar, yarim KV cache). Secilen baglam HEM bellek kapisinda
+    # HEM asagidaki --ctx-size'ta kullanilir; arayuz gercek degeri calisan sunucudan geri
+    # okur (bkz. mamidlabs-desktop.ps1). LITE kendi baglamini korur ve dususu yoktur
+    # (9B zaten 8 GB karta sigar).
+    $ctxCandidates = if ($Profile -eq 'lite') { @([int]$liteCtx) } else { @(32768, 16384) }
+    $modelCtx = $ctxCandidates[0]
     if (!$SkipMemoryCheck) {
         $budgetOk = $false
         $lastBudgetError = $null
         $attempts = 8
         for ($attempt = 1; $attempt -le $attempts; $attempt++) {
-            try { Test-MemoryBudget $model $Profile $projector; $budgetOk = $true; break }
-            catch {
-                $lastBudgetError = $_
-                # Ilk denemede ComfyUI acik olabilir: kuyruk bossa kapat ve hemen tekrar dene.
-                if ($attempt -eq 1 -and (Stop-IdleComfy)) { continue }
-                # ASR/OCR alt surecinin VRAM'i birakmasi icin kisa bekleme (toplam ~7 sn).
-                if ($attempt -lt $attempts) { Start-Sleep -Milliseconds 1000 }
+            $chosenCtx = $null
+            foreach ($candidate in $ctxCandidates) {
+                try { Test-MemoryBudget $model $Profile $projector $candidate; $chosenCtx = $candidate; break }
+                catch { $lastBudgetError = $_ }
             }
+            if ($chosenCtx) { $modelCtx = $chosenCtx; $budgetOk = $true; break }
+            # Ilk denemede ComfyUI acik olabilir: kuyruk bossa kapat ve hemen tekrar dene.
+            if ($attempt -eq 1 -and (Stop-IdleComfy)) { continue }
+            # ASR/OCR alt surecinin VRAM'i birakmasi icin kisa bekleme (toplam ~7 sn).
+            if ($attempt -lt $attempts) { Start-Sleep -Milliseconds 1000 }
         }
         if (!$budgetOk) { throw $lastBudgetError }
     }
@@ -407,7 +434,7 @@ try {
         $serverArgs = @(
             '--model', $model, '--mmproj', $projector, '--no-mmproj-offload', '--image-min-tokens', '1024',
             '--alias', $desiredAlias, '--host', '127.0.0.1', '--port', '8080',
-            '--ctx-size', '32768', '--predict', $predict, '--parallel', '1',
+            '--ctx-size', "$modelCtx", '--predict', $predict, '--parallel', '1',
             '--gpu-layers', '99', '--flash-attn', 'on', '--cache-type-k', 'q4_0',
             '--cache-type-v', 'q4_0', '--cache-reuse', '256', '--batch-size', '512', '--ubatch-size', '256',
             '--threads', '6', '--threads-batch', '12', '--jinja', '--reasoning', 'on',

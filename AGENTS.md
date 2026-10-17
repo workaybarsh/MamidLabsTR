@@ -141,9 +141,14 @@ MAX ve FLASH aynı dosyaları kullandığı için kurulum sihirbazında ve Profi
 Kimliğe göre yapılan aramalar (`Get-ProfileEntry`, `Get-ProfileState`,
 `Test-LocalProfileChatFilesPresent`) tam kataloğu (`Get-ProfileCatalog`) kullanmalıdır.
 
-**VRAM kontrolü** (`Test-MemoryBudget`): gereken = model dosyası + **750 MiB**
-(MAX/FLASH; LITE'ta 300 MiB); görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
-olduğundan bütçeye girmez. **ComfyUI yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
+**VRAM kontrolü** (`Test-MemoryBudget`, `Get-ModelOverheadMiB` ile bağlam-duyarlı): gereken = model
+dosyası + **32K bağlamda 1200 MiB / 16K'da 800 MiB** (MAX/FLASH; LITE'ta 300 MiB, değişmedi);
+görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
+olduğundan bütçeye girmez. **MAX/FLASH bağlam seçimi:** önce 32K denenir; tahmini ayak izi boş
+VRAM'e sığmazsa **16K'ya düşülür** (aynı model/ağırlıklar, yarım KV cache); seçilen değer hem
+bellek kapısına hem `--ctx-size`'a verilir ve arayüz gerçek değeri çalışan sunucudan geri okur
+(`/props` → `default_generation_settings.n_ctx`), böylece sıkıştırma eşiği uyuşur. **ComfyUI
+yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
 **yalnızca görsel/video üretimi sırasında** çalışır; iş bitince ve dil modeli yüklenmeden önce
 kapatılır — böylece **boşta ne VRAM ne de RAM tutar** (boşta ComfyUI ~300 MiB CUDA bağlamı + süreç
 RAM'i tutuyordu; `comfyKeepAlive` varsayılanı `false`). Medya gerektiğinde yeniden açılır (~27 sn).
@@ -163,14 +168,16 @@ sağlıklı örnek zaten 2 süreçtir. Örnekler, parent'i ComfyUI eşleşmeyen 
 Bütçe yetmezse ComfyUI kapatılıp yeniden ölçülür (güvenlik ağı). Açık temizlik için `manage-mamidlabs.ps1`
 `-Action closecomfy`. ComfyUI'yi yeniden açmanın maliyeti medya işi başına ~27 sn
 (ölçüldü: soğuk 55 sn, sıcak 28 sn).
-Ölçüm: 27B dosyası 14.600 MiB ama GPU'da (KV cache q4_0 + hesap tamponları + MTP draft bağlamı)
-**~15350 MiB** yer kaplar. Pay bu yüzden MAX/FLASH'ta **750 MiB** (eşik 15350 = ölçülen ayak izi):
-model ancak **tam sığacaksa** yüklenir ve **tüm boş VRAM'i kullanır**; normal masaüstünde (tarayıcı
-kapalı, ~15450+ boş) **hatasız yüklenir**, altında taşacağı için net "yetersiz VRAM" mesajı verilir.
-Bu, taşmayı önleyen **en düşük** eşiktir. `--gpu-layers 99` korunur (modeli tümüyle VRAM'e koyar;
-tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi ve daha **temkinli**
-çıktı (tüm VRAM'i kullanmadı, ~23 tok/s), bu yüzden kullanılmaz.
-Ölçüm: 27B tam sığdığında ~44–58 tok/s, LITE ~97 tok/s.
+Ölçüm (llama.cpp b10998, RTX 5060 Ti 16 GB): 27B dosyası 14.600 MiB ama gerçek GPU ayak izi
+**16K bağlamda ~15,32 GiB**, **32K'da ~15,77 GiB** (llama.cpp'nin kendi raporu: model tamponu
+13945 MiB, KV 288/576 MiB, recurrent-state tamponu 598,5 MiB, hesap ~112 MiB). Normal bir Windows
+masaüstü yalnızca ~15,50 GiB boş bırakır; bu yüzden 32K eskiden **~400 MiB paylaşılan belleğe
+taşıyor ve sohbeti ~40'tan ~27 tok/s'ye düşürüyordu**. Pay bu yüzden bağlam-duyarlıdır (800/1200 MiB
+= ölçülen ayak izi); kapı **önce 32K dener, tam sığmazsa 16K'ya düşer**, böylece model ancak **tam
+sığacaksa** yüklenir ve **tüm boş VRAM'i kullanır**. `--gpu-layers 99` korunur (modeli tümüyle
+VRAM'e koyar; tam sığınca ~55 tok/s); llama.cpp'nin `--fit` otomatik yerleştirmesi denendi ve daha
+**temkinli** çıktı (tüm VRAM'i kullanmadı, ~23 tok/s), bu yüzden kullanılmaz.
+Ölçüm: 27B tam sığdığında ~40–58 tok/s (16K düşüşü ~40, 32K ~44–58), LITE ~97 tok/s.
 Model yüklenmeden önce uygulamaya ait **artık GPU işçileri** (boşta kalmış kalıcı ses işçisi ya da
 OCR işçisi) de otomatik kapatılır (`Stop-OrphanWorkers`); böylece VRAM temizliği otomatiktir ve
 yalnızca kurulum kökü altındaki MamidLabs süreçlerine dokunulur.
@@ -375,7 +382,7 @@ yalnızca kurulum kökü altındaki MamidLabs süreçlerine dokunulur.
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~150 sn (481 toplanır; 477 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~180 sn (483 toplanır; 479 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -406,7 +413,7 @@ python -m pytest -q          # ~150 sn (481 toplanır; 477 geçti, 4 atlandı); 
 
 | | 16 GB (RTX 5060 Ti) FLASH | 8 GB (RTX 4060 Laptop) LITE |
 |---|---|---|
-| Sohbet | ~42–58 tok/s (MTP açık) | ~97 tok/s (16 GB'ta MTP ile) |
+| Sohbet | ~40–58 tok/s (MTP açık; 32K ~44–58, 16K düşüşü ~40) | ~97 tok/s (16 GB'ta MTP ile) |
 | Görsel (`yeni`), uçtan uca | 60–95 sn | 68–139 sn |
 | Görselden yeniden üretim (`yeniden_uret`) | ölçülmedi | ~110–140 sn |
 | Fotoğraf düzenleme (`kimlik_duzenle`) | 74–160 sn (tek/iki görsel) | **desteklenmiyor** |
@@ -424,7 +431,7 @@ iş 641–884 sn sürer (16 GB'taki sürenin 5–8 katı). Küçük LoRA (r64) d
 LITE'ta mod hiç sunulmaz, `imagegen-run.ps1` ikinci savunma olarak reddeder ve katalogda LoRA yoktur.
 
 **Ses dökümü ve VRAM bağlamı (ölçülmüş):** ses dökümü (faster-whisper large-v3 + AST) GPU'da
-~3,9 GB tutar; 27B (~15350 MiB) ile aynı 16 GB karta **sığmaz**, bu yüzden döküm öncesi dil modeli
+~3,9 GB tutar; 27B (~15,3–15,8 GiB) ile aynı 16 GB karta **sığmaz**, bu yüzden döküm öncesi dil modeli
 kapatılır (mecburi swap). Yükleme + boşaltma sonrası süreçte kalan CUDA bağlamı **~140 MiB** ölçüldü
 (oyun açıkken 8860 → 8720 MiB boş). Bu yüzden **sıcak ses işçisi** dil modeli geri yüklenmeden önce
 DURDURULUR ve tur sonunda arka planda yeniden başlatılır: işçi henüz transkript yapmadıysa CUDA
@@ -449,9 +456,14 @@ bağlamı zaten yoktur, dolayısıyla boşta VRAM tutmaz ve 27B'nin ince payın�
    kullanıcı mesajına koy.
 6. **`Start-DetachedProcess` kullan.** `Start-Process -Redirect…` çağıranın stdout borusunu
    devralır ve `manage-mamidlabs | …` asılı kalır.
-7. **VRAM payı profile göre tutulur** (MAX/FLASH 750 MiB, LITE 300 MiB). Pay, ölçülen model ayak
-   izine eşittir (27B GPU'da ~15350 MiB): model ancak **tam sığacaksa** yüklenir, **tüm boş VRAM'i
-   kullanır** ve **taşmaz**; normal masaüstünde hatasız açılır. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
+7. **VRAM payı bağlam-duyarlı ve profile göre tutulur** (MAX/FLASH 32K'da 1200 MiB / 16K'da
+   800 MiB, LITE 300 MiB) ve tolerans
+   LITE 1024 / MAX/FLASH 0'dır. Pay, ölçülen model ayak izine eşittir (27B GPU'da 16K'da ~15,3 GiB /
+   32K'da ~15,8 GiB):
+   model ancak **tam sığacaksa** yüklenir, **tüm boş VRAM'i kullanır** ve **taşmaz**; normal
+   masaüstü yalnızca ~15,5 GiB boş bıraktığından kapı **önce 32K dener, tam sığmazsa 16K'ya düşer**
+   (taşacağı bilinen bir 32K'yı yüklemek yerine). Bu düşüş olmadan 27B ~400 MiB paylaşılan belleğe
+   taşıp ~40'tan ~27 tok/s'ye düşüyordu. **ComfyUI** varsayılan olarak yalnızca medya üretiminde çalışır (boşta ne VRAM ne RAM tutar) ve dil modeli yüklenmeden önce kapatılır; LITE'ta `comfyKeepAlive=true` ile medya işleri arasında açık tutulabilir. Kaçak/mükerrer örnek her profilde önce temizlenir (ComfyUI bir süreç çiftidir; örnek **sayısı** değil **kökleri** belirleyicidir).
    Kaçak örnek 27B paylaşılan belleğe taşıp 0,89 tok/s'ye düşer. MAX/FLASH'ta mmproj CPU'da
    (`--no-mmproj-offload`). GPU'ya alınırsa ~420 MiB paylaşılan belleğe taşar ve hız 25'ten
    19 tok/s'ye düşer. Model yüklenmeden önce uygulamaya ait **artık GPU işçileri** (boşta kalmış
@@ -544,6 +556,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-17 | **32K VRAM taşması, otomatik 32K → 16K bağlam düşüşüyle giderildi (PRO/FLASH hızı yeniden ~40+ tok/s).** Canlı ölçümle bulundu (llama.cpp'nin kendi tampon raporu, RTX 5060 Ti 16 GB): 27B'nin **32K'da gerçek GPU ayak izi ~15,77 GiB** (model tamponu 13945 MiB + KV 576 MiB + recurrent-state tamponu 598,5 MiB + hesap ~112 MiB + CUDA bağlamı) ama normal bir Windows masaüstü yalnızca **~15,50 GiB boş** bırakıyor; bu yüzden eski sabit **750 MiB** pay (eşik 15350) 32K'yı kabul ediyor ve **~400 MiB Windows paylaşılan belleğine taşıp sohbeti ~40'tan ~27 tok/s'ye düşürüyordu**. Düzeltme: pay artık **bağlam-duyarlı** (`Get-ModelOverheadMiB`: 1200 MiB @32K, 800 @16K, altında 600; LITE 300 değişmedi) ve `Test-MemoryBudget` bağlamı alır; MAX/FLASH **önce 32K dener, 32K tam sığmazsa 16K'ya düşer** (aynı ağırlıklar, yarım KV cache; ölçülen 16K ayak izi 15324 MiB, ~40 tok/s, taşma yok). Seçilen bağlam hem kapıya hem `--ctx-size`'a verilir ve arayüz **gerçek bağlamı** çalışan sunucudan (`/props` → `default_generation_settings.n_ctx`) geri okur, böylece `ctxLimit`/`compactAt` uyuşur ve uzun bir tur `--ctx-size`'ı aşamaz. Sürüm değişmedi (`MyAppVersion` 1.0.0 kalır). Testler: `tests/test_memory_admission.py` (bağlam-duyarlı pay + düşüş), `tests/test_lite_profile.py` (kilitli PRO argümanları `$modelCtx` kullanır), `tests/test_desktop_behavior.py` (arayüz geri okuma). | scripts/manage-mamidlabs.ps1, mamidlabs-desktop.ps1, tests/test_memory_admission.py, tests/test_lite_profile.py, tests/test_desktop_behavior.py, docs/teknik-notlar.md, CHANGELOG.md, AGENTS.md |
 | 2026-10-16 | **README'nin Kurulum sütunu artık gerçek dosya adlarını gösteriyor (yalnızca belge).** Linux/macOS satırları `.deb (kurulum sihirbazı)` / `.dmg (kurulum sihirbazı)` yerine `mamidlabs.deb` / `MamidLabs.dmg` yazar; Windows satırındaki `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider. | README.md, CHANGELOG.md, AGENTS.md |
 | 2026-10-16 | **README'nin platform bölümü sadeleştirildi + indirme bağlantıları (yalnızca belge).** Başlık altındaki platform rozetleri ("etiketler") kaldırıldı; "Linux → depo"/"macOS → depo" satırlarındaki ok ve ayrı depo bağlantısı kaldırıldı, "Depo" sütunu tablodan çıkarıldı. **Linux** ve **macOS** yazıları tıklanabilir (ilgili depo); `MamidLabs_Setup.exe`, `.deb` ve `.dmg` **doğrudan indirmeye** gider (`releases/latest/download/...`). "Also available for Linux and macOS" bölümü kaldırıldı. `mamidlabs_linux`/`mamidlabs_mac` depolarına `v*` etiketinde sabit adlı paketleri (`mamidlabs.deb`/`MamidLabs.dmg`) yükleyen iş akışları eklendi. | README.md, CHANGELOG.md, AGENTS.md |
 | 2026-10-16 | **`test_python_tool_sets_hf_home_for_child` kırılganlığı giderildi (CI'da bir kez yanlış kırmızı verdi).** Test, `Invoke-PythonTool`'un alt sürece verdiği `HF_HOME` değerini yalnızca `pwsh`'in kendi stdout'undan okuyordu; yüklü bir koşucuda bu çıktı ara sıra boş dönüyordu ve test **gerçek bir regresyon olmadan** düşüyordu (aynı commit yerelde 8/8 geçti). Artık alt süreç `HF_HOME`'u probe'un yanına `hf_home.txt` olarak da yazar; asıl iddia bu dosyaya bakar, `pwsh` çıktısı geldiğinde ek doğrulama yapılır. Böylece ölçüm, kanal gürültüsünden değil çocuk sürecin gerçek ortamından okunur. ENG sürümüne de uygulandı. | tests/test_transcriber.py, AGENTS.md, CHANGELOG.md |
