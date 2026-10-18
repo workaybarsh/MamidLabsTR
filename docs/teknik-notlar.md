@@ -15,7 +15,8 @@ mamidlabs-desktop.ps1  (WinForms arayüz, tek pencere)
       ├─ agent/mamidlabs-inference.ps1   → llama-server /v1/chat/completions (akış + araç döngüsü)
       │       ├─ agent/mamidlabs-agent-tools.py  → web araması, sayfa okuma, referans görsel bulma
       │       ├─ agent/office-tools.py      → PDF / Word / Excel / PowerPoint oku-yaz
-      │       └─ agent/ocr-tools.py         → düz görselde GPU, PDF'te CPU PaddleOCR
+      │       ├─ agent/ocr-tools.py         → düz görselde GPU, PDF'te CPU PaddleOCR
+      │       └─ agent/rag-tools.py         → bağlı klasörde çevrimdışı BM25 araması (search_folder)
       │
       ├─ agent/imagegen-run.ps1     → VRAM takası + ComfyUI + Krea-2 Turbo
       ├─ agent/videogen-run.ps1     → VRAM takası + ComfyUI + Wan 2.2 TI2V-5B

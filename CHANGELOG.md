@@ -11,6 +11,34 @@ düzenleme, video üretimi ve grafik çizimi. Dil modeli `llama.cpp` (`llama-ser
 modelleri `ComfyUI` üzerinde, kullanıcının NVIDIA ekran kartında çalışır. OpenAI, Claude, Gemini,
 DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır.
 
+### Eklendi
+- **Profil indirmelerinde SHA256 doğrulaması ve yarım indirmeyi sürdürme.** `agent/hf-hub.py`
+  indirilen dosyanın SHA256 özetini Hugging Face'in LFS özetiyle karşılaştırır (katalogda
+  isteğe bağlı `sha256` alanı varsa çevrimdışı da); özet uyuşmazsa dosya silinir ve net hata
+  verilir, sessizce bozuk model kalmaz. Doğrulama MTP enjeksiyonundan **önce** yapılır (enjeksiyon
+  dosyayı değiştirir). Yarım kalan indirme `hf_hub_download` tarafından kaldığı yerden sürdürülür
+  ve işçi bunu durum satırında bildirir. Testler: `tests/test_model_download_integrity.py`.
+- **Otomatik çaba: sorunun zorluğuna göre MAX/FLASH davranışı (model yeniden yüklenmeden).**
+  MAX ve FLASH aynı model olduğundan, profil değiştirmek yerine o tur için `reasoning_effort`
+  istek başına verilir: kısa soru/selamlama `low`, orta `medium`, çok adımlı matematik/kod/analiz
+  `xhigh`. Seçim tur başında bir kez yapılır ve tur boyunca sabit kalır (KV öneki bozulmaz).
+  Profiller menüsündeki **"Otomatik çaba (soruya göre)"** ile kapatılabilir
+  (`settings\api.json → autoEffort`). LITE'ta ve API sağlayıcılarında uygulanmaz.
+  Testler: `tests/test_auto_effort.py`.
+- **Prompt injection sertleştirmesi.** Web sayfası, belge, OCR ve bağlı dosya içeriği modele
+  `[GUVENILMEYEN ICERIK …]` etiketiyle **veri** olarak verilir; sabit sistem istemi içerikteki
+  talimatların uygulanmamasını söyler. O turda güvenilmeyen içerik okunduysa **"Tam erişim"
+  çipinde bile** `run_command` ve `write_bound_file` için onay istenir (`Test-ApprovalRequired`),
+  böylece içeriğe gizlenmiş bir talimat kullanıcı adına işlem yaptıramaz. Testler:
+  `tests/test_prompt_injection.py`.
+- **Yerel RAG: bağlı klasörde çevrimdışı (BM25) arama.** Yeni `search_folder` aracı, bağlı
+  klasörde tek tek dosya okumadan önce ilgili metin parçalarını bulur: `agent/rag-tools.py`
+  düz metin dosyalarını tarar (`node_modules`/`venv`/`.git` atlanır), satır sınırlarını koruyan
+  ~900 karakterlik parçalar üretir ve BM25 + tam öbek bonusuyla sıralar; sonuç `yol:satır`
+  biçiminde döner. İndeks `tools\rag\` altında tutulur ve kaynak dosyalar değişmedikçe yeniden
+  kurulmaz; ek Python paketi gerekmez. Sonuç, diğer dış kaynaklar gibi **güvenilmeyen veri**
+  olarak etiketlenir. Testler: `tests/test_rag_tools.py`.
+
 ### Değişti
 - **Lisans PolyForm Strict 1.0.0 oldu (kaynak-açık; yalnızca ticari olmayan kullanım).**
   `LICENSE` ve `EULA.txt` resmî PolyForm Strict 1.0.0 metnini taşır: yazılımı dağıtma ve
