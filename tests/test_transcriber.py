@@ -206,12 +206,37 @@ def test_choose_plan_lite_short_uses_cpu_long_uses_gpu_swap():
 
 
 def test_choose_plan_without_local_model_never_swaps():
-    """API saglayicisinda yerel dil modeli yuklu degildir; GPU bostur -> swap yok."""
+    """API saglayicisinda yerel dil modeli ne yuklu ne de gerekli; GPU bostur -> swap yok."""
     from transcriber import config
 
     profile = config.select_profile(total_mib=8000)
     assert config.choose_plan(profile, vram_free_mib=0, ram_free_mib=0,
-                             local_model_loaded=False) == ("cuda", False)
+                             local_model_required=False, local_model_loaded=False) == ("cuda", False)
+
+
+def test_choose_plan_required_but_not_resident_forces_swap():
+    """Regresyon (gercek hata): ses turu bir model YUKLEMESINI iptal ettiginde
+    (Stop-ModelSwitchForAudio) dil modeli SU AN VRAM'de degildir ama turun sonunda GEREKIR.
+    Bos VRAM buyuk gorunur; yine de plan 'swap yok' DEMEMELIDIR, aksi halde ASR modelleri
+    (~3,9 GB) 27B'nin yerini tutar, dil modeli geri yuklenmez ve sonraki yukleme 'Yetersiz bos
+    VRAM' ile reddedilir. Gerekli + resident degil -> ('cuda', True): dökumden sonra bosalt +
+    isciyi durdur + dil modelini geri yukle."""
+    from transcriber import config
+
+    profile = config.select_profile(total_mib=16311)
+    # Bos VRAM bol (model yuklu degil) ve RAM bol olsa bile swap ZORUNLU.
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=10 ** 6,
+                              ram_free_mib=10 ** 6, local_model_required=True,
+                              local_model_loaded=False) == ("cuda", True)
+    # LITE (8 GB) icin de ayni kural gecerlidir.
+    lite = config.select_profile(total_mib=8000)
+    assert config.choose_plan(lite, duration_seconds=5, vram_free_mib=10 ** 6,
+                              ram_free_mib=10 ** 6, local_model_required=True,
+                              local_model_loaded=False) == ("cuda", True)
+    # Model gercekten yukluyse kural DEGISMEZ (eskisi gibi VRAM/RAM'e gore karar verilir).
+    assert config.choose_plan(profile, duration_seconds=5, vram_free_mib=10 ** 6,
+                              ram_free_mib=10 ** 6, local_model_required=True,
+                              local_model_loaded=True) == ("cuda", False)
 
 
 def test_choose_plan_uses_duration_short_cpu_long_gpu_when_vram_tight():
@@ -657,9 +682,13 @@ def test_worker_plan_action_decides_device_and_swap(monkeypatch, tmp_path):
     plan = module.plan({"profile": "pc2", "local_model_loaded": True})
     assert plan["device"] == "cuda" and plan["need_swap"] is True
 
-    # Yerel model yuklu degil (API) -> swap yok.
-    plan = module.plan({"profile": "pc2", "local_model_loaded": False})
+    # API saglayicisi: yerel model ne yuklu ne gerekli -> swap yok.
+    plan = module.plan({"profile": "pc2", "local_model_required": False, "local_model_loaded": False})
     assert plan["device"] == "cuda" and plan["need_swap"] is False
+    # Yerel saglayici + model SU AN yuklu degil (or. ses turu yuklemeyi iptal etti) -> swap
+    # ZORUNLU; dökumden sonra ses modelleri bosaltilip dil modeli geri yuklenir.
+    plan = module.plan({"profile": "pc2", "local_model_required": True, "local_model_loaded": False})
+    assert plan["device"] == "cuda" and plan["need_swap"] is True
 
 
 def test_lite_profile_plan_short_cpu_long_gpu(monkeypatch, tmp_path):
@@ -685,9 +714,13 @@ def test_lite_profile_plan_short_cpu_long_gpu(monkeypatch, tmp_path):
     monkeypatch.setattr(audio, "probe_duration_seconds", lambda path: 5.0)
     plan = module.plan({"profile": "pc1", "local_model_loaded": True, "path": str(src)})
     assert plan["device"] == "cuda" and plan["need_swap"] is True
-    # Yerel model yoksa (API) GPU zaten bos -> swap gerekmez.
-    plan = module.plan({"profile": "pc1", "local_model_loaded": False})
+    # API saglayicisi: yerel model ne yuklu ne gerekli -> swap gerekmez.
+    plan = module.plan({"profile": "pc1", "local_model_required": False, "local_model_loaded": False})
     assert plan["device"] == "cuda" and plan["need_swap"] is False
+    # Yerel saglayici + model SU AN yuklu degil (or. ses turu yuklemeyi iptal etti) -> swap
+    # ZORUNLU: dökumden sonra ses modelleri bosaltilip dil modeli geri yuklenir.
+    plan = module.plan({"profile": "pc1", "local_model_required": True, "local_model_loaded": False})
+    assert plan["device"] == "cuda" and plan["need_swap"] is True
 
 
 def test_worker_plan_action_uses_path_duration(monkeypatch, tmp_path):
@@ -976,6 +1009,41 @@ def test_inference_uses_warm_asr_server_with_fallback():
     assert "Start-AsrServerAsync" in block
     # Durum dosyasi kurulum koku altinda (kok disina yazilmaz; kaldirici etkisi yok).
     assert "logs\\asr-server.json" in worker
+
+
+def test_audio_turn_releases_asr_and_restores_model_when_local_model_is_down(tmp_path):
+    """Regresyon (gercek hata): ses turu bir dil-modeli YUKLEMESINI iptal ettiginde
+    (`Stop-ModelSwitchForAudio`) plan 'swap yok' diyebilir cunku bos VRAM buyuk gorunur. Bu
+    yuzden tur sonunda AYRICA kontrol edilir: yerel saglayicida dil modeli VRAM'de DEGILSE ses
+    modelleri bosaltilir, sicak isci durdurulur ve model geri yuklenir. Aksi halde ASR ~3,9 GB'i
+    tutar, model geri yuklenmez ve sonraki yukleme 'Yetersiz bos VRAM' ile reddedilir.
+    `Test-LocalModelResident` modelin SU AN yuklu olup olmadigini /health ile olcer."""
+    worker = read_text("agent/mamidlabs-inference.ps1")
+    assert "function Test-LocalModelResident" in worker
+    resident = worker.split("function Test-LocalModelResident")[1].split("function ")[0]
+    assert "8080/health" in resident
+    # Plan iki AYRI alan tasir: 'gerekli mi' (saglayici yerel) + 'su an yuklu mu' (yoklama).
+    plan = worker.split("function Get-AudioTranscriptionPlan")[1].split("function ")[0]
+    assert "$localProvider = ($provider -eq 'local')" in plan
+    assert "local_model_required = $localProvider" in plan
+    assert "local_model_loaded = ($localProvider -and (Test-LocalModelResident))" in plan
+    # Tur sonu guvenlik agi: swap plani YOKSA bile model yuklu degilse bosalt + geri yukle.
+    block = worker.split("function Invoke-TranscribeWithModelSwap")[1].split("function ")[0]
+    assert "$releaseAsr = $swapModel -or ($provider -eq 'local' -and !(Test-LocalModelResident))" in block
+    assert "if ($releaseAsr) {" in block
+    assert "if ($releaseAsr -and !$Shared.Cancel) { Start-AsrServerAsync }" in block
+    # Gercek pwsh: yoklama saglikli yanitta True, kapali/hatali ucta False doner (istisna sizmaz).
+    fn = _extract_ps_function(worker, "Test-LocalModelResident")
+    script = fn + r"""
+$script:mode = 'ok'
+function Invoke-RestMethod { param($Uri, $TimeoutSec, $ErrorAction) if ($script:mode -eq 'ok') { [pscustomobject]@{ status = 'ok' } } else { throw 'kapali' } }
+'OK=' + (Test-LocalModelResident)
+$script:mode = 'down'
+'DOWN=' + (Test-LocalModelResident)
+"""
+    out = _run_ps1(script, tmp_path)
+    assert "OK=True" in out, out
+    assert "DOWN=False" in out, out
 
 
 def test_worker_steers_model_away_from_reading_failed_audio():

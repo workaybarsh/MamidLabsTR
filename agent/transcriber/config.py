@@ -246,7 +246,7 @@ def choose_device(duration_seconds: float | None, profile: Profile, need_swap: b
 
 def choose_plan(profile: Profile, duration_seconds: float | None = None,
                 vram_free_mib: int | None = None, ram_free_mib: int | None = None,
-                local_model_loaded: bool = True,
+                local_model_loaded: bool = True, local_model_required: bool = True,
                 cpu_max_seconds: float | None = None) -> tuple[str, bool]:
     """Ses hatti icin (device, need_swap) planini ONCELIK sirasiyla doner.
 
@@ -269,14 +269,31 @@ def choose_plan(profile: Profile, duration_seconds: float | None = None,
     uygulanir (RAM yetiyorsa CPU, yetmiyorsa mecburi swap). Boylece tek bir kayit icin
     gereksiz dil-modeli boşalt/geri yukle yapilmaz.
 
-    Yerel dil modeli yuklu degilse (API saglayicisi) GPU zaten bostur -> ('cuda', False).
+    Iki ayri bayrak vardir ve KARISTIRILMAMALIDIR:
+      - `local_model_required`: bu turun SONUNDA yerel dil modeli VRAM'de olmali mi?
+        Yerel saglayicida True; API saglayicisinda False (GPU bos, swap yok).
+      - `local_model_loaded`: yerel dil modeli SU AN gercekten VRAM'de mi? Cagiran bunu
+        saglik yoklamasiyla OLCER (`/health`). Ad "saglayici yerel mi" DEGILDIR.
+    Yerel model GEREKLI ama SU AN yuklu degilse (or. ses turu model yuklemesini iptal
+    ettiginde, `Stop-ModelSwitchForAudio`) bos VRAM buyuk gorunur; yine de "yer var" demek
+    YANLIS olur cunku ASR modelleri (~3,9 GB) dil modelinin yerini tutar ve tur sonunda model
+    geri yuklenmezse sonraki yukleme "Yetersiz bos VRAM" ile reddedilir. Bu yuzden o durumda
+    `('cuda', True)` doner: ASR GPU'da kosar, dökumden sonra ses modelleri bosaltilip isci
+    durdurulur ve dil modeli geri yuklenir.
     CPU yolu hicbir zaman ZORLAMA degildir: secilen cihaz basarisiz olursa isci katmani CPU
     yedegine duser; GPU hic yoksa (CUDA/nvidia-smi yok) CPU son care olarak kalir.
     `vram_free_mib`/`ram_free_mib` verilmezse makineden okunur (olculemezse 0 -> guvenli
     taraf: sigmiyor sayilir).
     """
-    if not local_model_loaded:
+    if not local_model_required:
+        # API saglayicisi: yerel dil modeli ne var ne de gerekli -> GPU bos, swap yok.
         return 'cuda', False
+    if not local_model_loaded:
+        # Yerel model bu turda GEREKLI ama SU AN VRAM'de degil (or. ses turu icin yukleme
+        # iptal edildi). Bos VRAM buyuk gorunse de ASR'e "yer var" denemez: modeller ~3,9 GB
+        # tutar ve tur sonunda dil modeli geri yuklenmezse sonraki yukleme reddedilir.
+        # Swap ZORUNLU -> dökumden sonra bosalt + durdur + dil modelini geri yukle.
+        return 'cuda', True
     if vram_free_mib is None:
         vram_free_mib = free_vram_mib()
     if ram_free_mib is None:

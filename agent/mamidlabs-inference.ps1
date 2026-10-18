@@ -451,6 +451,18 @@ function Wait-LocalModelReady {
     throw 'Yerel dil modeli hazir duruma gelemedi.'
 }
 
+function Test-LocalModelResident {
+    # Yerel dil modeli SU AN VRAM'de mi? Ses plani bunu BILMEK ZORUNDADIR: ses turu bir model
+    # yuklemesini iptal ettiginde (Stop-ModelSwitchForAudio) bos VRAM buyuk gorunur ama dil
+    # modeli turun sonunda GEREKIR. Plan "swap yok" derse ASR modelleri (~3,9 GB) 27B'nin
+    # yerini tutar, model geri yuklenmez ve sonraki yukleme "Yetersiz bos VRAM" ile reddedilir
+    # (gercek hata). Kapali portta baglanti hemen reddedilir; olcum maliyeti ~0.
+    try {
+        $health = Invoke-RestMethod 'http://127.0.0.1:8080/health' -TimeoutSec 3 -ErrorAction Stop
+        return [bool]($health.status -eq 'ok')
+    } catch { return $false }
+}
+
 function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = $true) {
     $swapModel = ($provider -eq 'local')
     $ocrResponse = $null
@@ -699,7 +711,18 @@ function Get-AudioTranscriptionPlan([string]$path) {
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
         # Tier secili dil-modeli profilinden gelir (lite/pro); profil yoksa isci tier'i
         # makinenin toplam VRAM'ine gore secer.
-        $planPayload = @{ action = 'plan'; local_model_loaded = ($provider -eq 'local'); path = $path }
+        # `local_model_required`: yerel saglayicida dil modeli turun SONUNDA VRAM'de olmali.
+        # `local_model_loaded`: model SU AN gercekten VRAM'de mi (saglik yoklamasi). Ikisi
+        # FARKLIDIR: ses turu model yuklemesini iptal ettiginde (Stop-ModelSwitchForAudio) bos
+        # VRAM buyuk gorunur ama model gerekir; plan bunu bilmezse "swap yok" der ve ASR
+        # ~3,9 GB'i tutar (bkz. transcriber/config.choose_plan).
+        $localProvider = ($provider -eq 'local')
+        $planPayload = @{
+            action = 'plan'
+            local_model_required = $localProvider
+            local_model_loaded = ($localProvider -and (Test-LocalModelResident))
+            path = $path
+        }
         $asrProfile = Get-AsrProfileName
         if ($asrProfile) { $planPayload.profile = $asrProfile }
         # Sicak isci once denenir (importlar tur arasinda korunur); ULASILAMAZSA tek-atimlik yol.
@@ -790,7 +813,13 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
             } catch { $err = $_ }
         }
     }
-    if ($swapModel) {
+    # TURUN SONUNDA dil modeli VRAM'de OLMALIDIR (yerel saglayici). Plan "swap yok" demis olsa
+    # bile model yuklemesi bu tur icin iptal edilmis (Stop-ModelSwitchForAudio) ya da model
+    # dusmus olabilir; o durumda bos VRAM buyuk gorunur ama model GEREKIR. Guvenlik agi: model
+    # yuklu DEGILSE swap yolunu zorla. Aksi halde ASR modelleri ~3,9 GB'i tutar, dil modeli
+    # geri yuklenmez ve sonraki yukleme "Yetersiz bos VRAM" ile reddedilir (gercek hata).
+    $releaseAsr = $swapModel -or ($provider -eq 'local' -and !(Test-LocalModelResident))
+    if ($releaseAsr) {
         # Dil modeli VRAM'e geri yuklenmeden ONCE ses modelleri bosaltilir ve sicak isci
         # DURDURULUR: isci surecinin kalan CUDA baglami (~140 MiB) 27B'nin ince VRAM payini
         # yiyebilir (bkz. AGENTS §5/§13). Isci tur sonunda ARKA PLANDA yeniden baslatilir.
@@ -810,7 +839,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     }
     # Sicak isciyi ARKA PLANDA yeniden baslat: importlar bir SONRAKI ses turuna kadar
     # tamamlanir (kritik yol yalnizca model yukleme maliyetini oder). Iptalde baslatilmaz.
-    if ($swapModel -and !$Shared.Cancel) { Start-AsrServerAsync }
+    if ($releaseAsr -and !$Shared.Cancel) { Start-AsrServerAsync }
     if ($Shared.Cancel) { throw [OperationCanceledException]::new() }
     if ($err) { throw $err }
     return $resp

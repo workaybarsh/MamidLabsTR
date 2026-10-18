@@ -552,6 +552,12 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   modeliyle birlikte boş VRAM'e sığarsa GPU (swap yok); sığmazsa ve kayıt eşikten kısaysa CPU
   (swap yok); aksi halde GPU + mecburi swap. Eşik **pro ~20 sn**, **lite ~15 sn**
   (`agent/transcriber/config.py` → `DEFAULT_CPU_MAX_SECONDS` / `Profile.cpu_max_seconds`).
+  Gerekli ama **şu an yüklü değilse** (ses turu bir model yüklemesini iptal ettiğinde,
+  `Stop-ModelSwitchForAudio`) plan swap'ı **zorlar** (`local_model_required` + ölçülen
+  `local_model_loaded`): boş VRAM büyük görünse bile ASR modelleri (~3,9 GB) dil modelinin yerini
+  tutar ve tur sonunda model geri yüklenmezse sonraki yükleme "Yetersiz boş VRAM" ile reddedilir.
+  `Invoke-TranscribeWithModelSwap` tur sonunda ayrıca ölçüp (`Test-LocalModelResident`) modeli geri
+  yükler.
 - **Sıcak (kalıcı) işçi:** her ses turunda tekrarlanan sabit maliyet (Python başlatma + `torch`/
   `transformers`/`faster-whisper` importları; ölçüldü ~10 sn, ilk/disk soğukken ~25 sn) oturumda bir
   kez ödenir: `agent/whisper-tools.py --serve` tek bir kalıcı süreç olarak 127.0.0.1'de dinler

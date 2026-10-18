@@ -67,6 +67,19 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider.
 
 ### Düzeltildi
+- **Ses turu bir model yüklemesini iptal ettiğinde dil modeli geri gelmiyordu ("Yetersiz boş VRAM").**
+  Yerel sağlayıcıda ses eki olan bir tur, süren dil-modeli yüklemesini iptal eder
+  (`Stop-ModelSwitchForAudio`); o anda model VRAM'de **değildir** ama turun sonunda **gerekir**. Ses
+  planı yalnızca "boş VRAM"e baktığı ve model yokken boş VRAM (~15,5 GB) büyük göründüğü için
+  "swap yok" diyordu: ASR modelleri (~3,9 GB) 27B'nin yerini tutuyor, dil modeli hiç geri
+  yüklenmiyor ve sonraki yükleme **"Yetersiz boş VRAM"** ile reddediliyordu (uygulama modelsiz
+  kalıyordu). Artık plan iki ayrı şeyi ayırır: `local_model_required` (tur sonunda model gerekli mi)
+  ve **ölçülen** `local_model_loaded` (`Test-LocalModelResident` → `/health`); gerekli ama yüklü
+  değilse swap **zorlanır**. Ayrıca `Invoke-TranscribeWithModelSwap` tur sonunda **güvenlik ağı**
+  olarak modelin VRAM'de olup olmadığını yeniden ölçer; değilse ses modellerini boşaltıp işçiyi
+  durdurur ve modeli geri yükler. Testler: `tests/test_transcriber.py`
+  (`test_choose_plan_required_but_not_resident_forces_swap`,
+  `test_audio_turn_releases_asr_and_restores_model_when_local_model_is_down`).
 - **PRO/FLASH hızını yarıya düşüren VRAM taşması, otomatik 32K → 16K bağlam düşüşüyle
   giderildi.** Canlı ölçüm (llama.cpp'nin kendi tampon raporu, RTX 5060 Ti 16 GB) 27B'nin
   **32K bağlamda gerçek GPU ayak izinin ~15,77 GiB** olduğunu gösterdi (model tamponu 13945 MiB +

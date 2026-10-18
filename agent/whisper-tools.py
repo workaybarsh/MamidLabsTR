@@ -10,7 +10,7 @@ Motor: faster-whisper large-v3-tr (Turkce). Ses olaylari (AST) ve konusmaci ayri
 
 Arayuz/isci sozlesmesi: stdin'den JSON alir, stdout'a JSON yazar.
     istek: {"action":"transcribe","path":...,"device":"auto|cuda|cpu","need_swap":bool,"profile":"lite|pro","language":"tr", ...}
-    istek: {"action":"plan","local_model_loaded":bool,"profile":"lite|pro"}   -> {"device":..,"need_swap":..}
+    istek: {"action":"plan","local_model_required":bool,"local_model_loaded":bool,"profile":"lite|pro"} -> {"device":..,"need_swap":..}
     istek: {"action":"unload"}   -> yuklu modelleri bellekten cikarir (VRAM/RAM iadesi)
     yanit: {"text":..., "model":..., "chars":..., "events":N, "diarized":bool} ya da {"error":...}
 
@@ -94,11 +94,15 @@ def plan(req: dict) -> dict:
     (3) aksi halde (uzun kayit ya da RAM yetmiyor) GPU + mecburi swap. Kaydin suresi
     `path`ten cozmeden tahmin edilir.
     Isci bu plani arayuz/isci katmanina bildirir; dil modeli YALNIZCA swap gerektiginde
-    bosaltilir.
+    bosaltilir. `local_model_required` tur sonunda yerel modelin VRAM'de olmasi gerektigini,
+    `local_model_loaded` ise modelin SU AN gercekten yuklu oldugunu soyler; gerekli ama yuklu
+    degilse (or. ses turu yuklemeyi iptal etti) plan swap ZORLAR (bkz. config.choose_plan).
     """
     profile = _profile(req)
-    local = req.get('local_model_loaded')
-    local = True if local is None else bool(local)
+    local_loaded = req.get('local_model_loaded')
+    local_loaded = True if local_loaded is None else bool(local_loaded)
+    local_required = req.get('local_model_required')
+    local_required = True if local_required is None else bool(local_required)
     vram = config.free_vram_mib()
     ram = config.available_ram_mib()
     # Kaydin suresi (kisa -> CPU, uzun -> GPU ekonomisi icin). Dosyayi cozmeden tahmin edilir.
@@ -112,7 +116,7 @@ def plan(req: dict) -> dict:
             duration = None
     device, need_swap = config.choose_plan(
         profile, duration_seconds=duration, vram_free_mib=vram, ram_free_mib=ram,
-        local_model_loaded=local)
+        local_model_loaded=local_loaded, local_model_required=local_required)
     return {
         'device': device,
         'need_swap': need_swap,
