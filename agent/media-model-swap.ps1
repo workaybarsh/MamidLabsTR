@@ -8,6 +8,7 @@
 
 . (Join-Path $PSScriptRoot 'process-launch.ps1')
 . (Join-Path $PSScriptRoot 'media-paths.ps1')
+. (Join-Path $PSScriptRoot 'gpu-info.ps1')
 
 function Stop-LocalModelForMedia([string]$manage) {
     Emit 'status' 'Dil modeli VRAM''den bosaltiliyor...'
@@ -135,11 +136,11 @@ function Start-OrReuseComfy([string]$python, [string]$comfyDir, [string]$comfyOu
 
 # nvidia-smi ile anlik bos VRAM (MiB). Yoksa/olculemezse $null doner; bu durumda
 # cagiran ek kontrolu atlar (llama-server zaten asil hatayi verir).
+# Olcum TEK kaynaktan gelir (agent\gpu-info.ps1): siki ayristirma; [N/A]/hata/negatif -> $null.
+# ONEMLI: eskiden hatali ciktida 0 donuyordu ve Release-Comfy bunu "VRAM yetersiz" sanip
+# ComfyUI'yi gereksiz yere kapatIyordu (~30 sn yeniden acilma).
 function Get-MediaFreeVramMiB {
-    $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
-    if (!$smi) { return $null }
-    try { return [int](((& $smi --query-gpu=memory.free --format=csv,noheader,nounits) | Select-Object -First 1) -replace '\D', '') }
-    catch { return $null }
+    return (Get-NvidiaFreeVramMiB)
 }
 
 # Modelleri ve onbellegi bosaltir; dil modeli geri yuklenmeden once VRAM'in

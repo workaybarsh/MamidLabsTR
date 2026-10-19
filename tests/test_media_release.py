@@ -16,10 +16,11 @@ def read_text(path: str) -> str:
 
 def test_release_comfy_verifies_real_free_vram_before_returning():
     swap = read_text("agent/media-model-swap.ps1")
-    # Yeni parametre ve nvidia-smi tabanli gercek VRAM olcumu.
+    # Yeni parametre ve nvidia-smi tabanli gercek VRAM olcumu (TEK kaynak: agent\gpu-info.ps1).
     assert "[int]$minFreeMiB = 0" in swap
     assert "function Get-MediaFreeVramMiB" in swap
-    assert "--query-gpu=memory.free" in swap
+    assert "return (Get-NvidiaFreeVramMiB)" in swap
+    assert "gpu-info.ps1" in swap
     # torch onbellegi bosalinca bile gercek bos VRAM yetmezse tekrar beklenir.
     assert "if ($null -eq $free -or $free -ge $minFreeMiB) { return }" in swap
     # Yetmezse surec kapatilir (VRAM baglamiyla birlikte serbest kalsin).
@@ -34,7 +35,12 @@ def test_image_and_video_release_require_enough_vram_for_the_language_model():
 
 
 def test_media_free_vram_helper_returns_null_when_no_nvidia():
-    """nvidia-smi yoksa cagiran ek kontrolu atlamali (llama-server asil hatayi verir)."""
+    """nvidia-smi yoksa/hataliysa cagiran ek kontrolu atlamali (llama-server asil hatayi
+    verir). ONEMLI: eskiden 0 donebiliyordu ve Release-Comfy bunu "VRAM yetersiz" sanip
+    ComfyUI'yi gereksiz kapatIyordu."""
     swap = read_text("agent/media-model-swap.ps1")
     helper = swap.split("function Get-MediaFreeVramMiB")[1].split("function Release-Comfy")[0]
-    assert "if (!$smi) { return $null }" in helper
+    assert "return (Get-NvidiaFreeVramMiB)" in helper
+    gpu_info = read_text("agent/gpu-info.ps1")
+    assert "if (!$smi) { return $null }" in gpu_info
+    assert "return (ConvertFrom-MiBText" in gpu_info

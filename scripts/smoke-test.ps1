@@ -63,6 +63,8 @@ $ProgressPreference = 'SilentlyContinue'
 if (!(Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)) { Import-Module ThreadJob -ErrorAction Stop }
 
 $manage = Join-Path $Root 'scripts\manage-mamidlabs.ps1'
+# VRAM olcumu TEK kaynaktan (agent\gpu-info.ps1): siki ayristirma, olculemezse $null.
+. (Join-Path $Root 'agent\gpu-info.ps1')
 $results = [ordered]@{}
 $lite = ($Profile -eq 'lite')
 $script:chatBaseline = $null
@@ -96,9 +98,8 @@ function Skip([string]$name, [string]$reason) {
 }
 
 function Get-FreeVramMiB {
-    $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
-    if (!$smi) { return $null }
-    try { return [int](((& $smi --query-gpu=memory.free --format=csv,noheader,nounits) | Select-Object -First 1) -replace '\D', '') } catch { return $null }
+    # TEK kaynak: agent\gpu-info.ps1 (siki ayristirma; olculemezse $null, 0 DEGIL).
+    return (Get-NvidiaFreeVramMiB)
 }
 
 # GGUF basliginda MTP/nextn blogu var mi? (bkz. scripts\manage-mamidlabs.ps1 Test-GgufHasMtp

@@ -67,6 +67,20 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider.
 
 ### Düzeltildi
+- **VRAM ölçümü tek kaynakta toplandı; sahte "0" ve sahte büyük değerler giderildi.** Dört ayrı
+  yerdeki `-replace '\D',''` çözümlemesi tüm rakamları birleştirdiği için `[N/A]`/hata çıktısı **0**,
+  `-5` **5**, hata metnindeki sürüm numarası (or. "580.88") sahte **büyük** değer üretiyordu;
+  `Release-Comfy` 0'ı "VRAM yetersiz" sanıp ComfyUI'yi gereksiz kapatıyordu (~30 sn yeniden açılma),
+  sahte büyük değer ise bellek kapısını atlatırsa modeli paylaşılan belleğe taşıyabiliyordu
+  (sohbet ~40 → ~27 tok/s). Yeni `agent/gpu-info.ps1` ölçümü sıkı ayrıştırır (`ConvertFrom-MiBText`:
+  yalnızca tam sayı, isteğe bağlı "MiB"; gerisi "ölçülemedi" = `$null`) ve
+  `scripts/manage-mamidlabs.ps1`, `agent/media-model-swap.ps1`, `scripts/smoke-test.ps1` artık bu
+  tek kaynağı kullanır. Ayrıca `Get-MaxContextForProfile` bağlam tabanını **gerçek model
+  dosyasından** türetir (dosya boyutu + 278 MiB; dosya yoksa 27B için 14.878 MiB) — kullanıcının
+  kendi modeli de doğru hesaplanır. Canlı doğrulama (FLASH, RTX 5060 Ti): 15.592 MiB boş VRAM →
+  **n_ctx 22.528**, **51,1 tok/s** (MTP kabulü 130/205), taşma yok.
+  Testler: `tests/test_vram_measurement.py` (ayrıştırma, `$null` davranışı, tek kaynak, parametre
+  bağlama, LITE istisnası).
 - **Bağlam seçimi artık ölçülen boş VRAM'den ince adımlarla hesaplanıyor (kart tam kullanılıyor).**
   Eski kod 16K/32K gibi KABA adımlar kullanıyordu: 15,5 GiB boş VRAM'de 32K reddedilip 16K'ya
   düşüyor, 4–8K token boşa gidiyordu. Pay artık ölçülmüş **doğrusal** modelde

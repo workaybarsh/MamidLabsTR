@@ -21,6 +21,8 @@ $profileAliases = @{ max = 'qwen3.8-27b-max'; flash = 'qwen3.8-27b-flash'; lite 
 $liteDir = Join-Path $root 'models\Huihui-Qwen3.5-9B-abliterated-i1-GGUF'
 $logs = Join-Path $root 'logs'
 . (Join-Path $root 'agent\process-launch.ps1')
+# VRAM olcumu TEK kaynaktan (agent\gpu-info.ps1): siki ayristirma, olculemezse $null.
+. (Join-Path $root 'agent\gpu-info.ps1')
 
 # Ayarlar profil secimi icin gerekli oldugundan model yolu belirlenmeden once okunur.
 $settings = $null
@@ -95,17 +97,21 @@ function Get-ModelOverheadMiB([string]$profileName, [int]$ctx) {
 # Guvenlik payi 100 MiB: model TAM sinira oturdugunda surucunun paylasilan bellege tasmamasi
 # icin (tasmasi sohbeti ~40'tan ~27 tok/s'ye dusuruyordu). 0 -> hic sigmiyor, $null ->
 # olcum alinamadi (cagiran eski kaba adimlara duser). LITE sabit baglamini korur.
-function Get-MaxContextForProfile([string]$profileName) {
+# Bu profilin GERCEK bos VRAM'ine sigabilecek EN BUYUK baglami dondurur (MAX/FLASH).
+# Taban, GERCEK model dosyasindan turetilir (model + 278 MiB sabit tampon); boylece
+# kullanicinin kendi (custom) modeli de dogru hesaplanir (sabit 14878 yalnizca 27B icindir).
+# Deger 2K'nin kati ve 4K..131072 araligina kirpilir. Guvenlik payi 100 MiB: model TAM
+# sinira oturdugunda surucunun paylasilan bellege tasmamasi icin (tasmasi sohbeti ~40'tan
+# ~27 tok/s'ye dusuruyordu). 0 -> hic sigmiyor, $null -> olcum alinamadi (cagiran eski kaba
+# adimlara duser). LITE sabit baglamini korur.
+function Get-MaxContextForProfile([string]$profileName, [string]$modelPath) {
     if ($profileName -eq 'lite') { return $null }
-    $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
-    if (!$smi) { return $null }
-    $freeMiB = 0
-    try {
-        $line = (& $smi --query-gpu=memory.free --format=csv,noheader,nounits | Select-Object -First 1)
-        $freeMiB = [int]($line -replace '\D', '')
-    } catch { return $null }
-    if ($freeMiB -le 0) { return $null }
+    $freeMiB = Get-NvidiaFreeVramMiB
+    if ($null -eq $freeMiB -or $freeMiB -le 0) { return $null }
     $baseMiB = 14878
+    if ($modelPath -and (Test-Path -LiteralPath $modelPath -PathType Leaf)) {
+        $baseMiB = [int][math]::Ceiling((Get-Item -LiteralPath $modelPath).Length / 1MB) + 278
+    }
     $perToken = 0.02722
     $safetyMiB = 100
     $maxCtx = [int][math]::Floor(($freeMiB - $baseMiB - $safetyMiB) / $perToken)
@@ -118,13 +124,9 @@ function Get-MaxContextForProfile([string]$profileName) {
 # $ctx, modelin yuklenecegi baglam boyutudur; payin KV-cache kismi buna bagli oldugundan
 # tahmin baglama duyarli yapilir.
 function Test-MemoryBudget([string]$modelPath, [string]$profileName, [string]$projectorPath, [int]$ctx) {
-    $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
-    if (!$smi) { return }  # NVIDIA suruculeri yoksa kontrol anlamsiz; asil hata llama-server'dan gelir.
-    $freeMiB = 0
-    try {
-        $line = (& $smi --query-gpu=memory.free --format=csv,noheader,nounits | Select-Object -First 1)
-        $freeMiB = [int]($line -replace '\D', '')
-    } catch { return }  # nvidia-smi beklenmedik cikti verirse kontrolu atla, kurulumu engelleme.
+    # Olcum TEK kaynaktan (agent\gpu-info.ps1): siki ayristirma. $null = olculemedi.
+    $freeMiB = Get-NvidiaFreeVramMiB
+    if ($null -eq $freeMiB) { return }  # surucu yok/hatali: kontrol anlamsiz, kurulumu engelleme
     if ($freeMiB -le 0) { return }
     $modelMiB = [math]::Ceiling((Get-Item -LiteralPath $modelPath).Length / 1MB)
     # Gorsel projektoru (mmproj) artik UC profilde de CPU'da calisir
@@ -398,7 +400,7 @@ try {
     if ($Profile -eq 'lite') {
         $ctxCandidates = @([int]$liteCtx)
     } else {
-        $dynamicCtx = Get-MaxContextForProfile $Profile
+        $dynamicCtx = Get-MaxContextForProfile $Profile $model
         if ($null -eq $dynamicCtx) {
             # nvidia-smi yok/okunamadi: eski kaba adimlara dus (davranis korunur).
             $ctxCandidates = @(32768, 16384)

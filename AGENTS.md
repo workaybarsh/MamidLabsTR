@@ -156,10 +156,16 @@ autoEffort=false`). LITE'ta şablon bu anahtarı yok sayar; API sağlayıcılar�
 dosyası + **doğrusal pay** (ölçülen: taban 278 MiB + 1K token başına ~27,9 MiB; 16K'da 800, 32K'da
 1200 MiB'e denk gelir) (MAX/FLASH; LITE'ta 300 MiB, değişmedi);
 görsel projektör (mmproj) üç profilde de CPU'da (`--no-mmproj-offload`)
-olduğundan bütçeye girmez. **MAX/FLASH bağlam seçimi:** 16K/32K gibi kaba adımlar yerine, **ölçülen
-boş VRAM'den** sığabilecek en büyük bağlam **2K adımlarla** hesaplanır
-(`Get-MaxContextForProfile`, 100 MiB güvenlik payı); or. 15,5 GiB boşta ~20K, 15,9 GiB boşta ~39K
-seçilir. Kapı yine kademeli küçültmeyle doğrular; seçilen değer hem
+olduğundan bütçeye girmez. Boş VRAM ölçümü **tek kaynaktan** gelir (`agent/gpu-info.ps1` →
+`Get-NvidiaFreeVramMiB`): yalnızca tam sayı ("12345" / "12345 MiB") kabul edilir; `[N/A]`, hata
+metni ya da negatif değer **"ölçülemedi"** (`$null`) sayılır — eskiden `-replace '\D',''` bunları
+0 ya da sahte büyük değere çeviriyordu (0, `Release-Comfy`'yi ComfyUI'yi gereksiz kapatmaya
+itiyordu; sahte büyük değer kapıyı atlarsa model taşabiliyordu). **MAX/FLASH bağlam seçimi:**
+16K/32K gibi kaba adımlar yerine, **ölçülen boş VRAM'den** sığabilecek en büyük bağlam **2K
+adımlarla** hesaplanır (`Get-MaxContextForProfile $profile $modelPath`, 100 MiB güvenlik payı;
+taban **gerçek model dosyasından** türetilir: dosya boyutu + 278 MiB — dosya yoksa 27B için
+14.878 MiB'a düşer, böylece kullanıcının kendi modeli de doğru hesaplanır); or. 15,5 GiB boşta
+~20K, 15,9 GiB boşta ~39K seçilir. Kapı yine kademeli küçültmeyle doğrular; seçilen değer hem
 bellek kapısına hem `--ctx-size`'a verilir ve arayüz gerçek değeri çalışan sunucudan geri okur
 (`/props` → `default_generation_settings.n_ctx`), böylece sıkıştırma eşiği uyuşur. **ComfyUI
 yaşam döngüsü (varsayılan: yalnızca üretimde çalışır):** ComfyUI
@@ -414,7 +420,7 @@ yalnızca kurulum kökü altındaki MamidLabs süreçlerine dokunulur.
 
 ```powershell
 python -m pip install pytest -r requirements\app.txt
-python -m pytest -q          # ~162 sn (512 toplanır; 508 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
+python -m pytest -q          # ~152 sn (517 toplanır; 513 geçti, 4 atlandı); ek ayar gerekmez (tests/conftest.py)
 %LOCALAPPDATA%\Programs\MamidLabs\runtime\pwsh\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File %LOCALAPPDATA%\Programs\MamidLabs\scripts\smoke-test.ps1 -Profile flash -SkipVideo
 ```
 
@@ -450,6 +456,10 @@ python -m pytest -q          # ~162 sn (512 toplanır; 508 geçti, 4 atlandı); 
 | Görselden yeniden üretim (`yeniden_uret`) | ölçülmedi | ~110–140 sn |
 | Fotoğraf düzenleme (`kimlik_duzenle`) | 74–160 sn (tek/iki görsel) | **desteklenmiyor** |
 | Medya sonrası geçiş | oran 1,01, 319 MiB boş VRAM | oran 0,99–1, 310–369 MiB boş VRAM |
+
+**Dinamik bağlam canlı ölçümü (2026-10-19):** 15.592 MiB boş VRAM'de `n_ctx = 22.528` seçildi;
+27B tam sığdı (nvidia-smi 15.733 MiB kullanım / 318 MiB boş), üretim **51,1 tok/s** (MTP kabulü
+130/205) — paylaşılan belleğe taşma yok; doğrusal model tuttu, kalibrasyon gerekmedi.
 
 Masaüstü uygulamaları VRAM tutar: NVIDIA Overlay ~1,45 GB, dwm ~0,8 GB ölçüldü. Süreç başına VRAM
 için `Get-Counter '\GPU Process Memory(*)\Dedicated Usage'` kullanılır; `nvidia-smi` WDDM'de süreç
@@ -617,6 +627,7 @@ Her özellik/değişiklik için bir satır ekle (en yeni üstte).
 
 | Tarih | Değişiklik | Dosyalar |
 |---|---|---|
+| 2026-10-19 | **VRAM olcumu tek kaynaga alindi ve siki ayristirildi; sahte 0 / sahte buyuk degerler giderildi (Release-Comfy'nin gereksiz ComfyUI kapatmasi dahil).** Dort ayri yerdeki `-replace '\D',''` tum rakamlari birlestiriyordu: `[N/A]`/hata -> **0**, `-5` -> **5**, hata metnindeki surum no'su (or. "580.88") -> sahte BUYUK deger. Etki: `Release-Comfy` 0'i "VRAM yetersiz" sanip ComfyUI'yi gereksiz kapatIyordu (~30 sn yeniden acilma); sahte buyuk deger kapidan gecerse model tasip sohbet ~40'tan ~27 tok/s'ye dusebiliyordu. Yeni `agent/gpu-info.ps1`: `ConvertFrom-MiBText` (yalnizca tam sayi, istege bagli "MiB"; gerisi `$null`) + `Get-NvidiaFreeVramMiB`; `scripts/manage-mamidlabs.ps1`, `agent/media-model-swap.ps1` ve `scripts/smoke-test.ps1` bu tek kaynaga delege eder. `Get-MaxContextForProfile` artik `$modelPath` alir: taban **gercek model dosyasindan** (dosya + 278 MiB; dosya yoksa 27B icin 14.878 MiB). Canli dogrulama (FLASH, RTX 5060 Ti): 15.592 MiB bostan `n_ctx=22.528`, **51,1 tok/s**, tasma yok. Testler: `tests/test_vram_measurement.py` (ayristirma, `$null` davranisi, tek kaynak, parametre baglama, LITE istisnasi). | agent/gpu-info.ps1, scripts/manage-mamidlabs.ps1, agent/media-model-swap.ps1, scripts/smoke-test.ps1, tests/test_vram_measurement.py, tests/test_media_release.py, tests/test_memory_admission.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-19 | **Baglam secimi artik olculen bos VRAM'den ince adimlarla hesaplanir (kart tam kullanilir).** Eski kod 16K/32K kaba adimlariyla 15,5 GiB bos VRAM'de 32K'yi reddedip 16K'ya dusuyor, 4-8K token bosa giriyordu. Pay artik olculen DOGRUSAL modelde: `Get-ModelOverheadMiB` = basa 278 MiB + 1K token basina ~27,9 MiB (15112 MiB @8K, 15324 @16K, ~15770 @32K olcumlerinden turetildi; 16K'da 800, 32K'da 1200'e esit). Yeni `Get-MaxContextForProfile` kartin GERCEK bos VRAM'ine sigan en buyuk baglami 2K adimlarla, 100 MiB guvenlik payiyle secer (or. 15,5 GiB'de ~20K, 15,9 GiB'de ~39K); kap yine kademeli kucultmeyle dogrular, LITE sabit baglamini korur. `--fit` de degerlendirildi: varsayilan `--fit-target` 1024 MiB bosluk birakip ~23 tok/s veriyordu, kullanilmaz. Testler: `tests/test_memory_admission.py` (dogrusal pay + dinamik baglam). | scripts/manage-mamidlabs.ps1, tests/test_memory_admission.py, AGENTS.md, CHANGELOG.md |
 | 2026-10-19 | **Konuşma dışı ses olayları (AudioSet/AST) özelliği tamamen kaldırıldı; ASCII dışı "kutucuk" (U+FFFD) metin kökten düzeltildi; ses eki eklemek artık süren model yüklemesini durdurup ASR işçisini ısıtıyor.** (1) `events.py` modülü, `events`/`events_model` config alanları, `merge` olay satırları, işçinin `events` alanı, `--no-events`, kurulumun AST ön indirmesi (`AsrEventsModel`/`MAMIDLABS_ASR_EVENTS`), mikrofon menüsündeki "Konuşma dışı sesler" onay kutusu ve `audioEvents` ayarı kaldırıldı; döküm artık yalnızca faster-whisper large-v3-tr + isteğe bağlı pyannote (`transformers==5.17.0` pini pyannote/speechbrain bağımlılığı olarak kalır). (2) Alt sürecin stderr'i OEM kod sayfasıyla yazılıp UTF-8 okunuyordu, bu da ASCII dışı metni U+FFFD yapıyordu; iki taraf da artık açıkça UTF-8 (`[Console]::OutputEncoding`, `StandardErrorEncoding`/`StandardOutputEncoding`, `PYTHONIOENCODING=utf-8`) ve `Repair-UiText` başıboş U+FFFD'yi temizler (tuzak 25). (3) Ses eki eklemek `Prepare-AudioTurn`'u çağırır: yerel model hazır değilse süren yükleme durdurulur (ve `manage -Action stop` VRAM'i boşaltır) ve sıcak ASR işçisi arka planda başlar (`--serve`, `logs\asr-server.json`), böylece ilk ses turu ağır olmaz. Testler: `tests/test_transcriber.py`, `tests/test_installer_pinning.py`, `tests/test_desktop_behavior.py`. | agent/transcriber/*, agent/whisper-tools.py, agent/mamidlabs-inference.ps1, mamidlabs-desktop.ps1, scripts/manage-mamidlabs.ps1, scripts/install-mamidlabs.ps1, requirements/asr.txt, packaging/windows/mamidlabs.iss, tests/test_transcriber.py, tests/test_desktop_behavior.py, tests/test_installer_pinning.py, README.md, AGENTS.md, CHANGELOG.md, docs/teknik-notlar.md |
 | 2026-10-18 | **Ses turu model yüklemesini iptal ettiğinde dil modeli geri gelmiyordu ("Yetersiz boş VRAM") — düzeltildi.** Yerel sağlayıcıda ses eki olan bir tur süren yüklemeyi iptal eder (`Stop-ModelSwitchForAudio`) ama o anda model VRAM'de değildir; eski plan yalnızca "boş VRAM"e bakıp (model yokken büyük) "swap yok" diyordu, ASR ~3,9 GB'ı tutuyor, dil modeli geri yüklenmiyor ve sonraki yükleme reddediliyordu. `config.choose_plan` artık `local_model_required` ile **ölçülen** `local_model_loaded`'ı ayırır (`Test-LocalModelResident` → `/health`) ve gerekli-ama-yüklü-değilse swap zorlar; `Invoke-TranscribeWithModelSwap` tur sonunda güvenlik ağı olarak modelin VRAM'de olup olmadığını yeniden ölçer. Testler: `tests/test_transcriber.py`. | agent/transcriber/config.py, agent/whisper-tools.py, agent/mamidlabs-inference.ps1, tests/test_transcriber.py, docs/teknik-notlar.md, AGENTS.md, CHANGELOG.md |
