@@ -20,6 +20,12 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Metin kodlamasi: cocuk sureclerin cikti/hatalarini UTF-8 ile okuyup yazalim. Aksi halde
+# PowerShell cocuga `[Console]::OutputEncoding` ile OEM kod sayfasinda (TR: cp857) yazar, ust
+# surec bunu UTF-8 sanip cozerse Turkce karakterler "kutucuk"a (U+FFFD) doner (bkz. AGENTS tuzak 25).
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+
 # powershell.exe host'unun kendi Application User Model ID'sini devralmasini engeller;
 # aksi halde Windows gorev cubugunda PowerShell'in kendi ikonunu gosterir.
 Add-Type -TypeDefinition @'
@@ -84,10 +90,10 @@ if ($existingWindow -ne [IntPtr]::Zero) {
 # Bu dosya kurulum kokunde durur; $root kendi konumundan turetilir, boylece
 # uygulama hangi klasore kurulduysa oradan calisir.
 $root = $PSScriptRoot
-# HF onbellegi (ses modelleri + indirmeler) KURULUM KOKU altindadir; cocuk surecler (python
+# HF onbellegi (ses modeli + indirmeler) KURULUM KOKU altindadir; cocuk surecler (python
 # araclari, sicak ses iscisi) bu onbellegi cevrimdisi kullansin. Kurulum da ayni yolu
-# kullanir (install-mamidlabs.ps1). Ayarlanmazsa isci VARSAYILAN HF onbellegine duser ve AST
-# ses olayi modeli bulunamaz -> sesli giris hata verir.
+# kullanir (install-mamidlabs.ps1). Ayarlanmazsa isci VARSAYILAN HF onbellegine duser ve
+# Whisper modeli bulunamaz -> sesli giris hata verir.
 $env:HF_HOME = Join-Path $root 'tools\hf-home'
 . (Join-Path $root 'agent\api-providers.ps1')
 . (Join-Path $root 'agent\api-settings.ps1')
@@ -119,9 +125,9 @@ $script:currentTurnHasImage = $false
 $script:currentTurnImagePaths = @()
 $script:currentTurnAudioPaths = @()
 $script:micRecording = $false
-# Konusma disi ses olaylari (AST) yakalansin mi? Mikrofon menusundeki "Konusma disi sesler"
-# onay kutusuyla acilir/kapanir; ayarlarda (api.json -> audioEvents) saklanir.
-$script:audioEvents = $true
+# Sicak ASR iscisinin en son ne zaman baslatildigi (Add-SelectedAudio -> Prepare-AudioTurn).
+# Durum dosyasi yazilana kadarki kisa pencerede ikinci bir isci baslatilmasini onler.
+$script:asrWarmAt = $null
 # Otomatik caba: MAX/FLASH ayni model oldugundan sorunun zorluguna gore istek basina
 # reasoning_effort secilir (api.json -> autoEffort; Profiller menusunden degistirilir).
 $script:autoEffort = $true
@@ -1341,14 +1347,7 @@ $composer.Controls.Add($micBtn)
 $micMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $micUse = $micMenu.Items.Add('Mikrofonu kullan')
 [void]$micMenu.Items.Add('-')
-# Konusma disi sesler: isaretli ise AST ses olaylari da yakalanir (varsayilan acik);
-# isaret kaldirilirsa yalnizca Whisper konusmasi dökumlenir.
-$script:audioEvents = if ($null -ne $script:apiSettings.audioEvents) { [bool]$script:apiSettings.audioEvents } else { $true }
 $script:autoEffort = if ($null -ne $script:apiSettings.autoEffort) { [bool]$script:apiSettings.autoEffort } else { $true }
-$micEvents = New-Object System.Windows.Forms.ToolStripMenuItem('Konuşma dışı sesler')
-$micEvents.CheckOnClick = $true
-$micEvents.Checked = $script:audioEvents
-[void]$micMenu.Items.Add($micEvents)
 [void]$micMenu.Items.Add('-')
 $micCancel = $micMenu.Items.Add('İptal')
 # Kayit surerken basliklar "Kaydı bitir ve gönder" / "Kaydı iptal et" olur.
@@ -1376,12 +1375,6 @@ $micBtn.Add_MouseUp({
 $micUse.Add_Click({
     if ($script:micRecording) { Complete-MicrophoneCapture }
     else { Start-MicrophoneCapture }
-})
-$micEvents.Add_Click({
-    $script:audioEvents = [bool]$micEvents.Checked
-    $script:apiSettings.audioEvents = $script:audioEvents
-    Save-ApiSettings
-    $metric.Text = if ($script:audioEvents) { 'Konuşma dışı sesler: açık' } else { 'Konuşma dışı sesler: kapalı' }
 })
 $micCancel.Add_Click({
     if ($script:micRecording) { Cancel-MicrophoneCapture }
@@ -1608,6 +1601,8 @@ function Add-SelectedAudio([string]$path) {
     if (@($script:selectedAudio) -contains $path) { return }
     [void]$script:selectedAudio.Add($path)
     Update-AttachmentBadge
+    # Ses eki EKLENIR EKLENMEZ: suren model yuklemesini durdur ve sicak ASR iscisini baslat.
+    Prepare-AudioTurn
 }
 # Mikrofon dugmesi / "Ses dosyasi yukle" icin dosya secici.
 function Pick-AudioFile {
@@ -1867,6 +1862,13 @@ $statusCtrl.ForeColor = [System.Drawing.Color]::FromArgb(190, 200, 215)
 $controlTab.Controls.Add($statusCtrl)
 
 # ---------------------------------------------------------------- model yönetimi
+function Repair-UiText([string]$text) {
+    # Gecersiz kodlanmis baytlardan gelen U+FFFD "kutucuk" karakteri arayuze hic ulasmasin
+    # (kaynak: alt surec ciktisi). Metin zaten UTF-8 ise degismez.
+    if (!$text) { return $text }
+    return $text.Replace([string][char]0xFFFD, '?')
+}
+
 # Yonetici surecinin stderr'inden anlamli tek satiri cikarir (or. "Yetersiz bos VRAM: ...");
 # bos/anlamsizsa jenerik mesaja duser. Boylece arayuz spesifik nedeni gosterebilir.
 function Format-ModelSwitchError([string]$stderrText) {
@@ -1874,8 +1876,8 @@ function Format-ModelSwitchError([string]$stderrText) {
     if (!$stderrText) { return $generic }
     $lines = @($stderrText -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     $vram = @($lines | Where-Object { $_ -match 'VRAM' } | Select-Object -First 1)
-    if ($vram.Count) { return $vram[0] }
-    if ($lines.Count) { return $lines[0] }
+    if ($vram.Count) { return (Repair-UiText $vram[0]) }
+    if ($lines.Count) { return (Repair-UiText $lines[0]) }
     return $generic
 }
 
@@ -1892,8 +1894,15 @@ function Invoke-Manage([string]$action, [string]$profile, [string]$modelId) {
     $psi.CreateNoWindow = $true
     $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
     # Yonetici basarisiz olursa gercek nedeni (or. yetersiz VRAM) arayuze tasiyabilmek icin
-    # stderr yakalanir. Cikti cok kucuk oldugundan boru dolmaz; cikista okunur.
+    # stderr yakalanir. Cikti cok kucuk oldugundan boru dolmaz; cikista okunur. Kodlama ACIKCA
+    # UTF-8 verilir: cocuk surec stderr'i OEM kod sayfasiyla (TR: cp857) yazarsa Turkce metin
+    # "kutucuk"a (U+FFFD) doner (bkz. AGENTS tuzak 25; manage-mamidlabs.ps1 de UTF-8 yazar).
+    # DIKKAT: StandardOutputEncoding YALNIZCA RedirectStandardOutput acikken verilebilir;
+    # aksi halde .NET "StandardOutputEncoding ancak standart cikti yeniden yonlendirildiginde
+    # desteklenir" istisnasi atar ve model HIC baslatilamaz (gercek hata). Burada stdout
+    # yonlendirilmez, yalnizca stderr okunur.
     $psi.RedirectStandardError = $true
+    $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
     return [System.Diagnostics.Process]::Start($psi)
 }
 
@@ -1922,8 +1931,10 @@ function Update-ModelSwitch {
 # bosaltabilsin. Dökumden sonra dil modeli arka planda geri yuklenir (isci yapar). Oldurulen
 # surecin hata kodunu "Model islemi basarisiz" diye gostermemek icin once alanlar sifirlanir.
 function Stop-ModelSwitchForAudio {
-    if ($script:pendingModelChange) { $script:pendingModelChange = $null }
+    $hadSwitch = $false
+    if ($script:pendingModelChange) { $hadSwitch = $true; $script:pendingModelChange = $null }
     if ($script:switchProcess) {
+        $hadSwitch = $true
         try {
             if (!$script:switchProcess.HasExited) {
                 $script:switchProcess.Kill($true)
@@ -1936,6 +1947,66 @@ function Stop-ModelSwitchForAudio {
     $script:modelSwitchError = $null
     $script:modelReady = $false
     $script:activeModel = $null
+    # Surec oldurmek YETMEZ: manage-mamidlabs llama-server'i AYRI (detached) baslatir; launcher
+    # oldurulunce yukleme surup GPU'yu tutabilir. Bu yuzden ayrica `-Action stop` calistirilir ki
+    # VRAM hemen bosalsin ve ASR beklemek zorunda kalmasin (beklemeden, arka planda).
+    # GEREKSIZ CALISMA YOK: yalnizca gercekten bir yukleme/surec varsa cagrilir (ses dosyasi
+    # art arda eklendiginde her seferinde bos bir yonetici sureci baslatilmasin).
+    $hadLoad = [bool]$hadSwitch
+    if (!$hadLoad) {
+        $hadLoad = [bool](Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue)
+    }
+    if ($hadLoad) {
+        try {
+            $psi = [Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            foreach ($a in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                             (Join-Path $root 'scripts\manage-mamidlabs.ps1'), '-Action', 'stop')) {
+                $psi.ArgumentList.Add($a)
+            }
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+            [void][Diagnostics.Process]::Start($psi)
+        } catch { }
+    }
+}
+
+function Start-AsrWarmForAudio {
+    # Sicak (kalici) ASR iscisini ARKA PLANDA baslatir. Amac: ilk ses turundaki SABIT maliyet
+    # (Python + torch/transformers/faster-whisper importlari; olculdu ~10-25 sn) ses eki
+    # EKLENIR EKLENMEZ baslasin ki kullanici Gonder'e basana kadar buyuk olcude bitsin.
+    # Isci TRANSKRIPT yapana kadar VRAM TUTMAZ (bkz. AGENTS §5/§13), yani dil modelini etkilemez.
+    try {
+        $python = Join-Path $root 'venv\asr\Scripts\python.exe'
+        $worker = Join-Path $root 'agent\whisper-tools.py'
+        if (!(Test-Path -LiteralPath $python -PathType Leaf) -or !(Test-Path -LiteralPath $worker -PathType Leaf)) { return }
+        $statePath = Join-Path $root 'logs\asr-server.json'
+        # Zaten CANLI bir sicak isci varsa dokunma (durum dosyasindaki pid yasiyorsa).
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            $st = $null
+            try { $st = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } catch { }
+            if ($st -and $st.pid -and (Get-Process -Id ([int]$st.pid) -ErrorAction SilentlyContinue)) { return }
+        }
+        # YARIS KORUMASI: isci baslatildiktan sonra durum dosyasini yazana kadar (~birkac sn)
+        # ikinci bir ses eki (ya da tekrar cagri) ikinci bir isci baslatmasin. Bu pencere
+        # kacirilirsa iki isci ayni anda modelleri yukleyip VRAM'i ikiye katlayabilirdi.
+        if ($script:asrWarmAt -and ((Get-Date) - $script:asrWarmAt).TotalSeconds -lt 90) { return }
+        $script:asrWarmAt = Get-Date
+        $env:HF_HOME = Join-Path $root 'tools\hf-home'
+        $argList = @($worker, '--serve', '--state-file', $statePath, '--parent-pid', "$PID", '--idle-timeout', '600')
+        $quoted = ($argList | ForEach-Object { '"' + [string]$_ + '"' }) -join ' '
+        [void](Start-Process -FilePath $python -ArgumentList $quoted -WindowStyle Hidden)
+    } catch { }
+}
+
+# Ses eki eklenir EKLENMEZ cagrilir (bkz. Add-SelectedAudio).
+function Prepare-AudioTurn {
+    # (1) Yerel model henuz hazir degilse (ilk acilis / suren yukleme) yukleme DURDURULUR: sesli
+    # girdi dil modelinin yuklenmesini gecersiz kilar (bkz. AGENTS §16). Boylece GPU erken bosalir.
+    if ($script:providerId -eq 'local' -and !$script:modelReady) { Stop-ModelSwitchForAudio }
+    # (2) Sicak ASR iscisi arka planda baslatilir; sabit import maliyeti onden odenir.
+    Start-AsrWarmForAudio
 }
 
 # "Durdur": o an NE calisiyorsa (dil modeli yaniti, ASR/OCR/arac alt surecleri, medya uretimi)
@@ -2656,7 +2727,6 @@ function Begin-Generation {
         currentImagePath = $(if ($script:currentTurnImagePaths.Count -gt 0) { [string]$script:currentTurnImagePaths[0] } else { '' })
         currentImagePaths = @($script:currentTurnImagePaths)
         currentAudioPaths = @($script:currentTurnAudioPaths)
-        audioEvents = [bool]$script:audioEvents
         multiImageOcr = [bool]($script:currentTurnMultiImageOcr -and $hasOcr)
         multiImageOcrMode = [bool]$script:multiImageOcrMode
         profile = $profile

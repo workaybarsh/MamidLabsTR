@@ -526,7 +526,7 @@ siler (ikisi de onay ister). Ana tasarım değişmez.
 - Eklenen görsel, video ve belgelerde boyut sınırları vardır. Bu sınırlar kötü amaçlı dosyaların
   bellek veya disk tüketimini azaltır; model üretiminin kendisini sınırlamaz.
 
-## Ses dökümü (Whisper + ses olayları)
+## Ses dökümü (Whisper)
 
 Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. Hat
 `agent/transcriber/` paketindedir ve `venv\asr` içinde çalışır:
@@ -534,11 +534,8 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
 - **Konuşma:** `faster-whisper` **large-v3** (Türkçe için `oguzhangokboru/whisper-large-v3-tr`).
   Silero VAD konuşma dışı aralıkları Whisper'a hiç vermez; `condition_on_previous_text=False` ve
   `no_speech`/`log_prob`/`compression_ratio` eşikleri ile düşük sıcaklık yedeği halüsinasyonu azaltır.
-- **Konuşma dışı sesler:** AST (`MIT/ast-finetuned-audioset-10-10-0.4593`) olayları Türkçe etikete
-  çevirir (ayak sesleri, kapı, alkış…). Speech etiketleri elenir. Varsayılan **açık**; mikrofon
-  menüsündeki **"Konuşma dışı sesler"** onay kutusuyla kapatılır (`api.json → audioEvents`).
 - **Konuşmacı ayrımı:** pyannote (HF token gerekir; yoksa atlanır).
-- **Çıktı** kronolojik ve zaman damgasızdır: `(ayak sesleri)` / `Konuşmacı: ...` satırları.
+- **Çıktı** kronolojik ve zaman damgasızdır: `Konuşmacı: ...` satırları.
 - **Profiller (tier):** `config.py` artık tier'ı **seçili dil-modeli profiline** göre seçer
   (`select_profile_for`): **pro** (MAX/FLASH) → `float16`, modeller aynı anda; **lite** →
   `int8_float16`, modeller sırayla ve uzun kayıtlar 30 dk'lık parçalara bölünür
@@ -548,7 +545,7 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   (≥ 14 GB → pro, aksi halde lite).
 - **CPU / GPU seçimi:** GPU'da dökum, yerel dil modelinin VRAM'den boşaltılıp geri yüklenmesini
   gerektirir (swap). Cihaz/swap kararı tier adına göre değil, ses işi başlarken **ölçülen gerçek
-  boş VRAM + sistem RAM'i ve kaydın süresine** göre verilir (`choose_plan`): Whisper + AST dil
+  boş VRAM + sistem RAM'i ve kaydın süresine** göre verilir (`choose_plan`): Whisper dil
   modeliyle birlikte boş VRAM'e sığarsa GPU (swap yok); sığmazsa ve kayıt eşikten kısaysa CPU
   (swap yok); aksi halde GPU + mecburi swap. Eşik **pro ~20 sn**, **lite ~15 sn**
   (`agent/transcriber/config.py` → `DEFAULT_CPU_MAX_SECONDS` / `Profile.cpu_max_seconds`).
@@ -566,14 +563,13 @@ Sohbete eklenen ses dosyası ya da mikrofon kaydı otomatik yazıya çevrilir. H
   (kalan CUDA bağlamı ~140 MiB 27B'nin payını yemesin), tur sonunda arka planda yeniden başlar; boşta
   600 sn sonra / uygulama kapanınca kendini bitirir. İşçi ulaşılamazsa döküm tek-atımlık
   `Invoke-PythonTool` yoluna düşer (davranış korunur).
-- **HF önbelleği (`HF_HOME`):** ses modelleri (whisper large-v3-tr + AST) kurulum kökünün HF
+- **HF önbelleği (`HF_HOME`):** ses modeli (whisper large-v3-tr) kurulum kökünün HF
   önbelleğinde (`tools\hf-home`) durur ve çalışma anında **çevrimdışı** kullanılır; uygulama
   `mamidlabs-desktop.ps1`'de `$env:HF_HOME = <kok>\tools\hf-home` ayarlar ve `agent/mamidlabs-inference.ps1`
   `Get-HfHome`'u hem tek-atımlık `Invoke-PythonTool`'a (çocuk süreç ortamı) hem kalıcı
-  `Start-AsrServerProcess`'e geçirir. Ayarlanmazsa işçi VARSAYILAN HF önbelleğine düşer, AST orada
-  bulunmaz; `events.tag()` yüklemeyi `try/except` ile koruduğu için döküm yine tamamlanır ama
-  **olaylar atlanır** (boş liste). AST'nin gerçekten çalışması `HF_HOME`'a bağlıdır (kurulumla aynı
-  yol).
+  `Start-AsrServerProcess`'e geçirir. Ayarlanmazsa işçi VARSAYILAN HF önbelleğine düşer, Whisper
+  modeli bulunamaz ve sesli giriş hata verir. Yani ses dökümünün çalışması `HF_HOME`'a bağlıdır
+  (kurulumla aynı yol).
 
 ## Düzeltmeleri doğrulama
 

@@ -139,38 +139,54 @@ def test_max_tolerance_is_tighter_than_lite_to_prevent_shared_memory_spill():
 
 
 def test_max_budget_margin_is_context_aware_and_prevents_spill():
-    """RTX 5060 Ti 16 GB'ta 27B ile llama.cpp'nin KENDI raporundan olculdu (b10998, q4_0 KV,
-    MTP acik): CUDA0 model tamponu 13945 MiB, KV cache 576 MiB @32768 / 288 @16384,
-    recurrent-state tamponu 598,5 MiB (sabit), hesap tamponu ~112 MiB. Yani agirlik disi pay
-    32K'da ~1200 MiB, 16K'da yalnizca ~800 MiB'dir. Eski SABIT 750 MiB pay (esik 15350) yalnizca
-    ~15,50 GiB bos VRAM varken 32K'yi kabul ediyordu: ~400 MiB Windows paylasilan bellegine
-    TASIYOR ve sohbet ~40'tan ~27 tok/s'ye dusuyordu. Olculen ayak izleri (dedicated+shared)
-    15324 MiB @16384 (tasik yok, ~40 tok/s) ve ~15770 @32768 (tasti)."""
+    """RTX 5060 Ti 16 GB'ta 27B icin llama.cpp'nin kendi raporu + gercek nvidia-smi olcumleri
+    (dedicated+shared): 15112 MiB @8192, 15324 @16384, ~15770 @32768. Bu uc olcum TEK bir
+    dogru uzerindedir: ayak izi ~= 14878 + 0,02722*ctx. Eski kod 16K/32K icin SABIT pay
+    (800/1200) kullaniyordu; ayni dogru uzerinde kaliyordu ama ARADA KALAN baglamlari reddedip
+    bos VRAM birakiyordu. Artik pay dogrusal (taban 278 MiB + 1K token basina 27,9 MiB), yani
+    16K'da 800, 32K'da 1200'e denk gelir — olcumlerle birebir."""
     import re
 
     manager = read_text("scripts/manage-mamidlabs.ps1")
     assert "function Get-ModelOverheadMiB" in manager
-    m32 = re.search(r"if \(\$ctx -ge 32768\) \{ return (\d+) \}", manager)
-    m16 = re.search(r"if \(\$ctx -ge 16384\) \{ return (\d+) \}", manager)
-    assert m32, "32K pay girisi bulunamadi"
-    assert m16, "16K pay girisi bulunamadi"
+    m = re.search(r"return \[int\]\[math\]::Ceiling\((\d+) \+ \(\$ctx / 1024\.0\) \* ([\d.]+)\)", manager)
+    assert m, "dogrusal pay formulu bulunamadi"
+    base, per_k = int(m.group(1)), float(m.group(2))
     model_mib = 14600
-    threshold_32k = model_mib + int(m32.group(1))  # 15800
-    threshold_16k = model_mib + int(m16.group(1))  # 15400
-    free_normal_desktop = 15497  # yalnizca Windows masaustu acikken olculdu
-    assert threshold_16k <= free_normal_desktop, "16K normal masaustune sigmali"
-    assert threshold_32k > free_normal_desktop, "32K tasacaksa YUKLENMEMELI"
-    assert threshold_32k >= 15770, "32K payi olculen tasmis ayak izini kapsamali"
+
+    def needed(ctx):
+        return model_mib + base + (ctx / 1024.0) * per_k
+
+    # Olculen ayak izleriyle uyum (paylasilan bellege tasma siniri).
+    assert abs(needed(16384) - 15324) <= 20, needed(16384)
+    assert abs(needed(32768) - 15770) <= 20, needed(32768)
+    assert abs(needed(8192) - 15112) <= 20, needed(8192)
+    # Normal masaustunde (15497 bos) 16K SIGAR, 32K SIGMAZ (eskiden tasiyordu).
+    free_normal_desktop = 15497
+    assert needed(16384) <= free_normal_desktop < needed(32768)
 
 
-def test_max_flash_falls_back_from_32k_to_16k_context():
-    """MAX/FLASH once 32K dener, 32K VRAM'e tam sigmazsa 16K'ya duser (eskiden paylasilan
-    bellege tasiyordu). Secilen baglam HEM bellek kapisina HEM --ctx-size'a verilir."""
+def test_max_flash_context_is_computed_from_measured_free_vram():
+    """MAX/FLASH baglami artik 16K/32K kaba adimlari yerine OLCULEN bos VRAM'den hesaplanir
+    (2K adimlari, guvenlik payi 100 MiB). Boylece bos VRAM bosa harcanmaz: 15,5 GiB'de ~20K,
+    15,9 GiB'de ~39K secilir. Kapi yine kademeli kucultmeyle dogrular; secilen baglam HEM
+    bellek kapisina HEM --ctx-size'a verilir. LITE sabit baglamini korur."""
     manager = read_text("scripts/manage-mamidlabs.ps1")
-    assert "$ctxCandidates = if ($Profile -eq 'lite') { @([int]$liteCtx) } else { @(32768, 16384) }" in manager
+    assert "function Get-MaxContextForProfile" in manager
+    fn = manager.split("function Get-MaxContextForProfile")[1].split("function ")[0]
+    assert "memory.free" in fn
+    assert "$safetyMiB = 100" in fn
+    assert "[math]::Floor($maxCtx / 2048) * 2048" in fn
+    assert "if ($maxCtx -lt 4096) { return 0 }" in fn
+    # Secim: dinamik aday + kademeli kucultme; LITE ayri dal.
+    assert "$dynamicCtx = Get-MaxContextForProfile $Profile" in manager
+    assert "$ctxCandidates = @($dynamicCtx)" in manager
+    assert "foreach ($fallback in @(32768, 24576, 16384, 12288, 8192, 4096))" in manager
     assert "foreach ($candidate in $ctxCandidates)" in manager
     assert "if ($chosenCtx) { $modelCtx = $chosenCtx; $budgetOk = $true; break }" in manager
     assert "'--ctx-size', \"$modelCtx\", '--predict', $predict, '--parallel', '1'" in manager
+    # LITE sabit baglamini korur (dinamik hesap yalnizca MAX/FLASH).
+    assert "if ($Profile -eq 'lite') {" in manager and "$ctxCandidates = @([int]$liteCtx)" in manager
 
 
 def test_lite_budget_is_not_tightened_by_the_max_fix():

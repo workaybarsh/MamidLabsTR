@@ -44,15 +44,14 @@ function Get-OcrPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr\Scripts\python
 function Get-OcrCpuPythonExe { Join-Path (Get-InstallRoot) 'venv\ocr-cpu\Scripts\python.exe' }
 function Get-WhisperPyPath { Join-Path (Get-InstallRoot) 'agent\whisper-tools.py' }
 function Get-MediaPythonExe { Join-Path (Get-InstallRoot) 'venv\imagegen\Scripts\python.exe' }
-# Ses dökum hatti kendi ortaminda calisir (faster-whisper + transformers/AST + pyannote).
+# Ses dökum hatti kendi ortaminda calisir (faster-whisper + pyannote).
 function Get-AsrPythonExe { Join-Path (Get-InstallRoot) 'venv\asr\Scripts\python.exe' }
 function Get-ManageMamidLabsPath { Join-Path (Get-InstallRoot) 'scripts\manage-mamidlabs.ps1' }
 function Get-AuditLogPath { Join-Path (Get-InstallRoot) 'logs\audit.jsonl' }
-# HF onbellegi (whisper large-v3-tr + AST ses olayi modeli) KURULUM KOKU altindadir;
-# isci/araçlar bu onbellegi CEVRIMDISI kullanmali. Uygulama calisma aninda HF_HOME'u
-# ayarlamazsa isci VARSAYILAN HF onbellegine duser; AST modeli orada olmadigindan olay
-# modeli yuklenemez ve sesli giris hata verir. Kurulum da ayni yolu kullanir
-# (install-mamidlabs.ps1 -> $env:HF_HOME = <kok>\tools\hf-home).
+# HF onbellegi (whisper large-v3-tr) KURULUM KOKU altindadir; isci/araçlar bu onbellegi
+# CEVRIMDISI kullanmali. Uygulama calisma aninda HF_HOME'u ayarlamazsa isci VARSAYILAN
+# onbellege duser ve Whisper modeli bulunamaz; sesli giris hata verir. Kurulum da ayni
+# yolu kullanir (install-mamidlabs.ps1 -> $env:HF_HOME = <kok>\tools\hf-home).
 function Get-HfHome { Join-Path (Get-InstallRoot) 'tools\hf-home' }
 
 # Islem denetim kaydi: her arac cagrisindan sonra logs/audit.jsonl'e bir JSON satiri
@@ -222,8 +221,12 @@ function Invoke-PythonTool([hashtable]$payload, [string]$scriptPath = $null, [st
     $psi.RedirectStandardError = $true
     $psi.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
     $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    # Python, cikisi BORUYA yazarken varsayilan olarak ANSI kod sayfasini kullanir; ust surec
+    # UTF-8 cozerse Turkce metin "kutucuk" (U+FFFD) olur. PYTHONIOENCODING ile UTF-8'e zorlanir.
+    $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
     # Python araclari (ses iscisi whisper-tools.py dahil) kurulum HF onbellegini cevrimdisi
-    # kullansin: HF_HOME ayarlanmazsa varsayilan onbellege dusulur ve AST modeli bulunamaz.
+    # kullansin: HF_HOME ayarlanmazsa varsayilan onbellege dusulur ve Whisper modeli bulunamaz.
     $psi.EnvironmentVariables['HF_HOME'] = Get-HfHome
     $p = [Diagnostics.Process]::Start($psi)
     try {
@@ -514,7 +517,7 @@ function Invoke-ImageOcrWithModelSwap([string[]]$paths, [bool]$waitForRestore = 
 # CPU/GPU esigi 15/20 sn). CIHAZ ve SWAP karari ise tier'in bellek esikleri + ses isi
 # baslarken OLCULEN gercek bos VRAM + sistem RAM'i ve kaydin suresine gore verilir
 # (bkz. config.choose_plan):
-#   1) Whisper + AST dil modeliyle BIRLIKTE bos VRAM'e sigarsa -> GPU, swap YOK.
+#   1) Whisper dil modeliyle BIRLIKTE bos VRAM'e sigarsa -> GPU, swap YOK.
 #   2) Sigmaz ama kayit KISA (esik: LITE 15 sn / PRO 20 sn) VE ses hatti CPU'da sistem
 #      RAM'ine sigarsa -> CPU, swap YOK (dil modeli VRAM'de kalir; yavastir ama boşalt/yukle
 #      maliyeti yoktur).
@@ -555,9 +558,9 @@ function Get-AudioTimeoutSeconds([double]$durationSeconds) {
 # Her ses turunda tekrarlanan SABIT maliyet (Python baslatma + torch/transformers/
 # faster-whisper importlari) oturumda BIR kez odenir: tek bir kalici isci sureci tutulur
 # (agent/whisper-tools.py --serve). Olculdu (RTX 5060 Ti, venv\asr): `import transformers`
-# tek basina ~25 sn; ses olaylari (AST) varsayilan ACIK oldugundan bu maliyet HER soguk
-# turda odeniyordu. Isci 127.0.0.1 uzerinde dinler; port/pid `logs\asr-server.json`'da
-# yayimlanir. Uygulama kapaninca (parent-pid) ya da bosta kalinca (idle-timeout) kendini
+# tek basina ~25 sn surer; bu maliyet HER soguk turda odeniyordu. Isci 127.0.0.1 uzerinde
+# dinler; port/pid `logs\asr-server.json`'da yayimlanir. Uygulama kapaninca (parent-pid)
+# ya da bosta kalinca (idle-timeout) kendini
 # bitirir -> orphan surec/VRAM/RAM sizintisi olmaz. Isci ULASILAMAZSA/transport hatasinda
 # tek-atimlik Invoke-PythonTool yoluna DUSULUR; boylece ses hatti her kosulda calisir.
 function Get-AsrServerStatePath { Join-Path (Get-InstallRoot) 'logs\asr-server.json' }
@@ -759,11 +762,7 @@ function Invoke-TranscribeWithModelSwap([string]$path, [bool]$waitForRestore = $
     }
     if (!$err) {
         $whisperPy = Get-WhisperPyPath; $asrPy = Get-AsrPythonExe
-        # Konusma disi ses olaylari (AST) ayari: mikrofon menusundeki onay kutusu.
-        $audioEvents = if ($null -eq $JobData.audioEvents) { $true } else { [bool]$JobData.audioEvents }
-        # Cihaz/swap plani yukarida (bos VRAM + RAM) belirlendi; tier SECILI profilden gelir
-        # (lite/pro), isciye aynen verilir.
-        $payloadBase = @{ action = 'transcribe'; path = $path; language = 'tr'; events = $audioEvents; device = $device; need_swap = $needSwap; timeoutSeconds = $audioTimeout }
+        $payloadBase = @{ action = 'transcribe'; path = $path; language = 'tr'; device = $device; need_swap = $needSwap; timeoutSeconds = $audioTimeout }
         $asrProfile = Get-AsrProfileName
         if ($asrProfile) { $payloadBase.profile = $asrProfile }
         try {

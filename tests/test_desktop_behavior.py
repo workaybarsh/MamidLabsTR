@@ -521,3 +521,78 @@ def test_desktop_reads_the_real_context_back_from_the_server():
     # compactAt GERCEK baglamdan yeniden hesaplanir; 32K varsayilaninda birakilmaz.
     assert "$script:compactAt = [int]($realCtx * 0.67)" in desktop
 
+
+def test_child_process_stderr_is_read_as_utf8_and_boxes_are_stripped(tmp_path):
+    """Regresyon ("Tam erisim" yanindaki durum yazilari): model yoneticisi surecinin stderr'i
+    OEM kod sayfasiyla (TR: cp857) yaziliyordu; arayuz UTF-8 sanip cozunce Turkce karakterler
+    "kutucuk"a (U+FFFD) doniyordu. Artik iki taraf da ACIKCA UTF-8: cocuk surec
+    `[Console]::OutputEncoding = UTF8` ile YAZAR, arayuz `StandardErrorEncoding = UTF8` ile OKUR.
+    Ayrica U+FFFD arayuze hic ulasmaz (`Repair-UiText`)."""
+    desktop = (ROOT / "mamidlabs-desktop.ps1").read_text(encoding="utf-8-sig")
+    assert "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)" in desktop
+    assert "$OutputEncoding = [Text.UTF8Encoding]::new($false)" in desktop
+    assert "$psi.StandardErrorEncoding = [Text.Encoding]::UTF8" in desktop
+    # DIKKAT: StandardOutputEncoding yalnizca RedirectStandardOutput acikken verilebilir; aksi
+    # halde .NET istisna atar ve model HIC baslatilamaz. Invoke-Manage stdout'u yonlendirmez.
+    invoke_manage = desktop.split("function Invoke-Manage")[1].split("function ")[0]
+    if "$psi.StandardOutputEncoding =" in invoke_manage:
+        assert "RedirectStandardOutput = $true" in invoke_manage, (
+            "Invoke-Manage StandardOutputEncoding kullaniyor ama stdout yonlendirilmiyor "
+            "(.NET istisnasi -> model yuklenemez)"
+        )
+    # Cocuk surec (yonetici) de UTF-8 yazmali; aksi halde ust surec UTF-8 cozerse bozulur.
+    manager = (ROOT / "scripts" / "manage-mamidlabs.ps1").read_text(encoding="utf-8-sig")
+    assert "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)" in manager
+    # Python araclari boruya UTF-8 yazmali (yoksa tool sonuclarindaki Turkce de bozulur).
+    worker = (ROOT / "agent" / "mamidlabs-inference.ps1").read_text(encoding="utf-8-sig")
+    assert "$psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'" in worker
+    assert "$psi.StandardErrorEncoding = [Text.Encoding]::UTF8" in worker
+    # Gercek pwsh: U+FFFD temizlenir; dogru Turkce metin DEGISMEZ.
+    body = r"""
+$bozuk = 'Yetersiz boş VRAM: ' + [string][char]0xFFFD + 'rnek ' + [string][char]0xFFFD + 'ğşç'
+$duz = Repair-UiText $bozuk
+Assert ($duz -notlike "*$([string][char]0xFFFD)*") 'U+FFFD temizlenmedi'
+Assert ($duz -like 'Yetersiz boş VRAM:*') 'metin korunmadi'
+$iyi = 'Düşünüyor… Ajan turu 3/8'
+Assert ((Repair-UiText $iyi) -eq $iyi) 'dogru metin degistirildi'
+Assert ((Format-ModelSwitchError $bozuk) -notlike "*$([string][char]0xFFFD)*") 'formatter temizlemedi'
+'OK'
+"""
+    out = run_ps(tmp_path, body)
+    assert "OK" in out
+
+
+def test_audio_attach_stops_model_load_and_warms_asr(tmp_path):
+    """Ilk ses turu agir olmasin: ses eki EKLENIR EKLENMEZ (a) suren dil-modeli yuklemesi
+    durdurulur (yerel saglayici + model hazir degil) ve (b) sicak ASR iscisi arka planda
+    baslatilir. Ayrica yukleme durdurulunca `manage -Action stop` ile llama-server da oldurulur
+    (detached yukleme GPU'yu tutmasin)."""
+    desktop = (ROOT / "mamidlabs-desktop.ps1").read_text(encoding="utf-8-sig")
+    assert "function Prepare-AudioTurn" in desktop
+    assert "function Start-AsrWarmForAudio" in desktop
+    add = desktop.split("function Add-SelectedAudio")[1].split("function ")[0]
+    assert "Prepare-AudioTurn" in add
+    prep = desktop.split("function Prepare-AudioTurn")[1].split("function ")[0]
+    assert "$script:providerId -eq 'local' -and !$script:modelReady" in prep
+    assert "Stop-ModelSwitchForAudio" in prep
+    assert "Start-AsrWarmForAudio" in prep
+    warm = desktop.split("function Start-AsrWarmForAudio")[1].split("function ")[0]
+    assert "'--serve'" in warm and "'--parent-pid'" in warm
+    assert "logs\\asr-server.json" in warm
+    stop = desktop.split("function Stop-ModelSwitchForAudio")[1].split("function ")[0]
+    assert "'-Action', 'stop'" in stop
+    # Davranis: yerel + model hazir degil -> yukleme durur + ASR baslar; model hazirsa yukleme DURMAZ.
+    body = r"""
+$script:providerId = 'local'; $script:modelReady = $false
+$script:calls = @()
+function Stop-ModelSwitchForAudio { $script:calls += 'stop-switch' }
+function Start-AsrWarmForAudio { $script:calls += 'warm-asr' }
+Prepare-AudioTurn
+$script:modelReady = $true
+Prepare-AudioTurn
+Assert (($script:calls -join ',') -eq 'stop-switch,warm-asr,warm-asr') ('beklenmeyen: ' + ($script:calls -join ','))
+'OK'
+"""
+    out = run_ps(tmp_path, body)
+    assert "OK" in out
+

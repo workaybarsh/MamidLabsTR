@@ -73,7 +73,7 @@ Sihirbazı derlemek için: GitHub Actions → **Kurulum paketi** (ya da yerelde 
    | `runtime` | Gömülü PowerShell 7.6.6 |
    | `llama` | llama.cpp b10998 (CUDA 13.4) |
    | `python` | Uygulama ve medya Python ortamları (sürümleri sabit) |
-   | `asr` | Ses dökümü ortamı `venv\asr` (faster-whisper + AST + pyannote; `-SkipAudio` ile atlanır) |
+   | `asr` | Ses dökümü ortamı `venv\asr` (faster-whisper + pyannote; `-SkipAudio` ile atlanır) |
    | `comfyui` | ComfyUI `b0f4b7b`, ComfyUI-GGUF `6ea2651` ve comfyui-krea2edit `86f886d` (fotoğraf düzenleme) |
    | `verify` | Bileşenlerin varlık ve çalışma kontrolü |
 

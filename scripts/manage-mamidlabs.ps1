@@ -7,6 +7,10 @@
 )
 
 $ErrorActionPreference = 'Stop'
+# stderr'i UTF-8 yaz: cagiran (arayuz) `StandardErrorEncoding = UTF8` ile okur. Aksi halde
+# PowerShell stderr'i OEM kod sayfasiyla (TR: cp857) yazar ve Turkce metin ust surecte
+# "kutucuk"a (U+FFFD) doner (bkz. AGENTS tuzak 25).
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 # Kurulum kokunu kendi konumundan turet: bu dosya her zaman <kok>\scripts\ altindadir.
 $root = Split-Path -Parent $PSScriptRoot
 $server = Join-Path $root 'llama.cpp\b10998\llama-server.exe'
@@ -74,21 +78,41 @@ $ownsGate = $false
 # baslama karari verir. GPU'yu baska bir uygulama tutuyorsa llama-server
 # baslatilmaz; aksi halde katmanlar Windows'un paylasilan bellegine tasar ve sohbet
 # kat kat yavaslar. Kullaniciya nedeni acikca soylenir.
-# Agirlik disi VRAM payi (KV cache + recurrent-state tamponu + hesap tamponlari + CUDA
-# baglami) RTX 5060 Ti 16 GB'da 27B MAX/FLASH icin llama.cpp'nin KENDI raporundan okundu
-# (llama.cpp b10998, q4_0 KV, MTP acik): CUDA0 model tamponu 13945 MiB, KV 144 MiB @8192 /
-# 288 @16384 / 576 @32768, recurrent-state tamponu 598,5 MiB (sabit), hesap tamponu 76-112 MiB;
-# kalan CUDA baglamidir. Yani KV cache 1K token basina ~18 MiB buyur, gerisi sabittir.
 # Olculen GPU ayak izi (dedicated + shared): 15112 MiB @8192, 15324 @16384,
-# ~15770 @32768. 32K degeri SABIT 750 MiB payinin neden yanlis oldugunu gosterir: yalnizca
-# ~15,50 GiB bos VRAM varken modeli kabul ediyordu, bu yuzden ~400 MiB Windows paylasilan
-# bellegine tasip sohbet ~40'tan ~27 tok/s'ye dusuyordu. LITE kendi kucuk payini korur
-# (9B zaten 8 GB karta sigar).
+# ~15770 @32768. Bu uc olcum TEK bir dogru uzerindedir:
+#     ayak izi ~= 14878 MiB + 0.02722 * ctx   (model dosyasi 14600 MiB bu toplamin icindedir)
+# Eski kod 16K/32K icin SABIT pay (800/1200) kullaniyordu; ayni dogru uzerinde kaliyordu ama
+# ARADA KALAN baglamlari (or. 20K) gereksiz yere reddediyor ve bos VRAM'in bir kismini bos
+# birakiyordu. Artik pay DOGRUSAL: model disi taban 278 MiB + 1K token basina ~27,9 MiB.
+# Boylece baglam, kartin GERCEK bos VRAM'ine gore ince adimlarla (2K) secilebilir.
 function Get-ModelOverheadMiB([string]$profileName, [int]$ctx) {
     if ($profileName -eq 'lite') { return 300 }
-    if ($ctx -ge 32768) { return 1200 }
-    if ($ctx -ge 16384) { return 800 }
-    return 600
+    return [int][math]::Ceiling(278 + ($ctx / 1024.0) * 27.9)
+}
+
+# Bu profilin GERCEK bos VRAM'ine sigabilecek EN BUYUK baglami dondurur (MAX/FLASH).
+# Olculen dogrusal modelden hesaplanir; 2K'nin kati ve 4K..131072 araligina kirpilir.
+# Guvenlik payi 100 MiB: model TAM sinira oturdugunda surucunun paylasilan bellege tasmamasi
+# icin (tasmasi sohbeti ~40'tan ~27 tok/s'ye dusuruyordu). 0 -> hic sigmiyor, $null ->
+# olcum alinamadi (cagiran eski kaba adimlara duser). LITE sabit baglamini korur.
+function Get-MaxContextForProfile([string]$profileName) {
+    if ($profileName -eq 'lite') { return $null }
+    $smi = (Get-Command nvidia-smi -ErrorAction SilentlyContinue).Source
+    if (!$smi) { return $null }
+    $freeMiB = 0
+    try {
+        $line = (& $smi --query-gpu=memory.free --format=csv,noheader,nounits | Select-Object -First 1)
+        $freeMiB = [int]($line -replace '\D', '')
+    } catch { return $null }
+    if ($freeMiB -le 0) { return $null }
+    $baseMiB = 14878
+    $perToken = 0.02722
+    $safetyMiB = 100
+    $maxCtx = [int][math]::Floor(($freeMiB - $baseMiB - $safetyMiB) / $perToken)
+    $maxCtx = [int]([math]::Floor($maxCtx / 2048) * 2048)
+    if ($maxCtx -lt 4096) { return 0 }
+    if ($maxCtx -gt 131072) { $maxCtx = 131072 }
+    return $maxCtx
 }
 
 # $ctx, modelin yuklenecegi baglam boyutudur; payin KV-cache kismi buna bagli oldugundan
@@ -364,15 +388,31 @@ try {
     # bir YARIS vardir: transkripsiyon/PaddleOCR alt sureci cikar ama WDDM VRAM'i aninda
     # serbest birakmaz; hemen baslayan dil modeli "yer yetmiyor" ile reddedilir ve model
     # kapali kalir. Bu yuzden yer kontrolu sinirli kez (kisa araliklarla) yeniden denenir.
-    # Baglam secimi (MAX/FLASH): once 32K denenir, sigmazsa 16K'ya dusulur. Olculdu: 32K,
-    # 16 GB kartta ~15,77 GiB ister ama normal bir Windows masaustu yalnizca ~15,50 GiB
-    # bos birakir; bu yuzden yuklendiginde ~400 MiB paylasilan bellege tasip sohbet
-    # ~27 tok/s'ye dusuyordu. 16K'da ayak izi ~15,32 GiB olur, tam sigar ve ~40 tok/s ile
-    # calisir (ayni model/agirliklar, yarim KV cache). Secilen baglam HEM bellek kapisinda
-    # HEM asagidaki --ctx-size'ta kullanilir; arayuz gercek degeri calisan sunucudan geri
-    # okur (bkz. mamidlabs-desktop.ps1). LITE kendi baglamini korur ve dususu yoktur
-    # (9B zaten 8 GB karta sigar).
-    $ctxCandidates = if ($Profile -eq 'lite') { @([int]$liteCtx) } else { @(32768, 16384) }
+    # Baglam secimi (MAX/FLASH): 16K/32K gibi KABA adimlar yerine, olculen dogrusal ayak izi
+    # modelinden (Get-ModelOverheadMiB) bu kartin GERCEK bos VRAM'ine sigabilecek en buyuk
+    # baglam 2K adimlarla hesaplanir. Boylece or. 15,5 GiB bos VRAM'de 32K yerine ~20K, 15,9 GiB
+    # bos VRAM'de ~39K secilir; eskiden 16K'ya dusup 4-8K token bos birakiyordu. Kapi yine de
+    # (baska surecler pay biraktiysa) kademeli kucultmeyle dogrular. Secilen baglam HEM bellek
+    # kapisinda HEM asagidaki --ctx-size'ta kullanilir; arayuz gercek degeri calisan sunucudan
+    # geri okur (bkz. mamidlabs-desktop.ps1). LITE kendi sabit baglamini korur.
+    if ($Profile -eq 'lite') {
+        $ctxCandidates = @([int]$liteCtx)
+    } else {
+        $dynamicCtx = Get-MaxContextForProfile $Profile
+        if ($null -eq $dynamicCtx) {
+            # nvidia-smi yok/okunamadi: eski kaba adimlara dus (davranis korunur).
+            $ctxCandidates = @(32768, 16384)
+        } elseif ($dynamicCtx -eq 0) {
+            # Olculen bos VRAM modelin TABANINA bile yetmiyor: kapiya en kucuk baglamla sor ki
+            # kullaniciya net "Yetersiz bos VRAM" hatasi verilsin.
+            $ctxCandidates = @(4096)
+        } else {
+            $ctxCandidates = @($dynamicCtx)
+            foreach ($fallback in @(32768, 24576, 16384, 12288, 8192, 4096)) {
+                if ($fallback -lt $dynamicCtx) { $ctxCandidates += $fallback }
+            }
+        }
+    }
     $modelCtx = $ctxCandidates[0]
     if (!$SkipMemoryCheck) {
         $budgetOk = $false

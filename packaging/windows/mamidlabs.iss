@@ -79,7 +79,7 @@ FinishedLabelNoIcons=MamidLabs bilgisayarına kuruldu. Masaüstündeki MamidLabs
 
 [Tasks]
 Name: "media"; Description: "Görsel ve video üretimi — fotoğraf/görsel üretme, fotoğraf düzenleme ve video üretimi (ComfyUI + Krea-2 + Wan 2.2, profile göre ~20 GB). İşareti kaldırırsan yalnızca sohbet, belge, OCR ve ses araçları kurulur"; GroupDescription: "Bileşenler (önerilir):"
-Name: "audio"; Description: "Ses yakalama — mikrofon ya da ses dosyasını yazıya çevirir; konuşma + konuşma dışı ses olayları (Whisper large-v3-tr + AST, ~4 GB)"; GroupDescription: "Bileşenler (önerilir):"
+Name: "audio"; Description: "Ses yakalama — mikrofon ya da ses dosyasını yazıya çevirir; konuşma (Whisper large-v3-tr, ~3 GB)"; GroupDescription: "Bileşenler (önerilir):"
 Name: "ocr"; Description: "OCR — fotoğraf, taranmış sayfa ya da ekran görüntüsündeki yazıyı metne çevirir (ör. fatura/el yazısı okuma); yaklaşık 5,5 GB"; GroupDescription: "Bileşenler (önerilir):"
 Name: "smoketest"; Description: "Kurulum sonunda smoke testi çalıştır (sohbet, belge, görsel, model geçişi) — uzun sürebilir (onlarca dakika)"; GroupDescription: "Doğrulama:"; Flags: checkedonce
 

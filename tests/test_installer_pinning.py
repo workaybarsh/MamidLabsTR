@@ -23,12 +23,15 @@ def test_runtime_packages_carry_source_and_verified_size():
 
 
 def test_installer_builds_asr_venv_and_prefetches_models():
-    """Ses dökum motoru faster-whisper (Whisper large-v3-tr) + AST'dir. Kurulum venv\\asr
-    olusturur ve modelleri HF onbellegine ceker (whisper.cpp ve Qwen3-ASR kaldirildi)."""
+    """Ses dökum motoru faster-whisper (Whisper large-v3-tr) + pyannote konusmaci ayrimidir.
+    Kurulum venv\\asr olusturur ve Whisper modelini HF onbellegine ceker (whisper.cpp,
+    Qwen3-ASR ve konusma disi ses olaylari/AST kaldirildi)."""
     installer = read_text("scripts/install-mamidlabs.ps1")
     assert "venv\\asr" in installer
     assert "oguzhangokboru/whisper-large-v3-tr" in installer
     assert "snapshot_download" in installer
+    assert "AsrEventsModel" not in installer
+    assert "MAMIDLABS_ASR_EVENTS" not in installer
     assert "asr       = { Invoke-Asr }" in installer
 
 

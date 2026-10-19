@@ -1,6 +1,6 @@
 """Ses dökum hatti (agent/transcriber) + arayuz/isci sozlesmeleri.
 
-Motor: faster-whisper large-v3-tr (Turkce) + AST ses olaylari + pyannote konusmaci ayrimi.
+Motor: faster-whisper large-v3-tr (Turkce) + pyannote konusmaci ayrimi.
 Qwen3-ASR ve whisper.cpp tamamen kaldirildi. Agir testler (model/ortam yoksa) atlanir;
 sozlesmeler her zaman denetlenir.
 """
@@ -40,7 +40,7 @@ def load_worker():
 
 # --------------------------------------------------------------- paket / config
 def test_package_modules_exist():
-    for name in ("config", "audio", "vad", "asr", "events", "diarize", "merge", "main"):
+    for name in ("config", "audio", "vad", "asr", "diarize", "merge", "main"):
         assert (TRANSCRIBER / f"{name}.py").is_file(), name + ".py yok"
 
 
@@ -79,15 +79,15 @@ def test_select_profile_for_uses_selected_profile_name():
     assert config.select_profile_for("bilinmeyen", total_mib=8000).name == "lite"
     assert config.select_profile_for("bilinmeyen", total_mib=16311).name == "pro"
     # overrides ada gore secilen profile de uygulanir.
-    tuned = config.select_profile_for("lite", total_mib=16311, language="auto", events=False)
-    assert tuned.name == "lite" and tuned.language == "auto" and tuned.events is False
+    tuned = config.select_profile_for("lite", total_mib=16311, language="auto")
+    assert tuned.name == "lite" and tuned.language == "auto"
 
 
 def test_config_overrides_are_applied():
     from transcriber import config
 
-    profile = config.select_profile(total_mib=8000, language="auto", events=False)
-    assert profile.language == "auto" and profile.events is False
+    profile = config.select_profile(total_mib=8000, language="auto")
+    assert profile.language == "auto"
 
 
 # ---------------------------------------------------- otomatik cihaz secimi
@@ -279,8 +279,8 @@ def test_choose_plan_no_duration_falls_back_to_memory_only():
 
 
 def test_audio_budget_matches_measured_pipeline():
-    """Ses hatti VRAM payi, belgelenen bileşenlerin (Whisper int8 ~1,5-2,5 GB + AST
-    ~0,4 GB + torch/CUDA ~0,3-0,5 GB) toplamini karsilamali; 8 GB LITE'ta dil modeli
+    """Ses hatti VRAM payi, belgelenen bileşenlerin (Whisper int8 ~1,5-2,5 GB +
+    torch/CUDA ~0,3-0,5 GB) toplamini karsilamali; 8 GB LITE'ta dil modeli
     ~7,5 GB tutunca bu pay bos kalmadigi icin swap/CPU'ya dusulur."""
     from transcriber import config
 
@@ -293,16 +293,13 @@ def test_audio_budget_matches_measured_pipeline():
 def test_merge_is_chronological_without_timestamps_and_uses_speaker_labels():
     from transcriber import merge
 
+    # Girdi sirasi karisik verilir; cikti KRONOLOJIK olmali.
     text = merge.merge(
-        [{"start": 7, "end": 9, "text": "Geldin mi?"},
-         {"start": 11, "end": 13, "text": "Evet, biraz geciktim."}],
-        [{"start": 3, "end": 5, "text": "ayak sesleri"},
-         {"start": 9, "end": 10.5, "text": "kapi kapanma sesi"}],
+        [{"start": 11, "end": 13, "text": "Evet, biraz geciktim."},
+         {"start": 7, "end": 9, "text": "Geldin mi?"}],
     )
     assert text == (
-        "(ayak sesleri)\n"
         "Konuşmacı: Geldin mi?\n"
-        "(kapi kapanma sesi)\n"
         "Konuşmacı: Evet, biraz geciktim."
     )
     # Zaman damgasi YAZILMAZ.
@@ -315,7 +312,6 @@ def test_merge_numbers_speakers_when_diarized():
     text = merge.merge(
         [{"start": 7, "end": 9, "text": "Geldin mi?"},
          {"start": 11, "end": 13, "text": "Evet."}],
-        [],
         turns=[{"start": 7, "end": 9, "speaker": "SPEAKER_00"},
                {"start": 11, "end": 13, "speaker": "SPEAKER_01"}],
     )
@@ -326,7 +322,7 @@ def test_merge_numbers_speakers_when_diarized():
 def test_merge_can_include_timestamps_when_asked():
     from transcriber import merge
 
-    text = merge.merge([{"start": 65, "end": 70, "text": "Merhaba"}], [], include_timestamps=True)
+    text = merge.merge([{"start": 65, "end": 70, "text": "Merhaba"}], include_timestamps=True)
     assert text.startswith("[01:05] Konuşmacı: Merhaba")
 
 
@@ -353,45 +349,6 @@ def test_asr_whisper_model_is_turkish_tuned():
     assert "condition_on_previous_text=False" in src
     assert "vad_filter=True" in src
     assert "no_speech_threshold" in src and "compression_ratio_threshold" in src
-
-
-# ------------------------------------------------------------------- events
-def test_events_filters_speech_labels_and_translates():
-    from transcriber import events
-
-    assert events._translate("Walk, footsteps") == "ayak sesleri"
-    assert events._translate("Door") == "kapı sesi"
-    # Konusma etiketleri olay sayilmaz.
-    assert "speech" in events.SPEECH_LABELS
-    assert "male speech, man speaking" in events.SPEECH_LABELS
-    src = read_text("agent/transcriber/events.py")
-    assert "SPEECH_LABELS" in src and "_merge_repeats" in src
-
-
-def test_events_load_failure_does_not_break_transcription():
-    """AST modeli yuklenemezse (or. HF onbellegi eksik) TUM dökum DUSMEMELI; olaylar atlanir.
-    Regresyon: `_load_events_model` try DISINDA cagriliyordu; uygulama calisma aninda HF_HOME
-    ayarlamadiginda (varsayilan onbellekte AST yok) sesli giris tamamen hata veriyordu."""
-    import re
-
-    src = read_text("agent/transcriber/events.py")
-    assert re.search(
-        r"try:\s*\n\s*extractor, model = _load_events_model\(profile\)\s*\n"
-        r"\s*except Exception:\s*\n\s*return \[\]",
-        src,
-    ), "events.tag AST yuklemesini try/except ile korumali"
-
-
-def test_events_tag_returns_empty_when_model_missing(monkeypatch):
-    """Davranis: olay modeli yuklenemezse `tag` istisna sizdirmaz, bos liste doner."""
-    from transcriber import events
-
-    def boom(profile):
-        raise OSError("no model")
-
-    monkeypatch.setattr(events, "_load_events_model", boom)
-    profile = SimpleNamespace(events=True, events_model="MIT/ast-x", name="pro")
-    assert events.tag("yok.wav", profile) == []
 
 
 # ------------------------------------------------------------- worker / arayuz
@@ -427,14 +384,13 @@ def test_worker_dispatch_ping_unknown_and_unload(monkeypatch):
     assert module._dispatch({"action": "ping"})["ok"] is True
     assert "error" in module._dispatch({"action": "yok-boyle-bir-sey"})
 
-    from transcriber import asr, diarize, events
+    from transcriber import asr, diarize
     calls = []
     monkeypatch.setattr(asr, "unload_model", lambda: calls.append("asr"))
-    monkeypatch.setattr(events, "unload_events_model", lambda: calls.append("events"))
     monkeypatch.setattr(diarize, "unload_pipeline", lambda: calls.append("diarize"))
     out = module._dispatch({"action": "unload"})
     assert out["ok"] is True
-    assert calls == ["asr", "events", "diarize"]
+    assert calls == ["asr", "diarize"]
 
 
 @pytest.mark.skipif(not WORKER.is_file(), reason="worker missing")
@@ -499,7 +455,7 @@ def test_serve_mode_ping_and_idle_exit(tmp_path):
 
 def _patch_transcriber_pipeline(monkeypatch, duration, capture):
     """Agir model cagrilarini sahtelerle degistirir; secilen cihazi yakalar."""
-    from transcriber import asr, audio, diarize, events, merge
+    from transcriber import asr, audio, diarize, merge
 
     monkeypatch.setattr(audio, "to_wav16k_mono", lambda p: str(p))
     monkeypatch.setattr(audio, "duration_seconds", lambda p: duration)
@@ -511,8 +467,6 @@ def _patch_transcriber_pipeline(monkeypatch, duration, capture):
 
     monkeypatch.setattr(asr, "transcribe", fake_transcribe)
     monkeypatch.setattr(asr, "unload_model", lambda: None)
-    monkeypatch.setattr(events, "tag", lambda *a, **k: [])
-    monkeypatch.setattr(events, "unload_events_model", lambda: None)
     monkeypatch.setattr(diarize, "diarize", lambda *a, **k: [])
     monkeypatch.setattr(diarize, "unload_pipeline", lambda: None)
     monkeypatch.setattr(merge, "merge", lambda *a, **k: "")
@@ -622,7 +576,7 @@ def test_worker_accepts_auto_and_need_swap(monkeypatch, tmp_path):
     def fake_run(path, **kw):
         captured.clear()
         captured.update(kw)
-        return {"text": "merhaba", "language": "tr", "events": [], "diarized": False,
+        return {"text": "merhaba", "language": "tr", "diarized": False,
                 "model": "m"}
 
     monkeypatch.setattr(transcriber_main, "run", fake_run)
@@ -915,17 +869,19 @@ def test_microphone_red_button_cancels_recording():
     assert "$micBtn.Add_MouseUp({" in desktop
 
 
-def test_microphone_menu_has_non_speech_events_toggle():
-    """Mikrofon menusunde 'Konusma disi sesler' onay kutusu: isaretli ise AST olaylari da
-    yakalanir, degilse yalnizca konusma. Ayar api.json -> audioEvents'te saklanir ve isciye
-    gecirilir."""
+def test_non_speech_audio_events_structure_is_removed():
+    """Konusma disi ses olaylari (AudioSet/AST) yapisi TAMAMEN kaldirildi: mikrofon menusunde
+    onay kutusu, `audioEvents` ayari, isciye `events` alani ve `transcriber/events.py` yok."""
     desktop = read_text("mamidlabs-desktop.ps1")
-    assert "Konuşma dışı sesler" in desktop
-    assert "$script:audioEvents" in desktop
-    assert "audioEvents = [bool]$script:audioEvents" in desktop
-    assert "$script:apiSettings.audioEvents = $script:audioEvents" in desktop
+    assert "Konuşma dışı sesler" not in desktop
+    assert "audioEvents" not in desktop
     worker = read_text("agent/mamidlabs-inference.ps1")
-    assert "events = $audioEvents" in worker
+    assert "audioEvents" not in worker
+    assert "events = " not in worker
+    assert "audioEvents" not in read_text("agent/whisper-tools.py")
+    assert not (TRANSCRIBER / "events.py").exists()
+    assert "events" not in read_text("agent/transcriber/config.py")
+    assert "events" not in read_text("agent/transcriber/main.py")
 
 
 def test_transcription_uses_model_swap_for_local_provider():

@@ -56,8 +56,6 @@ LITE_CPU_MAX_SECONDS = 15.0
 
 # Tek motor: Whisper large-v3'un Turkce ince ayarli CTranslate2 (float16) surumu.
 DEFAULT_WHISPER_MODEL = 'oguzhangokboru/whisper-large-v3-tr'
-# AudioSet tabanli ses olayi modeli (AST). 'none' ile kapatilir.
-DEFAULT_EVENTS_MODEL = 'MIT/ast-finetuned-audioset-10-10-0.4593'
 
 # --- Ses hatti bellek gereksinimleri (MiB) -----------------------------------
 # Cihaz/swap karari PROFIL ADINA gore DEGIL, ses isi baslarken olculen GERCEK bos
@@ -65,13 +63,13 @@ DEFAULT_EVENTS_MODEL = 'MIT/ast-finetuned-audioset-10-10-0.4593'
 # (hedef makine) hem 16 GB kartta kullanildigi icin profil adi tek basina yeterli
 # degildir.
 #
-# `audio_vram_mib`: Whisper large-v3 + AST + torch/CUDA baglami icin gereken en kotu
-# senaryo payi. Olculen: int8_float16 large-v3 ~1,5-2,5 GB, AST (fp32) ~0,4 GB,
-# torch/CUDA baglami ~0,3-0,5 GB; pro (eski ad PC2) float16'da Whisper ~2,9 GB'a cikar.
+# `audio_vram_mib`: Whisper large-v3 + torch/CUDA baglami icin gereken en kotu
+# senaryo payi. Olculen: int8_float16 large-v3 ~1,5-2,5 GB, torch/CUDA baglami
+# ~0,3-0,5 GB; pro (eski ad PC2) float16'da Whisper ~2,9 GB'a cikar.
 DEFAULT_AUDIO_VRAM_MIB = 4096
 # `audio_ram_mib`: CPU yolunda (swap yok) ses hattinin sistem RAM'inde tuttugu en
-# kotu senaryo payi: Whisper int8 (~2 GB) + AST (fp32 ~0,4 GB) + torch/Python
-# (~0,8 GB) + parca/cozumleme tamponlari (30 dk float32 ~0,15 GB; parcali dökum).
+# kotu senaryo payi: Whisper int8 (~2 GB) + torch/Python (~0,8 GB) + parca/cozumleme
+# tamponlari (30 dk float32 ~0,15 GB; parcali dökum).
 DEFAULT_AUDIO_RAM_MIB = 5120
 
 # LITE (8 GB kart) CPU co-resident ses hatti RAM esigi. IKI OLCUM CELISTI; daha KESIN olan
@@ -93,9 +91,7 @@ class Profile:
     load_mode: str         # 'parallel' | 'sequential'
     chunk_minutes: int     # uzun kayitlari bolme; 0 = bolme
     whisper_model: str
-    events_model: str      # 'ast' | 'none'
     language: str
-    events: bool
     diarize: bool
     auto_device: bool = True          # cihaz secimini kaydin suresine gore otomatik yap
     cpu_max_seconds: float | None = None  # bu sureden kisa kayitlarda CPU (None -> DEFAULT_CPU_MAX_SECONDS)
@@ -106,13 +102,13 @@ class Profile:
 PROFILES = {
     PC2: Profile(
         name=PC2, compute_type='float16', load_mode='parallel', chunk_minutes=0,
-        whisper_model=DEFAULT_WHISPER_MODEL, events_model=DEFAULT_EVENTS_MODEL,
-        language='tr', events=True, diarize=True,
+        whisper_model=DEFAULT_WHISPER_MODEL,
+        language='tr', diarize=True,
     ),
     PC1: Profile(
         name=PC1, compute_type='int8_float16', load_mode='sequential', chunk_minutes=30,
-        whisper_model=DEFAULT_WHISPER_MODEL, events_model=DEFAULT_EVENTS_MODEL,
-        language='tr', events=True, diarize=True,
+        whisper_model=DEFAULT_WHISPER_MODEL,
+        language='tr', diarize=True,
         # LITE ASR politikasi: CPU co-resident YALNIZCA kayit `cpu_max_seconds`ten KISA VE
         # sistem RAM'i yetiyorsa secilir (dil modeli VRAM'de kalir, ses modeli CPU/sistem
         # RAM'inde kosar; swap YOK). Uzun kayit ya da RAM yetersizliginde GPU + mecburi swap
@@ -253,7 +249,7 @@ def choose_plan(profile: Profile, duration_seconds: float | None = None,
     Tier (`profile`) SECILI profil adindan gelir (lite/pro); cihaz/swap karari ise tier'in
     bellek esikleri + GERCEK bos VRAM + sistem RAM'i ve kaydin SURESINE gore verilir:
 
-      1) Whisper + AST, yerel dil modeliyle BIRLIKTE bos VRAM'e sigarsa (`audio_vram_mib`)
+      1) Whisper, yerel dil modeliyle BIRLIKTE bos VRAM'e sigarsa (`audio_vram_mib`)
          -> ('cuda', False): GPU'da dökum, swap YOK (en hizli, maliyetsiz).
       2) Sigmazsa ve CPU co-resident kosulu saglaniyorsa -> ('cpu', False): dil modeli VRAM'de
          KALIR, ses modeli CPU/sistem RAM'inde kosar (swap YOK; yavastir). Kosul: kayit

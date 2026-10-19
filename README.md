@@ -31,8 +31,7 @@
   <a href="#lisans">Lisans</a>
 </p>
 
-MamidLabs; sohbet, web araması, belge okuma ve üretimi, OCR, ses dökümü (konuşma + konuşma dışı
-ses olayları), görsel anlama, görsel ve video
+MamidLabs; sohbet, web araması, belge okuma ve üretimi, OCR, ses dökümü, görsel anlama, görsel ve video
 üretimi işlerini tek bir masaüstü penceresinde toplar. Dil, görsel ve video modelleri kullanıcının
 kendi ekran kartında çalışır. İnternet yalnızca kurulum, model indirme, web araması ve isteğe bağlı
 API sağlayıcıları için kullanılır.
@@ -63,8 +62,7 @@ MamidLabs **Windows** için üretilmiştir ve kararlı sürüm burasıdır. Ayn�
 | **Belge okuma** | PDF, Word, Excel, PowerPoint, ZIP ve RAR |
 | **Belge üretimi** | PDF, Word ve PowerPoint; kullanıcı onayıyla |
 | **OCR** | PaddleOCR: görseller GPU'da, taranmış PDF'ler CPU'da |
-| **Ses dökümü** | faster-whisper large-v3-tr + Silero VAD; mikrofon kaydı veya ses dosyası kronolojik metne çevrilir |
-| **Konuşma dışı sesler** | AST (AudioSet) ile ayak sesi, kapı gibi olaylar parantez içinde; isteğe bağlı konuşmacı ayrımı |
+| **Ses dökümü** | faster-whisper large-v3-tr + Silero VAD; mikrofon kaydı veya ses dosyası kronolojik metne çevrilir; isteğe bağlı konuşmacı ayrımı |
 | **Görsel anlama** | Dil modeli eklenen görseli doğrudan yorumlar |
 | **Görsel üretimi** | Krea-2 Turbo; yeniden üretim, stil referansı ve istek üzerine gerçekçilik LoRA'sı |
 | **Fotoğraf düzenleme** | Krea 2 Identity Edit: kişinin yüzü korunarak kıyafet, ışık ve arka plan değişir; iki görselle kişiyi sahneye yerleştirir (16 GB profiller) |

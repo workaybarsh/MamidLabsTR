@@ -67,6 +67,36 @@ DeepSeek ve OpenAI uyumlu özel uçlar isteğe bağlı API sağlayıcılarıdır
   `MamidLabs_Setup.exe` ile aynı biçim. Bağlantılar yine doğrudan indirmeye gider.
 
 ### Düzeltildi
+- **Bağlam seçimi artık ölçülen boş VRAM'den ince adımlarla hesaplanıyor (kart tam kullanılıyor).**
+  Eski kod 16K/32K gibi KABA adımlar kullanıyordu: 15,5 GiB boş VRAM'de 32K reddedilip 16K'ya
+  düşüyor, 4–8K token boşa gidiyordu. Pay artık ölçülmüş **doğrusal** modelde
+  (`Get-ModelOverheadMiB`: taban 278 MiB + 1K token başına ~27,9 MiB; 15112 MiB @8K, 15324 @16K,
+  ~15770 @32K ölçümlerinden türetildi) ve **`Get-MaxContextForProfile`** bu kartin GERÇEK boş
+  VRAM'ine sigabilecek en büyük bağlamı 2K adimlarla, 100 MiB güvenlik pay dengan seçer
+  (`--fit` de denendi ama varsayilan `--fit-target` 1024 MiB bosluk birakip ~23 tok/s veriyordu;
+  kullanilmaz). Ornek: 15,5 GiB bos VRAM'de ~20K, 15,9 GiB'de ~39K baglam. Kap yine kademeli
+  kucultmeyle dogrular; secilen baglam hem kapiya hem `--ctx-size`'a gider, arayuz gercek
+  degeri `/props`'tan geri okur. Testler: `tests/test_memory_admission.py`
+  (`test_max_budget_margin_is_context_aware_and_prevents_spill`,
+  `test_max_flash_context_is_computed_from_measured_free_vram`).
+- **Alt süreç metni artık UTF-8 olarak yazılıp okunuyor; böylece ASCII dışı karakterler "kutucuk"a
+  (U+FFFD) dönüşmüyor.** PowerShell yönetici sürecin stderr'ini OEM kod sayfasıyla yazarken arayüz
+  onu UTF-8 olarak okuyordu; iki taraf da artık açıkça UTF-8 (`[Console]::OutputEncoding`,
+  `StandardErrorEncoding` ve Python araçları için `PYTHONIOENCODING=utf-8`)
+  ve `Repair-UiText` arayüze ulaşmadan önce başıboş U+FFFD'yi temizler.
+  **Dikkat:** `StandardOutputEncoding` yalnızca `RedirectStandardOutput` açıkken verilebilir; aksi
+  halde .NET istisna atıp **modelin hiç başlatılamamasına** yol açıyor (canlı yakalanan hata; artık
+  `Invoke-Manage` yalnızca `StandardErrorEncoding` kullanır ve test bunu kilitler).
+- **Ses eki eklemek artık süren model yüklemesini durdurup ASR işçisini ısıtıyor.** Böylece ilk ses
+  turu ağır olmaz: ses eklendiği anda `Prepare-AudioTurn`, yerel sağlayıcıda dil-modeli yüklemesini
+  durdurur (ve `manage -Action stop` VRAM'i hemen boşaltır) ve sıcak ASR işçisini (`whisper-tools.py
+  --serve`, `logs\asr-server.json`) arka planda başlatır; sabit import maliyeti Gönder'den önce
+  ödenir.
+- **Konuşma dışı ses olayları (AudioSet/AST) özelliği kaldırıldı.** Döküm artık yalnızca
+  faster-whisper large-v3-tr + isteğe bağlı pyannote konuşmacı ayrımıdır: `events` modülü/modeli,
+  mikrofon menüsündeki **"Konuşma dışı sesler"** onay kutusu, `audioEvents` ayarı, işçinin `events`
+  alanı, `--no-events` bayrağı ve kurulumun AST ön indirmesi kaldırıldı (`transformers==5.17.0` pini
+  pyannote/speechbrain bağımlılığı olarak kalır).
 - **Ses turu bir model yüklemesini iptal ettiğinde dil modeli geri gelmiyordu ("Yetersiz boş VRAM").**
   Yerel sağlayıcıda ses eki olan bir tur, süren dil-modeli yüklemesini iptal eder
   (`Stop-ModelSwitchForAudio`); o anda model VRAM'de **değildir** ama turun sonunda **gerekir**. Ses

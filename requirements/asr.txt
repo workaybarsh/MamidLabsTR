@@ -1,6 +1,6 @@
-# venv\asr: yerel konusma + ses olayi dökum hatti.
+# venv\asr: yerel konusma dökum hatti.
 #   - faster-whisper: Whisper large-v3-tr (CTranslate2) konusma dökumu + dahili Silero VAD
-#   - transformers: AST (AudioSet) ses olayi etiketleme
+#   - transformers: pyannote/speechbrain bagimliligi (sabit surum; surum kaymasini onler)
 #   - pyannote.audio: konusmaci ayrimi (opsiyonel; HF token ister)
 #   - av: 16 kHz mono WAV'a cevirme (ffmpeg gerekmez)
 #

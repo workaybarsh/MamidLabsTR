@@ -1,18 +1,16 @@
 """Ses dökum iscisi: `transcriber` paketini cagirir.
 
-Motor: faster-whisper large-v3-tr (Turkce). Ses olaylari (AST) ve konusmaci ayrimi
-(pyannote) varsayilan aciktir. Cikti bicimi kronolojik, zaman damgasiz:
+Motor: faster-whisper large-v3-tr (Turkce) + konusmaci ayrimi (pyannote, opsiyonel).
+Cikti bicimi kronolojik, zaman damgasiz:
 
-    (ayak sesleri)
     Konusmaci: Geldin mi?
-    (kapi sesi)
-    Konusmaci: Evet, biraz geciktim.
+    Konusmaci 2: Evet, biraz geciktim.
 
 Arayuz/isci sozlesmesi: stdin'den JSON alir, stdout'a JSON yazar.
     istek: {"action":"transcribe","path":...,"device":"auto|cuda|cpu","need_swap":bool,"profile":"lite|pro","language":"tr", ...}
     istek: {"action":"plan","local_model_required":bool,"local_model_loaded":bool,"profile":"lite|pro"} -> {"device":..,"need_swap":..}
     istek: {"action":"unload"}   -> yuklu modelleri bellekten cikarir (VRAM/RAM iadesi)
-    yanit: {"text":..., "model":..., "chars":..., "events":N, "diarized":bool} ya da {"error":...}
+    yanit: {"text":..., "model":..., "chars":..., "diarized":bool} ya da {"error":...}
 
 SICAK (kalici) isci: `--serve` ile tek seferlik stdin yerine 127.0.0.1 uzerinde surekli
 calisir ve modelleri SÜREÇ İÇİNDE tutar. Boylece her ses turunda tekrarlanan sabit
@@ -67,7 +65,6 @@ def transcribe(req: dict) -> dict:
         device=device,
         need_swap=need_swap,
         initial_prompt=req.get('initial_prompt'),
-        events=req.get('events'),
         diarize_enabled=req.get('diarize'),
         token=req.get('token'),
         include_timestamps=False,
@@ -81,7 +78,6 @@ def transcribe(req: dict) -> dict:
         'chars': len(payload['text']),
         'language': payload['language'],
         'profile': profile.name,
-        'events': len(payload['events']),
         'diarized': payload['diarized'],
     }
 
@@ -128,15 +124,14 @@ def plan(req: dict) -> dict:
 
 
 def unload(_req: dict | None = None) -> dict:
-    """Yuklu ASR/AST/konusmaci modellerini bellekten cikarir (VRAM/RAM iadesi).
+    """Yuklu ASR/konusmaci modellerini bellekten cikarir (VRAM/RAM iadesi).
 
     Kalici (sicak) isci modelleri surec icinde tutar; dil modeli VRAM'e geri yuklenmeden
     ONCE ses modellerinin bosaltilmasi icin cagrilir (bkz. mamidlabs-inference.ps1). Surec
     YASAMAYA DEVAM EDER (yalnizca modeller atilir): importlar/onbellekler sicak kalir.
     """
-    from transcriber import asr, diarize, events
+    from transcriber import asr, diarize
     for fn in (getattr(asr, 'unload_model', None),
-               getattr(events, 'unload_events_model', None),
                getattr(diarize, 'unload_pipeline', None)):
         if callable(fn):
             try:
