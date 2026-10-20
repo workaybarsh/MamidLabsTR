@@ -217,7 +217,9 @@ try {
     Stop-LocalModelForMedia $manage
 
     Emit 'status' 'Wan 2.2 5B yukleniyor...'
-    $comfy = Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 240 $Shared
+    # Video da ayni ilk acilis maliyetini odetir (asset DB kurulumu); 240 sn
+    # yetmiyordu, ilk acilis gercek makinede 297 sn surdu.
+    $comfy = Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 600 $Shared
 
     $workflow = @{
         '37' = @{ class_type = 'UNETLoader'; inputs = @{ unet_name = $videoModel; weight_dtype = 'default' } }

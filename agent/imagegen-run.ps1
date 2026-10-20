@@ -312,7 +312,9 @@ try {
     Stop-LocalModelForMedia $manage
 
     Emit 'status' $(if ($lite) { 'Krea-2 Turbo (GGUF, dusuk VRAM modu) yukleniyor...' } else { 'Krea-2 Turbo yukleniyor...' })
-    $comfy = Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 180 $Shared
+    # Ilk acilis ComfyUI'nin asset DB'sini kurar; yavas diskte/Defender altinda
+    # 297 sn olculdu. 180 sn, kurulum smoke testini yanlis basarisiz gosteriyordu.
+    $comfy = Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 600 $Shared
 
     # Yalnizca kullanici acikca gercekci gorsel istediginde acik gelir (mamidlabs-inference.ps1 Test-RealismIntent).
     $realism = [bool]$JobData.realism

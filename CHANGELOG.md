@@ -3,6 +3,16 @@
 Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) önerisini, sürüm numaraları
 [Anlamsal Sürümleme](https://semver.org/lang/tr/) kurallarını izler.
 
+## [Yayınlanmadı]
+
+### Düzeltildi
+- **ComfyUI ilk açılış zaman aşımı.** ComfyUI 0.37 ilk açılışta kendi asset DB'sini kurar; gerçek
+  LITE laptopta ilk açılış **297,6 sn**, sonraki açılış **16,2 sn** ölçüldü. Görsel işçisi 180 sn,
+  video işçisi 240 sn beklediği için kurulum smoke testi bileşenler çalıştığı halde
+  `[HATA] gorsel - ComfyUI 180 saniyede hazir olmadi` diyor, ardından yarım açık ComfyUI VRAM
+  tuttuğu için dil modeli geri yüklenemiyordu. İki sınır da **600 sn**'ye çıkarıldı; aynı makinede
+  görsel 96 sn, video 186 sn'de başarıyla üretildi. Test: `tests/test_comfy_lifecycle.py`.
+
 ## [1.0.0] - 2026-10-10
 
 İlk sürüm. Windows'ta tamamen yerel çalışan çok modlu yapay zekâ çalışma alanı: tek bir WinForms

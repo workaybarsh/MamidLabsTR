@@ -55,6 +55,15 @@ def test_comfy_is_reused_and_released_instead_of_restarted():
         assert "Stop-Comfy $(if ($comfy) { $comfy } else { $Shared.Process })" in script, path
 
 
+def test_comfy_start_timeout_covers_first_run_initialization():
+    """ComfyUI ilk acilista kendi asset DB'sini kurar. Gercek makinede ilk
+    acilis 297 sn, sonraki acilis 16 sn olculdu; 180/240 sn sinirlari kurulum
+    smoke testini bilesenler calistigi halde basarisiz gosteriyordu."""
+    for path in ("agent/imagegen-run.ps1", "agent/videogen-run.ps1"):
+        script = read_text(path)
+        assert "Start-OrReuseComfy $python $comfyDir $comfyOut $comfyIn $logs $comfyUrl $lite 600 $Shared" in script, path
+
+
 REALISM_CASES = [
     ("Gün batımında sahilde koşan bir köpeğin fotoğrafını üret.", False),
     ("Karlı bir dağ köyünde ahşap kulübe çiz", False),
